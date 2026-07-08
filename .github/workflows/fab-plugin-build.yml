@@ -37,6 +37,11 @@ jobs:
           git lfs fetch --all
           git lfs pull
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: Ensure scripts exist
         run: |
           if (-not (Test-Path "scripts\build_fab.ps1")) {
