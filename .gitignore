@@ -6,6 +6,11 @@ Saved/
 Build/*/Binaries/
 Build/*/Intermediate/
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
 # IDE/OS clutter
 .vs/
 .vscode/
