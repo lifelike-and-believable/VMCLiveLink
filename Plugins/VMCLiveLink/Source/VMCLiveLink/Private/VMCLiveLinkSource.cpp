@@ -409,9 +409,19 @@ void FVMCLiveLinkSource::PushFrame()
         // Translation handling
         if (LocalBoneParents.IsValidIndex(i) && LocalBoneParents[i] == -1)
         {
-            // Root gets live root translation
-            const FTransform* In = LocalPose.Find(SrcName);
-            X.SetTranslation(In->GetTranslation());
+            // Root gets live root translation. Prefer a Bone/Pos entry explicitly
+            // named "root" if the sender provided one; otherwise fall back to the
+            // dedicated /VMC/Ext/Root/Pos stream (LocalRoot), which is the common case
+            // and the only source of root data with the bundled sample sender.
+            if (const FTransform* In = LocalPose.Find(SrcName))
+            {
+                X.SetTranslation(In->GetTranslation());
+            }
+            else
+            {
+                X.SetTranslation(LocalRoot.GetTranslation());
+                X.SetRotation(LocalRoot.GetRotation());
+            }
         }
         else
         {
