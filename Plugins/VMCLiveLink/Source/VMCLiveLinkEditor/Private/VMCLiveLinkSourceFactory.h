@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #pragma once
 #include "LiveLinkSourceFactory.h"
 #include "VMCLiveLinkSourceFactory.generated.h"

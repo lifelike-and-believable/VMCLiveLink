@@ -49,7 +49,7 @@ jobs:
       - name: Verify copyright headers
         run: |
           $PluginDir = $env:PLUGIN_DIR
-          python "scripts\add_copyright_headers.py" $PluginDir --holder "Lifelike & Believable Animation Design, Inc." --verify
+          python "scripts\add_copyright_headers.py" $PluginDir --holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg" --verify
 
       - name: Build Fab packages
         run: |
