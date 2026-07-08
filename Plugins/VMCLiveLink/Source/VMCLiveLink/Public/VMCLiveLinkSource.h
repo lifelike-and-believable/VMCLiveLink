@@ -12,7 +12,6 @@ struct FOSCMessage;
 
 class ULiveLinkSubjectRemapper;
 class ULiveLinkSubjectSettings;
-class UVMCLiveLinkRemapper;
 
 /**
  * VMC → Live Link source (UE 5.6)
@@ -36,9 +35,6 @@ public:
     virtual FText GetSourceType() const override { return NSLOCTEXT("VMCLiveLink", "SourceType", "VMC (OSC)"); }
     virtual FText GetSourceMachineName() const override { return FText::FromString(TEXT("Local/Network")); }
     virtual FText GetSourceStatus() const override;
-    // Optional: point this to the same remapper asset you use in Subject Settings (or a duplicate)
-    UPROPERTY(EditAnywhere, Category = "Remap")
-    TSoftObjectPtr<UVMCLiveLinkRemapper> StaticNameRemapper;
 
 private:
     // OSC lifecycle
@@ -67,7 +63,6 @@ private:
     bool bForceStaticNext = false;
 
     // Helpers
-    void RefreshStaticMapsIfNeeded();
     void RefreshStaticMapsFromSettings(); // (we’ll extend this to also pull the ReferenceSkeleton)
     static uint32 HashMaps(const TMap<FName, FName>& A, const TMap<FName, FName>& B);
     void BuildRefOffsetsFromMesh(class USkeletalMesh* Mesh);
@@ -95,7 +90,6 @@ private:
 
     // Static (skeleton) tracking
     bool bStaticSent = false;
-    int32 LastRemapVersion = -1;
 
     // Bones
     TArray<FName> BoneNames;    // index-aligned

@@ -294,27 +294,12 @@ void FVMCLiveLinkSource::PushStaticData(bool bForce)
     }
 
     // Make editable copies
-// Make editable copies
     TArray<FName> OutBoneNames = BoneNames;
     TArray<FName> OutCurveNames = CurveNamesOrdered;
 
-    // Apply cached maps (preserve order → indices remain valid)
+    // Apply cached maps (order preserved → indices stay valid)
     for (FName& N : OutBoneNames)  if (const FName* M = CachedBoneMap.Find(N))  N = *M;
     for (FName& C : OutCurveNames) if (const FName* M = CachedCurveMap.Find(C)) C = *M;
-
-    // Build/push StaticData as you already do (bones, parents, PropertyNames)
-
-    // Apply cached maps (order preserved → indices stay valid)
-    if (CachedBoneMap.Num() > 0)
-    {
-        for (FName& N : OutBoneNames)
-            if (const FName* M = CachedBoneMap.Find(N)) N = *M;
-    }
-    if (CachedCurveMap.Num() > 0)
-    {
-        for (FName& C : OutCurveNames)
-            if (const FName* M = CachedCurveMap.Find(C)) C = *M;
-    }
 
     // Build static packet
     FLiveLinkStaticDataStruct StaticData(FLiveLinkSkeletonStaticData::StaticStruct());
@@ -325,8 +310,6 @@ void FVMCLiveLinkSource::PushStaticData(bool bForce)
 
     // UE 5.6: curve names live on the base static data array
     Skel.PropertyNames = OutCurveNames;
-
-
 
     Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName },
         ULiveLinkAnimationRole::StaticClass(), MoveTemp(StaticData));
@@ -471,23 +454,6 @@ uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FNam
         };
     Mix(A); Mix(B);
     return H;
-}
-
-void FVMCLiveLinkSource::RefreshStaticMapsIfNeeded()
-{
-    UVMCLiveLinkRemapper* R = StaticNameRemapper.LoadSynchronous();
-    if (!R) return;
-
-    const uint32 NewHash = HashMaps(R->BoneNameMap, R->CurveNameMap);
-    if (NewHash != CachedMapsHash)
-    {
-        CachedMapsHash = NewHash;
-        CachedBoneMap = R->BoneNameMap;
-        CachedCurveMap = R->CurveNameMap;
-
-        // Force one static publish on next /Apply to propagate new names
-        bForceStaticNext = true;
-    }
 }
 
 void FVMCLiveLinkSource::BuildRefOffsetsFromMesh(USkeletalMesh* Mesh)
