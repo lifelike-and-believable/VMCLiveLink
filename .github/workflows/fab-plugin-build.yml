@@ -37,24 +37,19 @@ jobs:
           git lfs fetch --all
           git lfs pull
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
       - name: Ensure scripts exist
         run: |
           if (-not (Test-Path "scripts\build_fab.ps1")) {
             Write-Error "scripts/build_fab.ps1 not found. Commit the script to scripts/build_fab.ps1 or update the workflow path."
           }
-          if (-not (Test-Path "scripts\add_copyright_headers.py")) {
-            Write-Error "scripts/add_copyright_headers.py not found. Commit the script to scripts/add_copyright_headers.py or update the workflow path."
+          if (-not (Test-Path "scripts\verify_copyright_headers.ps1")) {
+            Write-Error "scripts/verify_copyright_headers.ps1 not found. Commit the script to scripts/verify_copyright_headers.ps1 or update the workflow path."
           }
 
       - name: Verify copyright headers
         run: |
           $PluginDir = $env:PLUGIN_DIR
-          python "scripts\add_copyright_headers.py" $PluginDir --holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg" --verify
+          ./scripts/verify_copyright_headers.ps1 -PluginDir $PluginDir -Holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
 
       - name: Build Fab packages
         run: |
