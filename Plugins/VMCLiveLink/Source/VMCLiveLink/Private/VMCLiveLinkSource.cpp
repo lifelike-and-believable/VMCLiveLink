@@ -58,23 +58,22 @@ static bool ReadFloat7(const FOSCMessage& Msg,
 // ---------------- Ctors & status ----------------
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName)
-    : SourceName(InSourceName), ListenPort(39539), bUnityToUE(true), bMetersToCm(true), YawOffsetDeg(0.f)
+    : SourceName(InSourceName), ListenPort(39539), bUnityToUE(true)
 {
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort)
-    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(true), bMetersToCm(true), YawOffsetDeg(0.f)
+    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(true)
 {
 }
 
-FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg)
-    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), bMetersToCm(bInMetersToCm), YawOffsetDeg(InYawDeg)
+FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE)
+    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE)
 {
 }
 
-FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg, FString InSubject)
-    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), bMetersToCm(bInMetersToCm), YawOffsetDeg(InYawDeg), SubjectName(InSubject)
-
+FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, FString InSubject)
+    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), SubjectName(InSubject)
 {
 }
 
@@ -91,8 +90,8 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     RefreshStaticMapsFromSettings();
     bForceStaticNext = true;
 
-    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %d (valid=%d, unity2ue=%d, m_to_cm=%d, yaw=%.1f)"),
-        *SourceName, ListenPort, bIsValid ? 1 : 0, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, YawOffsetDeg);
+    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %d (valid=%d, unity2ue=%d)"),
+        *SourceName, ListenPort, bIsValid ? 1 : 0, bUnityToUE ? 1 : 0);
 }
 
 bool FVMCLiveLinkSource::RequestSourceShutdown()

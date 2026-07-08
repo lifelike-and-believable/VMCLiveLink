@@ -47,25 +47,6 @@ static bool ParseUnityToUnreal(const FString& Conn, bool DefaultUnityToUnreal)
     return UnityToUnreal;
 }
 
-static bool ParseMetersToCm(const FString& Conn, bool DefaultMetersToCm)
-{
-    bool MetersToCm = DefaultMetersToCm;
-    TArray<FString> Parts;
-    Conn.ParseIntoArray(Parts, TEXT(";"), true);
-    for (const FString& P : Parts)
-    {
-        FString K, V;
-        if (P.Split(TEXT("="), &K, &V))
-        {
-            if (K.Equals(TEXT("meters2cm"), ESearchCase::IgnoreCase))
-            {
-                MetersToCm = FCString::Atoi(*V) == 1;
-            }
-        }
-    }
-    return MetersToCm;
-}
-
 static FString ParseSubject(const FString& Conn, FString DefaultSubject)
 {
     FString Subject = DefaultSubject;
@@ -89,16 +70,15 @@ TSharedPtr<ILiveLinkSource> UVMCLiveLinkSourceFactory::CreateSource(const FStrin
 {
     const int32 Port = ParsePort(ConnectionString, 39539);
     const bool UnityToUnreal = ParseUnityToUnreal(ConnectionString, true);
-    const bool MetersToCm = ParseMetersToCm(ConnectionString, true);
     const FString Subject = ParseSubject(ConnectionString, "VMC_Subject");
 
     // Two-arg ctor is exported now (VMCLIVELINK_API on class)
-    return MakeShared<FVMCLiveLinkSource>(TEXT("VMC"), Port, UnityToUnreal, MetersToCm, 0, Subject);
+    return MakeShared<FVMCLiveLinkSource>(TEXT("VMC"), Port, UnityToUnreal, Subject);
 }
 
 TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSourceCreated OnCreated) const
 {
-    struct FState { int32 Port = 39539; bool bUnityToUE = true; bool bMetersToCm = true; FString SubjectName = FString("VMC_Subject"); };
+    struct FState { int32 Port = 39539; bool bUnityToUE = true; FString SubjectName = FString("VMC_Subject"); };
 
     TSharedRef<FState> State = MakeShared<FState>();
     TSharedPtr<SEditableTextBox> InputTextBox;
@@ -144,13 +124,6 @@ TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSou
                         .OnCheckStateChanged_Lambda([State](ECheckBoxState S) { State->bUnityToUE = (S == ECheckBoxState::Checked); })
                         [SNew(STextBlock).Text(NSLOCTEXT("VMCLiveLink", "UnityToUE", "Unity→UE coords"))]
                 ]
-                + SHorizontalBox::Slot().AutoWidth()
-                [
-                    SNew(SCheckBox)
-                        .IsChecked_Lambda([State] { return State->bMetersToCm ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-                        .OnCheckStateChanged_Lambda([State](ECheckBoxState S) { State->bMetersToCm = (S == ECheckBoxState::Checked); })
-                        [SNew(STextBlock).Text(NSLOCTEXT("VMCLiveLink", "MetersToCm", "Meters→cm"))]
-                ]
         ]
     + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(4)
         [
@@ -161,9 +134,9 @@ TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSou
                         .Text(NSLOCTEXT("VMCLiveLink", "Create", "Create"))
                         .OnClicked_Lambda([OnCreated, State]()
                             {
-                                const FString Conn = FString::Printf(TEXT("port=%d;unity2ue=%d;meters2cm=%d;subject=%s"),
-                                    State->Port, State->bUnityToUE ? 1 : 0, State->bMetersToCm ? 1 : 0, *State->SubjectName);
-                                const TSharedPtr<ILiveLinkSource> Src = MakeShared<FVMCLiveLinkSource>(TEXT("VMC"), State->Port, State->bUnityToUE, State->bMetersToCm, 0.0f, State->SubjectName);
+                                const FString Conn = FString::Printf(TEXT("port=%d;unity2ue=%d;subject=%s"),
+                                    State->Port, State->bUnityToUE ? 1 : 0, *State->SubjectName);
+                                const TSharedPtr<ILiveLinkSource> Src = MakeShared<FVMCLiveLinkSource>(TEXT("VMC"), State->Port, State->bUnityToUE, State->SubjectName);
                                 if (OnCreated.IsBound())
                                 {
                                     OnCreated.Execute(Src, Conn);
