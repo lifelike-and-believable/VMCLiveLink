@@ -247,14 +247,15 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
     }
     else if (Addr == TEXT("/VMC/Ext/Blend/Apply"))
     {
-        AsyncTask(ENamedThreads::GameThread, [this]()
+        // If we haven't yet attached defaults, do it now. OSC messages are always
+        // dispatched on the Game Thread (see UOSCServer::PumpPacketQueue), so this can
+        // run synchronously; deferring it via AsyncTask raced the PushStaticData/PushFrame
+        // calls below and could let the subject get auto-created (with generic default
+        // settings, not our default remapper) before this ever ran on the first Apply.
+        if (!bEnsuredDefaults)
         {
-            // If we haven’t yet attached defaults, do it now.
-            if (!bEnsuredDefaults)
-            {
-                EnsureSubjectSettingsWithDefaults();
-            }
-        });
+            EnsureSubjectSettingsWithDefaults();
+        }
         // Pull latest maps from the subject settings the preset applied
         RefreshStaticMapsFromSettings();
 
