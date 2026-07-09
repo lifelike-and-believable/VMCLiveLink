@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkRetargetActorFactory.h"
 #include "VMCLiveLinkEditorModule.h"
 #include "AssetRegistry/AssetRegistryModule.h"
