@@ -208,15 +208,15 @@ bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAssetFromFile(const FStr
     // arrays without their own bounds checks.
     {
         const VRM::FVRMValidationResult Validation = VRM::ValidateSpringConfig(Config);
-        for (const FString& Warning : Validation.Warnings)
+        for (const FString& WarningMsg : Validation.Warnings)
         {
-            UE_LOG(LogVRMSpring, Warning, TEXT("[VRMInterchange] Spring pipeline: %s (%s)"), *Warning, *Filename);
+            UE_LOG(LogVRMSpring, Warning, TEXT("[VRMInterchange] Spring pipeline: %s (%s)"), *WarningMsg, *Filename);
         }
         if (!Validation.bIsValid)
         {
-            for (const FString& Error : Validation.Errors)
+            for (const FString& ErrorMsg : Validation.Errors)
             {
-                UE_LOG(LogVRMSpring, Error, TEXT("[VRMInterchange] Spring pipeline: %s (%s)"), *Error, *Filename);
+                UE_LOG(LogVRMSpring, Error, TEXT("[VRMInterchange] Spring pipeline: %s (%s)"), *ErrorMsg, *Filename);
             }
             UE_LOG(LogVRMSpring, Error, TEXT("[VRMInterchange] Spring pipeline: Rejecting spring bone data from '%s' due to validation errors above; skipping spring asset generation."), *Filename);
             return false;

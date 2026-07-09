@@ -534,8 +534,12 @@ namespace
                             // the number is a glTF node index, not an Out.Joints array index, so
                             // wrap it in a joint entry and use the index Add() returns - same
                             // pattern as the object-form branch above and ParseVRM0 below.
+                            // Use TryGetNumber rather than AsNumber: a malformed file could put a
+                            // non-numeric value here, and AsNumber() logs/asserts on type mismatch
+                            // instead of failing quietly.
                             FVRMSpringJoint J;
-                            J.NodeIndex = JV.IsValid() ? (int32)JV->AsNumber() : INDEX_NONE;
+                            double NodeIndexNum = 0.0;
+                            J.NodeIndex = (JV.IsValid() && JV->TryGetNumber(NodeIndexNum)) ? (int32)NodeIndexNum : INDEX_NONE;
                             const int32 NewJointIndex = Out.Joints.Add(MoveTemp(J));
                             S.JointIndices.Add(NewJointIndex);
                         }
