@@ -256,9 +256,12 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
         // settings, not our default remapper) before this ever ran on the first Apply.
         if (!bEnsuredDefaults)
         {
-            EnsureSubjectSettingsWithDefaults();
+            EnsureSubjectSettingsWithDefaults(); // already calls RefreshStaticMapsFromSettings() internally
         }
-        RefreshStaticMapsFromSettings();
+        else
+        {
+            RefreshStaticMapsFromSettings();
+        }
 
         if (bForceStaticNext || !bStaticSent)
         {

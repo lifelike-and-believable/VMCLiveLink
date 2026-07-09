@@ -12,8 +12,10 @@ Modes:
 
 Notes:
 - Strips any UTF-8 BOM (U+FEFF) that may exist at the start of the file.
-- Reads with utf-8-sig and writes with utf-8 (no BOM) to prevent BOM from
-  appearing before includes/pragma lines.
+- Only the first line is ever decoded as text (to detect/build the header);
+  everything after it is read and rewritten as untouched raw bytes, so a
+  file that isn't valid UTF-8 past the header line can't get silently
+  mangled by a lossy decode/re-encode round-trip.
 - Preserves existing line endings (LF or CRLF) when inserting/updating the
   header.
 - Handles year ranges with hyphen or en dash.
@@ -27,20 +29,21 @@ import sys
 
 CURRENT_YEAR = datetime.date.today().year
 DEFAULT_HOLDER = "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
+BOM = b"\xef\xbb\xbf"
 
 YEAR_RANGE_SPLIT_RE = re.compile(r"[–-]")  # hyphen or en dash
 HEADER_LINE_RE = re.compile(r"//\s*Copyright\s*\(c\)\s*([0-9]{4}(?:[–-][0-9]{4})?)\s+.+", re.I)
 
 
-def detect_eol(lines):
-    # Try to preserve existing newline style
-    for l in lines:
-        if l.endswith("\r\n"):
-            return "\r\n"
-        if l.endswith("\n"):
-            return "\n"
-    # Default to '\n' if we can't detect
-    return "\n"
+def split_first_line(raw):
+    """Split raw bytes into (first_line_bytes, eol_bytes, rest_bytes). eol_bytes
+    is b"" if the file has no newline (single line, nothing to preserve after it)."""
+    idx = raw.find(b"\n")
+    if idx == -1:
+        return raw, b"", b""
+    if idx > 0 and raw[idx - 1:idx] == b"\r":
+        return raw[:idx - 1], b"\r\n", raw[idx + 1:]
+    return raw[:idx], b"\n", raw[idx + 1:]
 
 
 def normalize_years(years_str):
@@ -66,21 +69,20 @@ def desired_header_line(holder, years):
 def process_file(path, holder, verify):
     """Returns the path if it has a missing/outdated header, else None.
     In fix mode (verify=False), also rewrites the file and returns None."""
-    # Read using utf-8-sig to automatically remove BOM if present
-    with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
-        lines = f.readlines()
+    with open(path, "rb") as f:
+        raw = f.read()
 
-    if not lines:
+    if not raw:
         return None
 
-    # Defensive: strip any lingering BOM at the very start of the file
-    if lines[0].startswith("﻿"):
-        lines[0] = lines[0].lstrip("﻿")
+    if raw.startswith(BOM):
+        raw = raw[len(BOM):]
 
-    eol = detect_eol(lines)
-
-    # Work with the first line without its trailing newline
-    first_line_no_eol = lines[0].rstrip("\r\n")
+    first_bytes, eol, rest = split_first_line(raw)
+    # Only this slice is ever decoded, and only to detect/parse an existing
+    # header - the decoded string is never written back, so a lossy decode
+    # here (errors="ignore") can't corrupt anything.
+    first_line_no_eol = first_bytes.decode("utf-8", errors="ignore")
 
     m = HEADER_LINE_RE.match(first_line_no_eol)
     if m:
@@ -90,15 +92,15 @@ def process_file(path, holder, verify):
             return None
         if verify:
             return path
-        lines[0] = desired + eol
+        new_raw = desired.encode("utf-8") + (eol or b"\n") + rest
     else:
         desired = desired_header_line(holder, str(CURRENT_YEAR))
         if verify:
             return path
-        lines.insert(0, desired + eol)
+        new_raw = desired.encode("utf-8") + b"\n" + raw
 
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        f.writelines(lines)
+    with open(path, "wb") as f:
+        f.write(new_raw)
     print(f"Updated: {path}")
     return None
 
