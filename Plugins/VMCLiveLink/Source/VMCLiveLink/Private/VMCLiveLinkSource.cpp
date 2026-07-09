@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkSource.h"
 #include "VMCLog.h"
 
@@ -249,13 +249,15 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
     }
     else if (Addr == TEXT("/VMC/Ext/Blend/Apply"))
     {
-        AsyncTask(ENamedThreads::GameThread, [this]()
+        // If we haven't yet attached defaults, do it now. OSC messages are always
+        // dispatched on the Game Thread (see UOSCServer::PumpPacketQueue), so this can
+        // run synchronously; deferring it via AsyncTask raced the PushStaticData/PushFrame
+        // calls below and could let the subject get auto-created (with generic default
+        // settings, not our default remapper) before this ever ran on the first Apply.
+        if (!bEnsuredDefaults)
         {
-            if (!bEnsuredDefaults)
-            {
-                EnsureSubjectSettingsWithDefaults();
-            }
-        });
+            EnsureSubjectSettingsWithDefaults();
+        }
         RefreshStaticMapsFromSettings();
 
         if (bForceStaticNext || !bStaticSent)
@@ -457,23 +459,6 @@ uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FNam
         };
     Mix(A); Mix(B);
     return H;
-}
-
-void FVMCLiveLinkSource::RefreshStaticMapsIfNeeded()
-{
-    UVMCLiveLinkRemapper* R = StaticNameRemapper.LoadSynchronous();
-    if (!R) return;
-
-    const uint32 NewHash = HashMaps(R->BoneNameMap, R->CurveNameMap);
-    if (NewHash != CachedMapsHash)
-    {
-        CachedMapsHash = NewHash;
-        CachedBoneMap = R->BoneNameMap;
-        CachedCurveMap = R->CurveNameMap;
-
-        // Force one static publish on next /Apply to propagate new names
-        bForceStaticNext = true;
-    }
 }
 
 void FVMCLiveLinkSource::BuildRefOffsetsFromMesh(USkeletalMesh* Mesh)
