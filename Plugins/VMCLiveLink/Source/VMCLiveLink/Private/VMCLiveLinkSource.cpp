@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkSource.h"
 #include "VMCLog.h"
 
@@ -249,14 +249,19 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
     }
     else if (Addr == TEXT("/VMC/Ext/Blend/Apply"))
     {
-        AsyncTask(ENamedThreads::GameThread, [this]()
+        // If we haven't yet attached defaults, do it now. OSC messages are always
+        // dispatched on the Game Thread (see UOSCServer::PumpPacketQueue), so this can
+        // run synchronously; deferring it via AsyncTask raced the PushStaticData/PushFrame
+        // calls below and could let the subject get auto-created (with generic default
+        // settings, not our default remapper) before this ever ran on the first Apply.
+        if (!bEnsuredDefaults)
         {
-            if (!bEnsuredDefaults)
-            {
-                EnsureSubjectSettingsWithDefaults();
-            }
-        });
-        RefreshStaticMapsFromSettings();
+            EnsureSubjectSettingsWithDefaults(); // already calls RefreshStaticMapsFromSettings() internally
+        }
+        else
+        {
+            RefreshStaticMapsFromSettings();
+        }
 
         if (bForceStaticNext || !bStaticSent)
         {
@@ -385,9 +390,19 @@ void FVMCLiveLinkSource::PushFrame()
         // Translation handling
         if (LocalBoneParents.IsValidIndex(i) && LocalBoneParents[i] == -1)
         {
-            // Root gets live root translation
-            const FTransform* In = LocalPose.Find(SrcName);
-            X.SetTranslation(In->GetTranslation());
+            // Root gets live root translation. Prefer a Bone/Pos entry explicitly
+            // named "root" if the sender provided one; otherwise fall back to the
+            // dedicated /VMC/Ext/Root/Pos stream (LocalRoot), which is the common case
+            // and the only source of root data with the bundled sample sender.
+            if (const FTransform* In = LocalPose.Find(SrcName))
+            {
+                X.SetTranslation(In->GetTranslation());
+            }
+            else
+            {
+                X.SetTranslation(LocalRoot.GetTranslation());
+                X.SetRotation(LocalRoot.GetRotation());
+            }
         }
         else
         {
@@ -447,23 +462,6 @@ uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FNam
         };
     Mix(A); Mix(B);
     return H;
-}
-
-void FVMCLiveLinkSource::RefreshStaticMapsIfNeeded()
-{
-    UVMCLiveLinkRemapper* R = StaticNameRemapper.LoadSynchronous();
-    if (!R) return;
-
-    const uint32 NewHash = HashMaps(R->BoneNameMap, R->CurveNameMap);
-    if (NewHash != CachedMapsHash)
-    {
-        CachedMapsHash = NewHash;
-        CachedBoneMap = R->BoneNameMap;
-        CachedCurveMap = R->CurveNameMap;
-
-        // Force one static publish on next /Apply to propagate new names
-        bForceStaticNext = true;
-    }
 }
 
 void FVMCLiveLinkSource::BuildRefOffsetsFromMesh(USkeletalMesh* Mesh)

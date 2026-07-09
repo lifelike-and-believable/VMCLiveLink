@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #pragma once
 #include "CoreMinimal.h"
 #include "Factories/Factory.h"

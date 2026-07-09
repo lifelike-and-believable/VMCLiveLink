@@ -10,7 +10,7 @@ on:
       holder:
         description: "Copyright holder text"
         required: true
-        default: "Lifelike & Believable Animation Design, Inc."
+        default: "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
 
 permissions:
   contents: write

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 ...
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkMappingAsset.h"
 
 #if WITH_EDITOR

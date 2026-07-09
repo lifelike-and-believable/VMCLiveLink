@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #pragma once
 
 #include "LiveLinkSourceFactory.h"
@@ -18,7 +18,7 @@ public:
 	virtual FText GetSourceTooltip() const override { return NSLOCTEXT("VMCLiveLink", "Tooltip", "Receive VMC (OSC) motion/curves"); }
 
 #if WITH_EDITOR
-	// Editor-only UI surface — kept out of runtime builds
+	// Editor-only UI surface - kept out of runtime builds
 	virtual EMenuType GetMenuType() const override { return EMenuType::SubPanel; }
 	virtual TSharedPtr<SWidget> BuildCreationPanel(FOnLiveLinkSourceCreated OnLiveLinkSourceCreated) const override;
 #endif

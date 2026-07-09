@@ -43,14 +43,14 @@ jobs:
           if (-not (Test-Path "scripts\build_fab.ps1")) {
             Write-Error "scripts/build_fab.ps1 not found. Commit the script to scripts/build_fab.ps1 or update the workflow path."
           }
-          if (-not (Test-Path "scripts\add_copyright_headers.py")) {
-            Write-Error "scripts/add_copyright_headers.py not found. Commit the script to scripts/add_copyright_headers.py or update the workflow path."
+          if (-not (Test-Path "scripts\verify_copyright_headers.ps1")) {
+            Write-Error "scripts/verify_copyright_headers.ps1 not found. Commit the script to scripts/verify_copyright_headers.ps1 or update the workflow path."
           }
 
       - name: Verify copyright headers
         run: |
           $PluginDir = $env:PLUGIN_DIR
-          python "scripts\add_copyright_headers.py" $PluginDir --holder "Lifelike & Believable Animation Design, Inc." --verify
+          ./scripts/verify_copyright_headers.ps1 -PluginDir $PluginDir -Holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
 
       - name: Build Fab packages (VMCLiveLink and VRMInterchange)
         run: |
@@ -203,6 +203,7 @@ jobs:
 
       - name: Create GitHub Release
         id: create_release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
         uses: actions/create-release@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -213,6 +214,7 @@ jobs:
           prerelease: false
 
       - name: Upload release asset (Combined VRM & VMC files .zip)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -221,6 +223,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload release asset (VMCLiveLink-only.zip)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -229,6 +232,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload release asset (VRMInterchange-only.zip)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
