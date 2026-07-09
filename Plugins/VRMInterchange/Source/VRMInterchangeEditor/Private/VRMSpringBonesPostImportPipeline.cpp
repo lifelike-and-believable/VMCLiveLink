@@ -19,6 +19,7 @@
 #include "UObject/Package.h"
 #include "Misc/SecureHash.h"
 #include "VRMSpringBonesParser.h"
+#include "VRMSpringBonesValidation.h"
 #include "VRMInterchangeLog.h"
 #include "VRMInterchangeSettings.h"
 
@@ -200,6 +201,26 @@ bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAssetFromFile(const FStr
     if (!bParsed)
     {
         return false;
+    }
+
+    // Reject malformed configs (e.g. joint/collider/group indices out of range) before they ever
+    // reach BuildResolvedChildren() or the runtime spring solver, both of which index into these
+    // arrays without their own bounds checks.
+    {
+        const VRM::FVRMValidationResult Validation = VRM::ValidateSpringConfig(Config);
+        for (const FString& WarningMsg : Validation.Warnings)
+        {
+            UE_LOG(LogVRMSpring, Warning, TEXT("[VRMInterchange] Spring pipeline: %s (%s)"), *WarningMsg, *Filename);
+        }
+        if (!Validation.bIsValid)
+        {
+            for (const FString& ErrorMsg : Validation.Errors)
+            {
+                UE_LOG(LogVRMSpring, Error, TEXT("[VRMInterchange] Spring pipeline: %s (%s)"), *ErrorMsg, *Filename);
+            }
+            UE_LOG(LogVRMSpring, Error, TEXT("[VRMInterchange] Spring pipeline: Rejecting spring bone data from '%s' due to validation errors above; skipping spring asset generation."), *Filename);
+            return false;
+        }
     }
 
     Dest->SpringConfig = MoveTemp(Config);
