@@ -211,12 +211,26 @@ function Set-EngineVersionInUPlugin($jsonPath, $engineVersion) {
   Set-Content -Value $txt -Path $jsonPath -Encoding UTF8
 }
 
+$BuiltVersionCount = 0
+
 for ($i = 0; $i -lt $EngineRoots.Count; $i++) {
-  $root = (Resolve-Path -Path $EngineRoots[$i] -ErrorAction Stop).Path
   $ver = $EngineVersions[$i]
+
+  # Engine versions are built opportunistically: a root that isn't installed on this
+  # runner yet (e.g. a newer engine version added to CI config before the runner has
+  # it) is skipped with a warning instead of failing the whole job, so onboarding a
+  # new engine version doesn't require a synchronized runner update in lockstep.
+  if (-not (Test-Path -Path $EngineRoots[$i])) {
+    Write-Warning "Engine root not found, skipping UE $ver : $($EngineRoots[$i])"
+    continue
+  }
+  $root = (Resolve-Path -Path $EngineRoots[$i] -ErrorAction Stop).Path
   $uat = Join-Path $root "Engine\Build\BatchFiles\RunUAT.bat"
-  if (-not (Test-Path -Path $uat)) { Fail "RunUAT not found at $uat" }
-  
+  if (-not (Test-Path -Path $uat)) {
+    Write-Warning "RunUAT not found, skipping UE $ver : $uat"
+    continue
+  }
+
   $stage = Join-Path $OutputDir "$pluginName-UE$($ver.Replace('.','_'))-Stage"
   if (Test-Path -Path $stage) { Remove-Item -Recurse -Force -Path $stage }
   New-Item -ItemType Directory -Path $stage -Force | Out-Null
@@ -242,6 +256,11 @@ for ($i = 0; $i -lt $EngineRoots.Count; $i++) {
   [System.IO.Compression.ZipFile]::CreateFromDirectory($packageDir, $zipPath)
 
   Write-Host "Packaged: $zipPath"
+  $BuiltVersionCount++
 }
 
-Write-Host "Done."
+if ($BuiltVersionCount -eq 0) {
+  Fail "No engine versions were built (none of the configured EngineRoots were found on this runner)."
+}
+
+Write-Host "Done. Built $BuiltVersionCount of $($EngineRoots.Count) requested engine version(s)."

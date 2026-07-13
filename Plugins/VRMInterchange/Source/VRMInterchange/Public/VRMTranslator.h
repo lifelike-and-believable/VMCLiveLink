@@ -113,8 +113,13 @@ public:
     virtual bool Translate(UInterchangeBaseNodeContainer& NodeContainer) const override;
 
     // IInterchangeMeshPayloadInterface (UE 5.6)
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION <= 6
+    // Epic marked this overload deprecated starting in 5.6; guarding it so a future
+    // engine version that removes the base virtual entirely (rather than just
+    // deprecating it) doesn't break this "override" at compile time.
     UE_DEPRECATED(5.6, "Deprecated. Use GetMeshPayloadData(const FInterchangeMeshPayLoadKey&, const UE::Interchange::FAttributeStorage&) instead.")
     virtual TOptional<UE::Interchange::FMeshPayloadData> GetMeshPayloadData(const FInterchangeMeshPayLoadKey& PayLoadKey, const FTransform& MeshGlobalTransform) const override;
+#endif
 
     virtual TOptional<UE::Interchange::FMeshPayloadData> GetMeshPayloadData(const FInterchangeMeshPayLoadKey& PayLoadKey, const UE::Interchange::FAttributeStorage& PayloadAttributes) const override;
 

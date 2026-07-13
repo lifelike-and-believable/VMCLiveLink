@@ -59,6 +59,7 @@
   "MarketplaceURL": "",
   "EngineVersion": "5.6.0",
   "SupportURL": "",
+  "SupportedTargetPlatforms": [ "Win64" ],
   "CanContainContent": true,
   "IsBetaVersion": false,
   "IsExperimentalVersion": false,
