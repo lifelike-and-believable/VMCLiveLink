@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "InterchangeTranslatorBase.h"
+#include "Runtime/Launch/Resources/Version.h" // ENGINE_MAJOR_VERSION / ENGINE_MINOR_VERSION are not implicitly visible here
 
 #if __has_include("Mesh/InterchangeMeshPayloadInterface.h")
   #include "Mesh/InterchangeMeshPayloadInterface.h"
