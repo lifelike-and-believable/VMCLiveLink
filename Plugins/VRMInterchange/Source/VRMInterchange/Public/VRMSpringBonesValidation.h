@@ -11,7 +11,7 @@ namespace VRM
      * Validation and diagnostic utilities for VRM spring bone configurations
      */
     
-    VRMINTERCHANGE_API struct FVRMValidationResult
+    struct VRMINTERCHANGE_API FVRMValidationResult
     {
         bool bIsValid = false;
         TArray<FString> Warnings;
