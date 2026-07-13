@@ -39,8 +39,8 @@ This repository includes automated GitHub Actions to keep the plugins Fab-ready.
 
 Runs on tag push (`release/*`) or manually via **Actions → Fab Plugin Builds**:
 - Verifies all source files in `Plugins/VMCLiveLink` have a valid copyright header.
-- Builds both the VMCLiveLink and VRMInterchange plugins against the UE 5.6 engine root configured in the workflow.
-- Produces Fab-ready zips (a combined package plus one per plugin) as downloadable artifacts.
+- Builds both the VMCLiveLink and VRMInterchange plugins against each UE engine root configured in the workflow (currently 5.6, 5.7, and 5.8). An engine version whose root isn't installed on the runner yet is skipped with a warning rather than failing the job, so a version can be added to the config ahead of the runner having it installed.
+- Produces Fab-ready zips (a combined package plus one per plugin, per built engine version) as downloadable artifacts.
 - On a `release/*` tag push, also publishes those zips to a GitHub Release. Manual `workflow_dispatch` runs skip release creation and only produce the build artifacts.
 
 **Usage:**
