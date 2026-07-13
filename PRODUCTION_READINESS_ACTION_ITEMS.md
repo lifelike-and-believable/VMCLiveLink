@@ -548,21 +548,21 @@ Create video tutorial series for YouTube/documentation site.
 ## Priority 4: Low (Future Versions)
 
 ### 4.1 VRM 1.0 Support
-- **Status:** ❌ Not Started
+- **Status:** ✅ Complete (spring bones); VRM 1.0 mesh/skeleton import already supported
 - **Priority:** LOW
-- **Effort:** 3-4 weeks
 - **Owner:** TBD
-- **Due Date:** v1.3+
 
 **Description:**
-Add support for VRM 1.0 format (currently supports VRM 0.x).
+VRM 1.0 support has landed: `VRMSpringBonesParser.cpp` parses both the
+VRM 0.x (`secondaryAnimation`) and VRM 1.0 (`VRMC_springBone`) spring bone
+formats, `VRM::ValidateSpringConfig()` is wired into the import pipeline to
+reject malformed VRM 1.0 spring configs before they reach the runtime solver,
+and VRM 0.x compatibility is unaffected. The plugin README's Known
+Limitations section already reflects VRM 1.0 support.
 
-**Requirements:**
-- [ ] Update cgltf or use alternate parser
-- [ ] Parse VRM 1.0 extensions
-- [ ] Support new spring bone format
-- [ ] Update validation logic
-- [ ] Maintain backward compatibility with VRM 0.x
+**Remaining:**
+- [ ] Broader glTF 2.0 feature coverage beyond the VRM-specific subset
+      (not VRM-1.0-specific; see PRODUCTION_READINESS_ANALYSIS.md §9.2)
 
 ---
 
