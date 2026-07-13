@@ -844,7 +844,6 @@ return HeadWS + Dir * State.WorldBoneLength;
    - <2% bug rate per release
 
 4. **Feature Expansion**
-   - VRM 1.0 support
    - Advanced spring bone features
    - Performance optimizations (SIMD)
    - Additional VMC protocol extensions
