@@ -93,11 +93,11 @@ jobs:
           # a single version from ENGINE_VERSIONS[0] — with multiple engine versions
           # now configured, collapsing them into one un-versioned output folder would
           # silently overwrite one version's binaries with another's.
-          $VersionTokens = $ZipFiles | ForEach-Object {
+          $VersionTokens = @($ZipFiles | ForEach-Object {
             if ($_.Name -match '_UE(\d+)_(\d+)_Fab\.zip$') {
               "$($matches[1]).$($matches[2])"
             }
-          } | Sort-Object -Unique
+          } | Where-Object { $_ } | Sort-Object -Unique)
 
           if (-not $VersionTokens -or $VersionTokens.Count -eq 0) {
             Write-Error "Could not parse an engine version out of any zip filename in $OutputDir"
