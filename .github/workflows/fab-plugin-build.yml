@@ -49,8 +49,12 @@ jobs:
 
       - name: Verify copyright headers
         run: |
-          $PluginDir = $env:PLUGIN_DIR
-          ./scripts/verify_copyright_headers.ps1 -PluginDir $PluginDir -Holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
+          $failed = $false
+          foreach ($pd in @($env:PLUGIN_DIR, $env:VRM_PLUGIN_DIR)) {
+            ./scripts/verify_copyright_headers.ps1 -PluginDir $pd -Holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
 
       - name: Build Fab packages (VMCLiveLink and VRMInterchange)
         run: |
