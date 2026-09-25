@@ -102,10 +102,10 @@ namespace VRMSkinMappingTests
 			{
 				continue;
 			}
-			const FVector Expected = ExpectedPosition(Pair.Value->AsObject(), Model.GlobalScale);
-			const FVector Actual = BoneRestPosition(Model, BoneIndex);
-			Test.TestTrue(FString::Printf(TEXT("%s: joint node %d rest position %s (expected %s)"), Name, Node, *Actual.ToString(), *Expected.ToString()),
-				Actual.Equals(Expected, PositionTolerance));
+			const FVector ExpectedBonePos = ExpectedPosition(Pair.Value->AsObject(), Model.GlobalScale);
+			const FVector ActualBonePos = BoneRestPosition(Model, BoneIndex);
+			Test.TestTrue(FString::Printf(TEXT("%s: joint node %d rest position %s (expected %s)"), Name, Node, *ActualBonePos.ToString(), *ExpectedBonePos.ToString()),
+				ActualBonePos.Equals(ExpectedBonePos, PositionTolerance));
 		}
 
 		const TSharedPtr<FJsonObject>* ExpectedNames = nullptr;
