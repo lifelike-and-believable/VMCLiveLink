@@ -100,6 +100,9 @@ namespace VRM
 {
     /** Parses a .vrm file into Out (what UVRMTranslator translates). Exposed for tests. */
     VRMINTERCHANGE_API bool LoadVRMFile(const FString& Filename, FVRMParsedModel& Out);
+
+    /** The importer's glTF-to-UE position conversion (axes and GlobalScale). Exposed for tests. */
+    VRMINTERCHANGE_API FVector GltfPositionToUE(const FVector& GltfPosition, float GlobalScale);
 }
 
 #include "VRMTranslator.generated.h"

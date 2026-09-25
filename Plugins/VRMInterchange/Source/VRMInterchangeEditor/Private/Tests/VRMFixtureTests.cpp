@@ -27,6 +27,7 @@ namespace VRMFixtures
 		TEXT("rigid_accessory"),
 		TEXT("unnamed_and_duplicate_nodes"),
 		TEXT("armature_transform"),
+		TEXT("bind_pose_offset"),
 	};
 }
 
