@@ -24,7 +24,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           lfs: true
           
@@ -196,7 +196,7 @@ jobs:
           Remove-Item -Path $TempDirVRM -Recurse -Force
 
       - name: Upload artifacts (all three zips)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: VMCLiveLink-Packages
           path: |
