@@ -5,21 +5,28 @@ name: PR Build and Tests
 # fab-plugin-build.yml.
 
 on:
+  # Every same-repo pull request, whatever its base, so stacked PRs are built too. "edited"
+  # is included so that retargeting a PR (for example to main after its base merges) builds it;
+  # the job skips other edits such as title or description changes.
   pull_request:
-    branches: [ main ]
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: pr-build-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build-and-test:
-    # The runner is self-hosted: never run code from forks on it.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    # The runner is self-hosted: never run code from forks on it. For "edited" events, only a
+    # base-branch change needs a new build.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       (github.event.action != 'edited' || github.event.changes.base != null))
+    # Job-level so that a skipped run (a title edit) doesn't cancel a build in progress.
+    concurrency:
+      group: pr-build-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 120
     defaults:
@@ -32,7 +39,7 @@ jobs:
       TEST_FILTER: 'VRM.;VMC.'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           lfs: true
 
@@ -106,7 +113,7 @@ jobs:
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: automation-report
           path: TestReport
