@@ -45,7 +45,6 @@ static const cgltf_accessor* FindTargetAccessor(const cgltf_morph_target& Tgt, c
 static void ReadAccessorVec3f(const cgltf_accessor& A, TArray<FVector3f>& Out);
 static void ReadAccessorVec2f(const cgltf_accessor& A, TArray<FVector2f>& Out);
 static void ReadIndicesUInt32(const cgltf_accessor& A, TArray<uint32>& Out);
-static FTransform NodeTRS(const cgltf_node* N);
 
 // New validation helper (centralized checks)
 static bool ValidateCgltfData(const cgltf_data* Data, FString& OutError);
@@ -53,11 +52,25 @@ static bool ValidateCgltfData(const cgltf_data* Data, FString& OutError);
 // New forward for extracted image loader
 static bool LoadImagesFromCgltf(const cgltf_data* Data, const FString& Filename, FVRMParsedModel& Out);
 
-// New forward for extracted primitive-merge phase
-static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone, FVRMParsedModel& Out);
+// A mesh as placed in the scene by one node. Meshes are imported once per node that uses them.
+struct FVRMMeshInstance
+{
+    const cgltf_node* Node = nullptr;
+    const cgltf_skin* Skin = nullptr;       // the node's skin, if any
+    FMatrix World = FMatrix::Identity;      // node world transform in glTF space (used for rigid primitives)
+    int32 RigidBone = 0;                    // bone that rigid primitives are bound to
+};
 
-// New forward for extracted morph-target merge phase
-static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out);
+// Mesh nodes of the scene, in node index order.
+static TArray<FVRMMeshInstance> CollectMeshInstances(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone);
+
+// Appends every primitive of every mesh instance to Out.Mesh, in the rest pose. OutVertexToRest
+// receives, per vertex, the glTF-space transform that was applied (for morph target deltas).
+static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TMap<int32, int32>& NodeToBone,
+    FVRMParsedModel& Out, TArray<FMatrix44f>& OutVertexToRest);
+
+// Morph targets of the same mesh instances, in the same vertex order.
+static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FMatrix44f>& VertexToRest, FVRMParsedModel& Out);
 
 // New forward for extracted material parsing
 static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out);
@@ -805,46 +818,185 @@ static FCgltfScoped ParseCgltfFile(const FString& Filename, FString& OutError)
     return ScopedData;
 }
 
-static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone, FVRMParsedModel& Out)
+// cgltf matrices are column-major for column vectors; FMatrix uses row vectors, so the same 16
+// floats in row-major order give the equivalent FMatrix. Axes are unchanged (still glTF space).
+static FMatrix CgltfToFMatrix(const cgltf_float M[16])
 {
-    if (!Data) return false;
-
-    // JOINTS_n values index into the skin of the node that instantiates the mesh, so find each
-    // mesh's skin through its nodes. (Meshes are still merged once each; placing rigid meshes by
-    // their node transforms is a separate fix.)
-    TMap<const cgltf_mesh*, const cgltf_skin*> MeshSkin;
-    for (size_t ni = 0; ni < Data->nodes_count; ++ni)
+    FMatrix Result;
+    for (int32 r = 0; r < 4; ++r)
     {
-        const cgltf_node& Node = Data->nodes[ni];
-        if (Node.mesh && Node.skin)
+        for (int32 c = 0; c < 4; ++c)
         {
-            if (const cgltf_skin* const* Existing = MeshSkin.Find(Node.mesh))
+            Result.M[r][c] = M[r * 4 + c];
+        }
+    }
+    return Result;
+}
+
+static FMatrix NodeWorldMatrix(const cgltf_node* Node)
+{
+    // Includes every ancestor (joint or not), node matrices and scale.
+    cgltf_float M[16];
+    cgltf_node_transform_world(Node, M);
+    return CgltfToFMatrix(M);
+}
+
+static FVector3f TransformNormal(const FMatrix& InverseTranspose, const FVector3f& N)
+{
+    const FVector3f Out = FVector3f(FVector(InverseTranspose.TransformVector(FVector(N))));
+    return Out.GetSafeNormal(UE_SMALL_NUMBER, FVector3f(0, 0, 1));
+}
+
+FVector VRM::GltfPositionToUE(const FVector& GltfPosition, float GlobalScale)
+{
+    return RefFix_Vector(GltfToUE_Vector(GltfPosition)) * GlobalScale;
+}
+
+static TArray<FVRMMeshInstance> CollectMeshInstances(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone)
+{
+    TArray<FVRMMeshInstance> Instances;
+    if (!Data)
+    {
+        return Instances;
+    }
+
+    // Only nodes in the scene are drawn. Without a scene, use every node.
+    const cgltf_scene* Scene = Data->scene ? Data->scene : (Data->scenes_count > 0 ? &Data->scenes[0] : nullptr);
+    TSet<const cgltf_node*> InScene;
+    if (Scene)
+    {
+        TArray<const cgltf_node*> Stack;
+        for (size_t i = 0; i < Scene->nodes_count; ++i)
+        {
+            Stack.Add(Scene->nodes[i]);
+        }
+        while (Stack.Num() > 0)
+        {
+            const cgltf_node* Node = Stack.Pop(EAllowShrinking::No);
+            if (!Node || InScene.Contains(Node))
             {
-                if (*Existing != Node.skin)
-                {
-                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Mesh '%s' is used with more than one skin; using the first."),
-                        Node.mesh->name ? UTF8_TO_TCHAR(Node.mesh->name) : TEXT("?"));
-                }
+                continue;
             }
-            else
+            InScene.Add(Node);
+            for (size_t ci = 0; ci < Node->children_count; ++ci)
             {
-                MeshSkin.Add(Node.mesh, Node.skin);
+                Stack.Add(Node->children[ci]);
             }
         }
     }
 
-    int32 VertexBase = 0;
-    for (size_t mi = 0; mi < Data->meshes_count; ++mi)
+    // Node index order keeps the vertex order stable and independent of the hierarchy.
+    TSet<const cgltf_mesh*> UsedMeshes;
+    for (size_t ni = 0; ni < Data->nodes_count; ++ni)
     {
-        const cgltf_mesh* Mesh = &Data->meshes[mi];
+        const cgltf_node* Node = &Data->nodes[ni];
+        if (!Node->mesh || (Scene && !InScene.Contains(Node)))
+        {
+            continue;
+        }
+        UsedMeshes.Add(Node->mesh);
+
+        FVRMMeshInstance& Instance = Instances.AddDefaulted_GetRef();
+        Instance.Node = Node;
+        Instance.Skin = Node->skin;
+        Instance.World = NodeWorldMatrix(Node);
+
+        // Rigid geometry follows the node itself when it is a joint, otherwise its nearest joint ancestor.
+        for (const cgltf_node* P = Node; P; P = P->parent)
+        {
+            if (const int32* Bone = NodeToBone.Find(int32(P - Data->nodes)))
+            {
+                Instance.RigidBone = *Bone;
+                break;
+            }
+        }
+    }
+
+    const int32 Unused = int32(Data->meshes_count) - UsedMeshes.Num();
+    if (Unused > 0)
+    {
+        UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] %d mesh(es) are not placed by any node in the scene and were not imported."), Unused);
+    }
+    return Instances;
+}
+
+// Per skin, per bone: the joint matrix (inverse bind, then joint world) that takes bind-space
+// vertices to the rest pose. Identity for every joint when the mesh was bound in the rest pose.
+struct FVRMSkinRestPose
+{
+    TArray<FMatrix> BoneXf;   // indexed by bone index
+    bool bIsRestPose = true;
+};
+
+static FVRMSkinRestPose ComputeSkinRestPose(const cgltf_skin& Skin, const cgltf_data& Data, const TMap<int32, int32>& NodeToBone, int32 NumBones)
+{
+    // Tolerances in glTF units: rotation/scale terms, and metres for translation.
+    constexpr double LinearTolerance = 1.e-4;
+    constexpr double TranslationTolerance = 1.e-4;
+
+    FVRMSkinRestPose Result;
+    Result.BoneXf.Init(FMatrix::Identity, NumBones);
+    for (size_t j = 0; j < Skin.joints_count; ++j)
+    {
+        const cgltf_node* Joint = Skin.joints[j];
+        const int32* Bone = Joint ? NodeToBone.Find(int32(Joint - Data.nodes)) : nullptr;
+        if (!Bone || !Result.BoneXf.IsValidIndex(*Bone))
+        {
+            continue;
+        }
+
+        // glTF defaults a missing inverseBindMatrices accessor to identity matrices.
+        FMatrix InverseBind = FMatrix::Identity;
+        if (Skin.inverse_bind_matrices)
+        {
+            cgltf_float M[16];
+            if (cgltf_accessor_read_float(Skin.inverse_bind_matrices, j, M, 16))
+            {
+                InverseBind = CgltfToFMatrix(M);
+            }
+        }
+
+        // Row vectors: apply the inverse bind first, then the joint's world transform.
+        const FMatrix JointXf = InverseBind * NodeWorldMatrix(Joint);
+        Result.BoneXf[*Bone] = JointXf;
+
+        for (int32 r = 0; r < 4 && Result.bIsRestPose; ++r)
+        {
+            for (int32 c = 0; c < 4; ++c)
+            {
+                const double Tolerance = (r == 3) ? TranslationTolerance : LinearTolerance;
+                if (FMath::Abs(JointXf.M[r][c] - FMatrix::Identity.M[r][c]) > Tolerance)
+                {
+                    Result.bIsRestPose = false;
+                    break;
+                }
+            }
+        }
+    }
+    return Result;
+}
+
+static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TMap<int32, int32>& NodeToBone,
+    FVRMParsedModel& Out, TArray<FMatrix44f>& OutVertexToRest)
+{
+    if (!Data) return false;
+
+    TMap<const cgltf_skin*, FVRMSkinRestPose> SkinRestPoses;
+
+    int32 VertexBase = 0;
+    for (const FVRMMeshInstance& Instance : Instances)
+    {
+        const cgltf_mesh* Mesh = Instance.Node->mesh;
+        const int32 NodeIndex = int32(Instance.Node - Data->nodes);
+        const FMatrix NodeNormalXf = Instance.World.Inverse().GetTransposed();
+        const bool bNodeMirrors = Instance.World.Determinant() < 0.0;
+
         for (size_t pi = 0; pi < Mesh->primitives_count; ++pi)
         {
             const cgltf_primitive* Prim = &Mesh->primitives[pi];
-            const cgltf_skin* const* SkinPtr = MeshSkin.Find(Mesh);
-            const cgltf_skin* Skin = SkinPtr ? *SkinPtr : nullptr;
 
             // POSITION
-            TArray<FVector3f> PosLocal; PosLocal.Reset();
+            TArray<FVector3f> PosLocal;
             if (const cgltf_attribute* A = FindAttribute(Prim, cgltf_attribute_type_position))
             {
                 if (!A->data) { continue; }
@@ -853,14 +1005,14 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, 
             else { continue; }
 
             // NORMAL
-            TArray<FVector3f> NrmLocal; NrmLocal.Reset();
+            TArray<FVector3f> NrmLocal;
             if (const cgltf_attribute* A = FindAttribute(Prim, cgltf_attribute_type_normal))
             {
                 if (A->data) { ReadAccessorVec3f(*A->data, NrmLocal); }
             }
 
             // TEXCOORD_0
-            TArray<FVector2f> UVLocal; UVLocal.Reset();
+            TArray<FVector2f> UVLocal;
             if (const cgltf_attribute* A = FindTexcoord(Prim, 0))
             {
                 if (A->data) { ReadAccessorVec2f(*A->data, UVLocal); }
@@ -873,7 +1025,7 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, 
             const int32 VertCount = PosLocal.Num();
 
             // Indices for this primitive
-            TArray<uint32> IndLocal; IndLocal.Reset();
+            TArray<uint32> IndLocal;
             if (Prim->indices) { ReadIndicesUInt32(*Prim->indices, IndLocal); }
             else
             {
@@ -881,21 +1033,87 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, 
                 for (int32 i = 0; i < VertCount; ++i) { IndLocal[i] = i; }
             }
 
-            // Append converted vertices
+            // JOINTS/WEIGHTS. A primitive is skinned only when its node has a skin and the
+            // primitive carries matching JOINTS_0/WEIGHTS_0; everything else is rigid.
+            TArray<FVRMParsedMesh::FWeight> Weights;
+            bool bSkinned = false;
+            if (Instance.Skin)
+            {
+                const cgltf_attribute* AJ = FindJoints(Prim, 0);
+                const cgltf_attribute* AW = FindWeights(Prim, 0);
+                if (AJ && AW && AJ->data && AW->data && int32(AJ->data->count) == VertCount && int32(AW->data->count) == VertCount)
+                {
+                    Weights.SetNumZeroed(VertCount);
+                    const int32 InvalidInfluences = ReadJointsWeights(*AJ->data, *AW->data, *Instance.Skin, *Data, NodeToBone, Weights);
+                    if (InvalidInfluences > 0)
+                    {
+                        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Node %d primitive %d: %d joint influences reference joints outside the skin and were dropped."),
+                            NodeIndex, int32(pi), InvalidInfluences);
+                    }
+                    bSkinned = true;
+                }
+                if (FindJoints(Prim, 1) || FindWeights(Prim, 1))
+                {
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Node %d primitive %d has more than 4 joint influences per vertex (JOINTS_1/WEIGHTS_1); only the first 4 are imported."),
+                        NodeIndex, int32(pi));
+                }
+            }
+
+            // Rest pose. glTF ignores a skinned node's own transform: skinned vertices are in bind
+            // space and reach the rest pose through their joint matrices, which are identity when
+            // the mesh was bound in the rest pose (the usual case). Rigid vertices use the node's
+            // world transform.
+            const FVRMSkinRestPose* SkinRest = nullptr;
+            if (bSkinned)
+            {
+                SkinRest = SkinRestPoses.Find(Instance.Skin);
+                if (!SkinRest)
+                {
+                    SkinRest = &SkinRestPoses.Add(Instance.Skin, ComputeSkinRestPose(*Instance.Skin, *Data, NodeToBone, Out.Bones.Num()));
+                    if (!SkinRest->bIsRestPose)
+                    {
+                        UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Skin %d: the inverse bind matrices differ from the node rest pose; skinned vertices were moved into the rest pose."),
+                            int32(Instance.Skin - Data->skins));
+                    }
+                }
+            }
+
             Out.Mesh.Positions.Reserve(Out.Mesh.Positions.Num() + VertCount);
             Out.Mesh.Normals.Reserve(Out.Mesh.Normals.Num() + VertCount);
             Out.Mesh.UV0.Reserve(Out.Mesh.UV0.Num() + VertCount);
             Out.Mesh.SkinWeights.Reserve(Out.Mesh.SkinWeights.Num() + VertCount);
+            OutVertexToRest.Reserve(OutVertexToRest.Num() + VertCount);
 
             for (int32 v = 0; v < VertCount; ++v)
             {
-                FVector3f Pue = RefFix_Vector(GltfToUE_Vector(PosLocal[v])) * Out.GlobalScale;
-                Out.Mesh.Positions.Add(Pue);
+                FMatrix VertexXf = FMatrix::Identity;
+                FMatrix NormalXf = FMatrix::Identity;
+                if (!bSkinned)
+                {
+                    VertexXf = Instance.World;
+                    NormalXf = NodeNormalXf;
+                }
+                else if (!SkinRest->bIsRestPose)
+                {
+                    // Linear blend of the joint matrices, as a renderer would skin the rest pose.
+                    FMatrix Blended(ForceInitToZero);
+                    for (int32 k = 0; k < 4; ++k)
+                    {
+                        if (Weights[v].Weight[k] > 0.f && SkinRest->BoneXf.IsValidIndex(Weights[v].BoneIndex[k]))
+                        {
+                            Blended += SkinRest->BoneXf[Weights[v].BoneIndex[k]] * Weights[v].Weight[k];
+                        }
+                    }
+                    VertexXf = Blended;
+                    NormalXf = Blended.Inverse().GetTransposed();
+                }
+
+                const FVector RestPos = FVector(VertexXf.TransformPosition(FVector(PosLocal[v])));
+                Out.Mesh.Positions.Add(FVector3f(VRM::GltfPositionToUE(RestPos, Out.GlobalScale)));
 
                 if (NrmLocal.IsValidIndex(v))
                 {
-                    FVector3f Nue = RefFix_Vector(GltfToUE_Vector(NrmLocal[v]));
-                    Out.Mesh.Normals.Add(Nue);
+                    Out.Mesh.Normals.Add(RefFix_Vector(GltfToUE_Vector(TransformNormal(NormalXf, NrmLocal[v]))));
                 }
                 else
                 {
@@ -903,46 +1121,21 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, 
                 }
 
                 Out.Mesh.UV0.Add(UVLocal[v]);
-            }
+                OutVertexToRest.Add(FMatrix44f(VertexXf));
 
-            // JOINTS/WEIGHTS
-            TArray<FVRMParsedMesh::FWeight> WeightsLocal; WeightsLocal.SetNumZeroed(VertCount);
-            bool bHaveJw = false;
-            if (Skin)
-            {
-                const cgltf_attribute* AJ = FindJoints(Prim, 0);
-                const cgltf_attribute* AW = FindWeights(Prim, 0);
-                if (AJ && AW && AJ->data && AW->data && int32(AJ->data->count) == VertCount && int32(AW->data->count) == VertCount)
+                if (bSkinned)
                 {
-                    TArray<FVRMParsedMesh::FWeight> Tmp; Tmp.SetNumZeroed(VertCount);
-                    const int32 InvalidInfluences = ReadJointsWeights(*AJ->data, *AW->data, *Skin, *Data, NodeToBone, Tmp);
-                    if (InvalidInfluences > 0)
-                    {
-                        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Mesh %d primitive %d: %d joint influences reference joints outside the skin and were dropped."),
-                            int32(mi), int32(pi), InvalidInfluences);
-                    }
-                    WeightsLocal = MoveTemp(Tmp);
-                    bHaveJw = true;
-                }
-                if (FindJoints(Prim, 1) || FindWeights(Prim, 1))
-                {
-                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Mesh %d primitive %d has more than 4 joint influences per vertex (JOINTS_1/WEIGHTS_1); only the first 4 are imported."),
-                        int32(mi), int32(pi));
-                }
-            }
-            for (int32 v = 0; v < VertCount; ++v)
-            {
-                if (bHaveJw)
-                {
-                    Out.Mesh.SkinWeights.Add(WeightsLocal[v]);
+                    Out.Mesh.SkinWeights.Add(Weights[v]);
                 }
                 else
                 {
-                    FVRMParsedMesh::FWeight W; W.BoneIndex[0] = 0; W.Weight[0] = 1.f; Out.Mesh.SkinWeights.Add(W);
+                    FVRMParsedMesh::FWeight W; W.BoneIndex[0] = uint16(Instance.RigidBone); W.Weight[0] = 1.f;
+                    Out.Mesh.SkinWeights.Add(W);
                 }
             }
 
-            // Append indices with offset and record material index for each triangle
+            // Append indices with offset and record material index for each triangle. A mirroring
+            // node transform turns the triangles inside out, so restore their winding.
             const int32 IndexBase = VertexBase;
             Out.Mesh.Indices.Reserve(Out.Mesh.Indices.Num() + IndLocal.Num());
             int32 MaterialIndex = INDEX_NONE;
@@ -950,13 +1143,13 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, 
             {
                 MaterialIndex = int32(Prim->material - Data->materials);
             }
-            for (int32 i = 0; i < IndLocal.Num(); ++i)
-            {
-                Out.Mesh.Indices.Add(IndexBase + int32(IndLocal[i]));
-            }
             const int32 LocalTriCount = IndLocal.Num() / 3;
+            const bool bFlipWinding = !bSkinned && bNodeMirrors;
             for (int32 t = 0; t < LocalTriCount; ++t)
             {
+                Out.Mesh.Indices.Add(IndexBase + int32(IndLocal[t * 3 + 0]));
+                Out.Mesh.Indices.Add(IndexBase + int32(IndLocal[t * 3 + (bFlipWinding ? 2 : 1)]));
+                Out.Mesh.Indices.Add(IndexBase + int32(IndLocal[t * 3 + (bFlipWinding ? 1 : 2)]));
                 Out.Mesh.TriMaterialIndex.Add(FMath::Max(0, MaterialIndex));
             }
 
@@ -1005,15 +1198,17 @@ bool VRM::LoadVRMFile(const FString& Filename, FVRMParsedModel& Out)
         return false;
     }
 
-    // Merge all primitives from all meshes (extracted)
-    if (!MergePrimitivesFromMeshes(Data, NodeToBone, Out))
+    // Every mesh node's primitives, placed in the rest pose the skeleton uses
+    const TArray<FVRMMeshInstance> Instances = CollectMeshInstances(Data, NodeToBone);
+    TArray<FMatrix44f> VertexToRest;
+    if (!MergeMeshInstances(Data, Instances, NodeToBone, Out, VertexToRest))
     {
         UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to merge mesh primitives."));
         return false;
     }
 
-    // Parse morph targets (extracted helper) - must run after primitives merged
-    ParseMorphTargets(Data, Out);
+    // Morph targets - must run after the primitives are merged, over the same instances
+    ParseMorphTargets(Data, Instances, VertexToRest, Out);
 
     // Images: use extracted helper
     if (Data->images_count > 0)
@@ -1142,19 +1337,6 @@ static void ReadIndicesUInt32(const cgltf_accessor& A, TArray<uint32>& Out)
         cgltf_accessor_read_uint(&A, i, v, 1);
         Out[i] = (uint32)v[0];
     }
-}
-static FTransform NodeTRS(const cgltf_node* N)
-{
-    FVector T(0, 0, 0);
-    FQuat   R = FQuat::Identity;
-    FVector S(1, 1, 1);
-
-    if (N && N->has_translation) { T = FVector(N->translation[0], N->translation[1], N->translation[2]); }
-    if (N && N->has_rotation) { R = FQuat(N->rotation[0], N->rotation[1], N->rotation[2], N->rotation[3]); }
-    if (N && N->has_scale) { S = FVector(N->scale[0], N->scale[1], N->scale[2]); }
-
-    FTransform Xf; Xf.SetComponents(R, T, S);
-    return Xf;
 }
 
 template<typename TWeight>
@@ -1370,7 +1552,7 @@ static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out)
     }
 }
 
-static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out)
+static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FMatrix44f>& VertexToRest, FVRMParsedModel& Out)
 {
     if (!Data) return;
 
@@ -1383,9 +1565,9 @@ static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out)
     TArray<FString> OrderedNames;
 
     // First pass: discover all target names (if available) and build mapping.
-    for (size_t mi2 = 0; mi2 < Data->meshes_count; ++mi2)
+    for (const FVRMMeshInstance& Instance : Instances)
     {
-        const cgltf_mesh* Mesh2 = &Data->meshes[mi2];
+        const cgltf_mesh* Mesh2 = Instance.Node->mesh;
         const bool bHaveMeshNames = (Mesh2 && Mesh2->target_names && Mesh2->target_names_count > 0);
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
@@ -1427,16 +1609,18 @@ static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out)
 
     // Second pass: read per-primitive deltas and merge into the global morph identified by name (or fallback index-name)
     int32 VertexBase2 = 0;
-    for (size_t mi2 = 0; mi2 < Data->meshes_count; ++mi2)
+    for (const FVRMMeshInstance& Instance : Instances)
     {
-        const cgltf_mesh* Mesh2 = &Data->meshes[mi2];
+        const cgltf_mesh* Mesh2 = Instance.Node->mesh;
+        const int32 NodeIndex = int32(Instance.Node - Data->nodes);
         const bool bHaveMeshNames = (Mesh2 && Mesh2->target_names && Mesh2->target_names_count > 0);
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
         {
             const cgltf_primitive* Prim2 = &Mesh2->primitives[pi2];
 
-            // POSITION accessor to determine this primitive's vertex count
+            // POSITION accessor to determine this primitive's vertex count. Primitives without
+            // positions were skipped by MergeMeshInstances, so skip them here too.
             int32 PrimVertCount = 0;
             if (const cgltf_attribute* Apos = FindAttribute(Prim2, cgltf_attribute_type_position))
             {
@@ -1444,6 +1628,10 @@ static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out)
                 {
                     PrimVertCount = (int32)Apos->data->count;
                 }
+            }
+            if (PrimVertCount == 0)
+            {
+                continue;
             }
 
             for (size_t ti = 0; ti < Prim2->targets_count; ++ti)
@@ -1479,15 +1667,16 @@ static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out)
 
                 if (DeltaLocal.Num() != PrimVertCount)
                 {
-                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Morph target vertex count mismatch (primitive %d.%d): %d vs %d. Skipping."), (int)mi2, (int)pi2, DeltaLocal.Num(), PrimVertCount);
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Morph target vertex count mismatch (node %d primitive %d): %d vs %d. Skipping."), NodeIndex, (int)pi2, DeltaLocal.Num(), PrimVertCount);
                     continue;
                 }
 
                 for (int32 v = 0; v < PrimVertCount; ++v)
                 {
-                    const FVector3f Src = DeltaLocal[v];
-                    const FVector3f Conv = RefFix_Vector(GltfToUE_Vector(Src)) * Out.GlobalScale;
                     const int32 GlobalIndex = VertexBase2 + v;
+                    // Deltas are offsets, so they take only the linear part of the vertex's rest transform.
+                    const FVector3f Src = VertexToRest.IsValidIndex(GlobalIndex) ? FVector3f(VertexToRest[GlobalIndex].TransformVector(DeltaLocal[v])) : DeltaLocal[v];
+                    const FVector3f Conv = RefFix_Vector(GltfToUE_Vector(Src)) * Out.GlobalScale;
                     if (Out.Mesh.Morphs.IsValidIndex(GlobalMorphIndex) && Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions.IsValidIndex(GlobalIndex))
                     {
                         Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions[GlobalIndex] = Conv;
@@ -1523,6 +1712,23 @@ static void ResetParsedModel(FVRMParsedModel& Out)
 
 // Populate bones from the joints of every skin: unique names, parent indices and local binds converted
 // to UE space. Also performs the "reference pose fix" that zeroes rotations and corrects global positions.
+/**
+ * Reference pose (decision D-3 in the refactor plan, still open). Every bone gets identity
+ * rotation and unit scale, and a local translation equal to the offset of its rest position from
+ * its parent's. The original joint rotations are not kept. Mesh vertices are placed in the same
+ * rest pose (see MergeMeshInstances), so mesh and skeleton agree. VMC senders stream local bone
+ * rotations relative to a T-pose, which is why live retargeting relies on this.
+ */
+static void BuildReferencePoseBinds(const TArray<FVector>& RestPositions, TArray<FVRMParsedBone>& Bones)
+{
+    for (int32 i = 0; i < Bones.Num(); ++i)
+    {
+        const int32 Parent = Bones[i].Parent;
+        const FVector ParentPos = Bones.IsValidIndex(Parent) ? RestPositions[Parent] : FVector::ZeroVector;
+        Bones[i].LocalBind = FTransform(FQuat::Identity, RestPositions[i] - ParentPos, FVector::OneVector);
+    }
+}
+
 static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone)
 {
     Out.Bones.Reset();
@@ -1549,7 +1755,7 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
     }
 
     // Order bones by a pre-order walk of the node hierarchy so every parent precedes its children
-    // (the rest-pose pass below relies on that).
+    // (UE skeletons require that).
     TArray<const cgltf_node*> Ordered;
     Ordered.Reserve(JointNodes.Num());
     TFunction<void(const cgltf_node*)> Visit = [&](const cgltf_node* Node)
@@ -1575,6 +1781,8 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
     // Unnamed joints become Node_<glTF node index>; repeats get _1, _2, ... in bone order.
     TSet<FName> UsedNames;
     Out.Bones.SetNum(Ordered.Num());
+    TArray<FVector> RestPositions;
+    RestPositions.SetNum(Ordered.Num());
     for (int32 bi = 0; bi < Ordered.Num(); ++bi)
     {
         const cgltf_node* J = Ordered[bi];
@@ -1609,43 +1817,10 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
             }
         }
 
-        // Convert local bind TRS from glTF to UE axes and apply global scale
-        FTransform Local = NodeTRS(J);
-        FVector T = GltfToUE_Vector(Local.GetTranslation()) * Out.GlobalScale;
-        FQuat R = GltfToUE_Quat(Local.GetRotation());
-        FVector S = GltfToUE_Vector(Local.GetScale3D());
-        B.LocalBind = FTransform(R, T, S);
+        // Rest pose position from the full node hierarchy: non-joint ancestors (an "Armature"
+        // node, for example), rotations, scale and node matrices all apply.
+        RestPositions[bi] = VRM::GltfPositionToUE(NodeWorldMatrix(J).GetOrigin(), Out.GlobalScale);
     }
 
-    // Second pass: rebuild local binds so that rotations are identity and positions are corrected
-    // This preserves corrected global positions while producing pure-translation local binds.
-    {
-        const int32 NumBones = Out.Bones.Num();
-        if (NumBones == 0) return;
-
-        TArray<FTransform> GlobalXf;
-        GlobalXf.SetNum(NumBones);
-        TArray<FVector> FixedGlobalPos;
-        FixedGlobalPos.SetNum(NumBones);
-
-        // Compute original global transforms from current local binds
-        for (int32 i = 0; i < NumBones; ++i)
-        {
-            const int32 Parent = Out.Bones[i].Parent;
-            const FTransform ParentGlobal = (Parent == INDEX_NONE) ? FTransform::Identity : GlobalXf[Parent];
-            GlobalXf[i] = Out.Bones[i].LocalBind * ParentGlobal;
-
-            // Apply reference fix to the global position (unmirror and rotate to +Y forward)
-            FixedGlobalPos[i] = RefFix_Vector(GlobalXf[i].GetTranslation());
-        }
-
-        // Recreate local binds as pure translations (identity rotation), preserving corrected positions
-        for (int32 i = 0; i < NumBones; ++i)
-        {
-            const int32 Parent = Out.Bones[i].Parent;
-            const FVector ParentPos = (Parent == INDEX_NONE) ? FVector::ZeroVector : FixedGlobalPos[Parent];
-            const FVector LocalT = FixedGlobalPos[i] - ParentPos;
-            Out.Bones[i].LocalBind = FTransform(FQuat::Identity, LocalT, FVector(1.0f, 1.0f, 1.0f));
-        }
-    }
+    BuildReferencePoseBinds(RestPositions, Out.Bones);
 }

@@ -15,3 +15,4 @@ Do not edit these files by hand. Change the generator and regenerate.
 | `rigid_accessory` | Non-skinned mesh parented to a joint, with translation, rotation and scale |
 | `unnamed_and_duplicate_nodes` | Joints with no name and joints sharing a name |
 | `armature_transform` | Joints under a non-joint node with rotation and scale |
+| `bind_pose_offset` | Skinned mesh whose inverse bind matrices don't match the node rest pose |

@@ -20,6 +20,9 @@ expected values computed here from the same scene description:
   unnamed_and_duplicate_nodes  Joints with no name and joints that share a name.
   armature_transform           Joints below a non-joint "Armature" node that carries a rotation
                                and a scale.
+  bind_pose_offset             A skinned mesh authored in a different pose from the node rest pose
+                               (inverse bind matrices that are not the inverse joint world
+                               transforms). Skinning must move its vertices into the rest pose.
 
 All geometry is in glTF space (right-handed, Y up, metres). Expected values in the sidecars are
 in glTF space too; tests convert them with the importer's conversion before comparing.
@@ -125,6 +128,7 @@ class Scene:
         self.nodes = []
         self.meshes = []  # dicts: name, positions, joints (per vertex, local skin joint index), weights, targets
         self.skins = []   # lists of Node
+        self.skin_bind = []  # per skin: matrix taking rest-pose world space to the mesh's bind space
         self.bin = bytearray()
         self.buffer_views = []
         self.accessors = []
@@ -203,8 +207,8 @@ class Scene:
             mesh_json.append(mj)
 
         skins_json = []
-        for joints in self.skins:
-            ibms = [column_major(mat_inverse(self.world(j))) for j in joints]
+        for joints, bind in zip(self.skins, self.skin_bind):
+            ibms = [column_major(mat_inverse(mat_mul(bind, self.world(j)))) for j in joints]
             acc = self.accessor(ibms, 5126, "MAT4", len(joints), "16f")
             skins_json.append({"joints": [j.index for j in joints], "inverseBindMatrices": acc})
 
@@ -277,8 +281,12 @@ class Scene:
         v = 0
         for joint, tri in mesh["triangles"]:
             for p in tri:
-                # glTF ignores the transform of a skinned mesh node; vertices are in bind space.
-                world = p if skinned else mat_apply(node_world, p)
+                # glTF ignores the transform of a skinned mesh node. Skinned vertices are in bind
+                # space; the joint matrix (joint world x inverse bind) takes them to the rest pose.
+                if skinned:
+                    world = mat_apply(mat_mul(self.world(joint), mat_inverse(mat_mul(self.skin_bind[mesh_node.skin], self.world(joint)))), p)
+                else:
+                    world = mat_apply(node_world, p)
                 bone = joint if joint is not None else nearest_joint_ancestor(mesh_node)
                 out.append({"mesh_node": mesh_node.name, "vertex": v,
                             "dominant_bone_node": bone.index,
@@ -331,13 +339,17 @@ def base_humanoid(scene):
     return root, hips, spine, head, hair1, hair2, hair3
 
 
-def body_mesh(scene, root, joints, name="Body"):
-    tris = [(j, tri_at(mat_apply(scene.world(j), [0, 0, 0]))) for j in joints]
+def body_mesh(scene, root, joints, name="Body", bind=None):
+    """One triangle per joint at the joint's position. bind (optional) is a matrix taking the rest
+    pose to the pose the mesh was authored in; the vertices and inverse bind matrices use it."""
+    bind = bind or mat_identity()
+    tris = [(j, tri_at(mat_apply(mat_mul(bind, scene.world(j)), [0, 0, 0]))) for j in joints]
     mesh_index = scene.triangle_mesh(name, tris, skin_joints=joints)
     node = scene.node(name, root)
     node.mesh = mesh_index
     node.skin = len(scene.skins)
     scene.skins.append(joints)
+    scene.skin_bind.append(bind)
     return node
 
 
@@ -538,6 +550,29 @@ def make_armature_transform(out_dir):
     }
 
 
+def make_bind_pose_offset(out_dir):
+    s = Scene()
+    root = s.node("Root")
+    hips = s.node("Hips", root, t=[0, 1.0, 0])
+    spine = s.node("Spine", hips, t=[0, 0.2, 0])
+    head = s.node("Head", spine, t=[0, 0.4, 0])
+    joints = [hips, spine, head]
+    mark_joints(joints)
+    # Mesh authored 0.5 m to the side and turned 90 degrees about Y relative to the node rest pose.
+    bind = mat_trs(t=[0.5, 0, 0], q=quat_axis_angle([0, 1, 0], 90))
+    body = body_mesh(s, root, joints, bind=bind)
+    ext = {"VRMC_vrm": {"specVersion": "1.0", "meta": vrm1_meta(),
+                        "humanoid": {"humanBones": {"hips": {"node": hips.index}}}}}
+    s.write(os.path.join(out_dir, "bind_pose_offset.vrm"), ext)
+    return {
+        "vrm_version": "1.0",
+        "bones": s.expected_bones(joints),
+        "vertices": s.expected_vertices(body),
+        "note": "Inverse bind matrices do not match the node rest pose; skinning with them puts each "
+                "triangle back at its joint (Hips (0,1,0), Spine (0,1.2,0), Head (0,1.6,0)).",
+    }
+
+
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "Plugins", "VRMInterchange", "Tests", "Fixtures")
@@ -549,6 +584,7 @@ def main():
         "rigid_accessory": make_rigid_accessory,
         "unnamed_and_duplicate_nodes": make_unnamed_and_duplicates,
         "armature_transform": make_armature_transform,
+        "bind_pose_offset": make_bind_pose_offset,
     }
     for name, maker in makers.items():
         expected = maker(out_dir)

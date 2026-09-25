@@ -46,11 +46,30 @@ namespace VRMSkinMappingTests
 		return W.BoneIndex[Best];
 	}
 
+	static FVector ExpectedPosition(const TSharedPtr<FJsonObject>& Object, float GlobalScale)
+	{
+		const TArray<TSharedPtr<FJsonValue>>& P = Object->GetArrayField(TEXT("world_position_gltf"));
+		return VRM::GltfPositionToUE(FVector(P[0]->AsNumber(), P[1]->AsNumber(), P[2]->AsNumber()), GlobalScale);
+	}
+
+	/** Component-space rest position of a bone (bones are ordered parents first). */
+	static FVector BoneRestPosition(const FVRMParsedModel& Model, int32 BoneIndex)
+	{
+		FTransform Xf = Model.Bones[BoneIndex].LocalBind;
+		for (int32 P = Model.Bones[BoneIndex].Parent; Model.Bones.IsValidIndex(P); P = Model.Bones[P].Parent)
+		{
+			Xf = Xf * Model.Bones[P].LocalBind;
+		}
+		return Xf.GetTranslation();
+	}
+
+	/** Positions are in UE units (cm); fixtures are exact to 1e-6 m. */
+	static constexpr double PositionTolerance = 0.01;
+
 	/**
-	 * Checks one fixture: every expected joint is a bone, bone names are unique, parents precede
-	 * children, and every skinned vertex is dominated by the bone of the expected joint node.
-	 * Vertices of non-skinned meshes (listed after the skinned ones) are skipped: placing rigid
-	 * meshes is covered by a separate fix.
+	 * Checks one fixture: every expected joint is a bone at its rest position, bone names are
+	 * unique, parents precede children, and every vertex (skinned or rigid, one set per mesh node)
+	 * is dominated by the bone of the expected joint node and sits at its expected rest position.
 	 */
 	static void CheckFixture(FAutomationTestBase& Test, const TCHAR* Name)
 	{
@@ -78,7 +97,15 @@ namespace VRMSkinMappingTests
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Expected->GetObjectField(TEXT("bones"))->Values)
 		{
 			const int32 Node = int32(Pair.Value->AsObject()->GetNumberField(TEXT("node")));
-			Test.TestTrue(FString::Printf(TEXT("%s: joint node %d is a bone"), Name, Node), Model.NodeToBoneMap.Contains(Node));
+			const int32 BoneIndex = Model.Bones.IndexOfByPredicate([Node](const FVRMParsedBone& B) { return B.NodeIndex == Node; });
+			if (!Test.TestTrue(FString::Printf(TEXT("%s: joint node %d is a bone"), Name, Node), Model.NodeToBoneMap.Contains(Node) && BoneIndex != INDEX_NONE))
+			{
+				continue;
+			}
+			const FVector ExpectedBonePos = ExpectedPosition(Pair.Value->AsObject(), Model.GlobalScale);
+			const FVector ActualBonePos = BoneRestPosition(Model, BoneIndex);
+			Test.TestTrue(FString::Printf(TEXT("%s: joint node %d rest position %s (expected %s)"), Name, Node, *ActualBonePos.ToString(), *ExpectedBonePos.ToString()),
+				ActualBonePos.Equals(ExpectedBonePos, PositionTolerance));
 		}
 
 		const TSharedPtr<FJsonObject>* ExpectedNames = nullptr;
@@ -93,19 +120,15 @@ namespace VRMSkinMappingTests
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>& Vertices = Expected->GetArrayField(TEXT("vertices"));
-		Test.TestTrue(FString::Printf(TEXT("%s: skin weights for every vertex"), Name), Model.Mesh.SkinWeights.Num() >= Vertices.Num() || Vertices.Num() == 0);
+		Test.TestEqual(FString::Printf(TEXT("%s: vertex count"), Name), Model.Mesh.Positions.Num(), Vertices.Num());
+		Test.TestEqual(FString::Printf(TEXT("%s: skin weights for every vertex"), Name), Model.Mesh.SkinWeights.Num(), Model.Mesh.Positions.Num());
 
 		int32 VertexIndex = 0;
-		FString FirstSkinnedMesh;
 		for (const TSharedPtr<FJsonValue>& Value : Vertices)
 		{
 			const TSharedPtr<FJsonObject> V = Value->AsObject();
 			const FString MeshNode = V->GetStringField(TEXT("mesh_node"));
-			if (MeshNode == TEXT("Hat"))
-			{
-				break; // rigid accessory; see comment above
-			}
-			if (!Model.Mesh.SkinWeights.IsValidIndex(VertexIndex))
+			if (!Model.Mesh.SkinWeights.IsValidIndex(VertexIndex) || !Model.Mesh.Positions.IsValidIndex(VertexIndex))
 			{
 				Test.AddError(FString::Printf(TEXT("%s: missing vertex %d"), Name, VertexIndex));
 				return;
@@ -117,6 +140,11 @@ namespace VRMSkinMappingTests
 			const FString ActualBone = Model.Bones.IsValidIndex(ActualBoneIndex) ? Model.Bones[ActualBoneIndex].Name : FString();
 			Test.TestEqual(FString::Printf(TEXT("%s: vertex %s#%d bound to the right bone"), Name, *MeshNode, int32(V->GetNumberField(TEXT("vertex")))),
 				ActualBone, ExpectedBone ? ExpectedBone->ToString() : FString(TEXT("<missing bone>")));
+
+			const FVector ExpectedPos = ExpectedPosition(V, Model.GlobalScale);
+			const FVector ActualPos = FVector(Model.Mesh.Positions[VertexIndex]);
+			Test.TestTrue(FString::Printf(TEXT("%s: vertex %s#%d rest position %s (expected %s)"), Name, *MeshNode, int32(V->GetNumberField(TEXT("vertex"))), *ActualPos.ToString(), *ExpectedPos.ToString()),
+				ActualPos.Equals(ExpectedPos, PositionTolerance));
 			++VertexIndex;
 		}
 	}
@@ -134,6 +162,7 @@ bool FVRMSkinMappingTest::RunTest(const FString& Parameters)
 		TEXT("rigid_accessory"),
 		TEXT("unnamed_and_duplicate_nodes"),
 		TEXT("armature_transform"),
+		TEXT("bind_pose_offset"),
 	};
 	for (const TCHAR* Name : Fixtures)
 	{

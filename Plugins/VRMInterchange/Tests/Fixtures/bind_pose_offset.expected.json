@@ -1,0 +1,125 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": "Spine",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.0
+      ]
+    },
+    "3": {
+      "name": "Head",
+      "node": 3,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    }
+  },
+  "note": "Inverse bind matrices do not match the node rest pose; skinning with them puts each triangle back at its joint (Hips (0,1,0), Spine (0,1.2,0), Head (0,1.6,0)).",
+  "vertices": [
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        -0.02
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.02
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        -0.02
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.02
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 6,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        -0.02
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 7,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.02
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 8,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

@@ -2,7 +2,8 @@
  * Validates VRM/glTF fixtures with the same cgltf the importer bundles, and dumps what glTF
  * semantics say the importer must produce, as JSON on stdout:
  *   - world position (bind pose, glTF space) of every joint node
- *   - for every vertex of every mesh node: dominant joint node index and world position
+ *   - for every vertex of every mesh node: dominant joint node index and rest-pose world position
+ *     (rigid: node world transform; skinned: weighted joint matrices, joint world x inverse bind)
  *
  * scripts/check_vrm_fixtures.py compiles this and compares the output with the *.expected.json
  * sidecars written by make_vrm_fixtures.py.
@@ -22,6 +23,30 @@ static void mat_mul_point(const float m[16], const float p[3], float out[3])
 	{
 		out[r] = m[0 * 4 + r] * p[0] + m[1 * 4 + r] * p[1] + m[2 * 4 + r] * p[2] + m[3 * 4 + r];
 	}
+}
+
+static void mat_mul(const float a[16], const float b[16], float out[16])
+{
+	/* column-major: out = a * b */
+	float r[16];
+	for (int c = 0; c < 4; ++c)
+	{
+		for (int row = 0; row < 4; ++row)
+		{
+			float s = 0.f;
+			for (int k = 0; k < 4; ++k) s += a[k * 4 + row] * b[c * 4 + k];
+			r[c * 4 + row] = s;
+		}
+	}
+	for (int i = 0; i < 16; ++i) out[i] = r[i];
+}
+
+static void joint_matrix(const cgltf_skin* skin, cgltf_size joint, float out[16])
+{
+	float world[16], ibm[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+	cgltf_node_transform_world(skin->joints[joint], world);
+	if (skin->inverse_bind_matrices) cgltf_accessor_read_float(skin->inverse_bind_matrices, joint, ibm, 16);
+	mat_mul(world, ibm, out);
 }
 
 static const cgltf_node* nearest_joint_ancestor(const cgltf_data* data, const cgltf_node* node)
@@ -135,7 +160,14 @@ int main(int argc, char** argv)
 						if ((cgltf_uint)(skin0->joints[k] - data->nodes) == joints[best]) { legacy_joint = (int)k; break; }
 					}
 					legacy_bone_node = (int)(skin0->joints[legacy_joint] - data->nodes);
-					out[0] = p[0]; out[1] = p[1]; out[2] = p[2]; /* skinned: bind space */
+					out[0] = out[1] = out[2] = 0.f;
+					for (int k = 0; k < 4; ++k)
+					{
+						float jm[16], q[3];
+						joint_matrix(node->skin, joints[k], jm);
+						mat_mul_point(jm, p, q);
+						for (int r = 0; r < 3; ++r) out[r] += weights[k] * q[r];
+					}
 				}
 				else
 				{
