@@ -322,6 +322,11 @@ Files: `VRMInterchange/Private/VRMSpringBonesParser.cpp` (abbreviated `Parser.cp
 - `BuildResolvedChildren` indexes `Cfg.Joints[JointIdx]` without bounds checks.
 - The JSON is deserialized twice (`Parser.cpp:700` and `719`).
 
+### SP-08 (P1) VRM 0.x vectors are read with the wrong JSON shape
+- VRM 0.x `secondaryAnimation` stores vectors as objects: `gravityDir: {"x":0,"y":-1,"z":0}` and collider `offset: {"x":..,"y":..,"z":..}`. `ReadVec3` (`Parser.cpp:68-74`) only accepts arrays and otherwise returns its default.
+- **Impact:** every VRM 0.x collider offset parses as zero (colliders sit on the bone origin), and every VRM 0.x gravity direction silently becomes the default. Found while writing the `vrm0_minimal` fixture (P0.2).
+- **Fix direction:** accept both forms in `ReadVec3` (array, or object with x/y/z). Fixed together with P1.11/P1.13.
+
 ### SP-07 (P2) Changing the data will break saved assets without versioning
 - Fixing SP-01/02/03 changes the meaning of data already saved in `UVRMSpringBoneData` assets (units, axes, per-joint parameters). There is no custom version or `PostLoad` upgrade path, so existing user assets would change behaviour silently.
 
@@ -599,13 +604,14 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
 - **Acceptance:** `vrm0_minimal.vrm` produces a 3-joint chain from a single listed root. Every joint resolves to a bone.
 
 ### P1.13 Spec-correct VRM 1.0 parsing (per-joint parameters, extended colliders)
-- **Resolves:** SP-03, SP-04, SP-05, SP-06 (link error) · **Depends on:** P0.2
+- **Resolves:** SP-03, SP-04, SP-05, SP-06 (link error), SP-08 · **Depends on:** P0.2
 - **Steps:**
   1. Add per-joint `Stiffness`, `Drag`, `GravityPower`, `GravityDir` and `HitRadius` to `FVRMSpringJoint`. VRM 0.x fills them from the group, VRM 1.0 from each joint. Keep the spring-level fields only as editor "apply to all" helpers, or remove them (requires versioning, see P1.16).
   2. Read the collider `shape` object (spec). Read `colliders[i].extensions.VRMC_springBone_extended_collider.shape` and, when present, **replace** the base shape.
   3. Move non-spec variants behind `bLenientSchema` (default on for one release, with a `Verbose` log naming the variant), or delete them (owner decision D-6).
   4. Rewrite the tests to use spec JSON. Keep a separate test for each lenient variant if they're kept.
-  5. Remove the undefined `ParseSpringBonesFromJson(... TArray<int32> ...)` declaration. Fix the `FVRMValidationResult` export macro.
+  5. Remove the undefined `ParseSpringBonesFromJson(... TArray<int32> ...)` declaration. (The `FVRMValidationResult` export macro is already fixed in PR #98.)
+  6. Make `ReadVec3` accept the VRM 0.x `{x,y,z}` object form as well as arrays (SP-08).
 - **Acceptance:** spec fixtures parse with correct per-joint values and extended colliders. The old non-spec tests either move to "lenient" tests or are deleted.
 
 ### P1.14 Anim node robustness
@@ -975,7 +981,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | VMC-16, VMC-17 | P3.1, P6.1 | T-14 | P0.4, P1.18 |
 | VMC-18 | P1.18 | SP-01 | P1.11 |
 | VMC-19 | P4.7 | SP-02 | P1.12 |
-| VMC-20 | P1.1, P4.7 | SP-03, SP-04, SP-05 | P1.13 |
+| VMC-20 | P1.1, P4.7 | SP-03, SP-04, SP-05, SP-08 | P1.13 |
 | VMC-21 | P3.5 | SP-06 | P1.13, P3.3 |
 | VMC-22 to VMC-24 | P3.2, P6.2 | SP-07 | P1.16 |
 | VMC-25 | P3.2 (cleanup) | SR-01 to SR-03, SR-07 | P2.1 |
