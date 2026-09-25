@@ -10,6 +10,8 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
+> **Progress (2026-09-25):** 15 of 47 tasks have open draft PRs (#99 to #109). None has been compiled or merged yet. See [B.10](#b10-implementation-progress).
+
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
 ---
@@ -37,6 +39,7 @@ This document has two parts:
   - [Phase 7: Documentation](#phase-7-documentation)
   - [B.8 Decisions needed from the owner](#b8-decisions-needed-from-the-owner)
   - [B.9 Dependency graph and suggested order](#b9-dependency-graph-and-suggested-order)
+  - [B.10 Implementation progress](#b10-implementation-progress)
 - [Appendix](#appendix)
 
 ---
@@ -941,6 +944,49 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 ```
 
 **Suggested first sprint** (low risk, high value): P0.1, P0.4, P1.2, P1.4, P1.6, P1.17, P1.18, P7.1. Then P0.2/P0.3, which unblock the P0 bug fixes P1.1, P1.3, P1.7 and P1.11.
+
+## B.10 Implementation progress
+
+*Last updated 2026-09-25.* Every PR below is an open **draft**. The review environment has no Unreal Engine, so **none of them has been compiled or run**. The self-hosted runner that builds them was offline, and the queued builds were cancelled. Each PR description lists what to verify in the editor.
+
+### Status by task
+
+| Task | PR | Base | Status | Notes |
+|---|---|---|---|---|
+| P7.1 README corrections (+ this plan) | #99 | `main` | Draft, awaiting review | Docs only |
+| P0.4 Logging categories | #100 | `main` | Draft, not compiled | Also covers P1.18 |
+| P1.18 Hygiene items | #100 | `main` | Draft, not compiled | Labels, `cgltf_validate` failure is fatal, buffer-view bounds, empty header removed, `Animations` removed |
+| P1.2 Source lifetime safety | #101 | `main` | Draft, not compiled | |
+| P1.4 Keep user subject settings | #101 | `main` | Draft, not compiled | |
+| P1.6 Non-destructive normalizer and presets | #102 | `main` | Draft, not compiled | Adds `VMC_VRM1` preset |
+| P1.17 No startup edits to config or content | #103 | `main` | Draft, not compiled | Opt-in registration prompt and settings button |
+| P0.1 CI builds PRs and runs tests | #104 | `main` | Draft, not run | `pr-build.yml`; header check covers both plugins |
+| P0.2 Synthetic VRM fixtures | #105 | `main` | Draft; fixtures checked with cgltf | Seventh fixture (`bind_pose_offset`) added in #109 |
+| P0.3 VMC test sender | #106 | `main` | Draft; self-test passes | `scripts/vmc_sender.py` |
+| P1.1 `Root/Pos` per spec | #107 | #101 | Draft, not compiled | |
+| P1.3 Humanoid hierarchy, stable indices | #107 | #101 | Draft, not compiled | |
+| P1.5 Apply ordering, curve persistence | #107 | #101 | Draft, not compiled | |
+| P1.7 Joint mapping, multiple skins, names | #108 | #100 (includes #105) | Draft, not compiled | |
+| P1.8 Node transforms, rigid meshes, bind pose | #109 | #108 | Draft, not compiled | Inverse bind matrices that differ from the rest pose are baked (step 3, preferred option) |
+
+Everything else is **not started**. Next in order: P1.11 (including the SP-08 fix), then P1.9, P1.12, P1.13 and P1.10. P1.11 is next because it unblocks P1.12, P1.13 and Phase 2.
+
+### Merge order and known conflicts
+
+1. #99, #100, #101, #102, #105 and #106 are independent and can merge in any order.
+2. #103 and #104 touch two of the same files. Whichever merges second needs a conflict resolution.
+3. #104 conflicts with #98 (not part of this plan) in `fab-plugin-build.yml`.
+4. Stacked PRs: #107 needs #101 merged first. #108 needs #100 and #105. #109 needs #108. After a base merges, retarget the stacked PR to `main`.
+5. #109 leaves the README alone because #99 rewrites the same section. Add a line about rest-pose placement once both have merged.
+
+### Verification still owed
+
+- **Build:** compile every PR in the editor, then Game Development and Shipping builds. Once #104 merges, `pr-build.yml` does this on PRs.
+- **Tests:** run `VRM.` and `VMC.` in the automation tests.
+- **[Verify] items not yet confirmed:**
+  - VMC-01: the `Root/Pos` layout, checked against a real sender.
+  - T-02: one skin per mesh in VRoid exports.
+  - T-05: VRM 0.x vs 1.0 facing, which blocks P1.9.
 
 ---
 
