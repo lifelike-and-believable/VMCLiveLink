@@ -1,4 +1,5 @@
-// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMInterchangeLog.h"
 
 DEFINE_LOG_CATEGORY(LogVRMSpring);
+DEFINE_LOG_CATEGORY(LogVRMInterchange);

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,10 +8,9 @@
 
 // Forward declarations (avoid heavy includes)
 struct FVRMSpringConfig;
-class UVRMSpringBonesData;
 
 /**
- * Per–joint runtime simulation state (minimal set after dead-code removal).
+ * Per-joint runtime simulation state (minimal set after dead-code removal).
  */
 struct FVRMSimJointState
 {
@@ -65,11 +65,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spring", meta=(PinShownByDefault))
 	TObjectPtr<UVRMSpringBoneData> SpringData = nullptr;
 
-	/** Spring configuration asset (contains joints, springs, colliders) */
+	/** Extra velocity (world space, cm/s) applied to every spring tail, e.g. to approximate character movement. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spring", meta = (PinShownByDefault))
 	FVector ExternalVelocity = FVector(0.f, 0.f, 0.f);
 
-	/** Spring configuration asset (contains joints, springs, colliders) */
+	/** Multiplier applied to ExternalVelocity. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spring", meta = (PinShownByDefault))
 	float ExternalVelocityScale = 1.f;
 

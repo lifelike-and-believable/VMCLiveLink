@@ -189,7 +189,7 @@ TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSou
 						.IsChecked_Lambda([State] { return State->bUnityToUE ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
 						.OnCheckStateChanged_Lambda([State](ECheckBoxState S) { State->bUnityToUE = (S == ECheckBoxState::Checked); })
 						[
-							SNew(STextBlock).Text(NSLOCTEXT("VMCLiveLink", "UnityToUE", "Unity?UE coords"))
+							SNew(STextBlock).Text(NSLOCTEXT("VMCLiveLink", "UnityToUE", "Convert Unity to UE coordinates"))
 						]
 				]
 			+ SHorizontalBox::Slot().AutoWidth()
@@ -198,7 +198,7 @@ TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSou
 						.IsChecked_Lambda([State] { return State->bMetersToCm ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
 						.OnCheckStateChanged_Lambda([State](ECheckBoxState S) { State->bMetersToCm = (S == ECheckBoxState::Checked); })
 						[
-							SNew(STextBlock).Text(NSLOCTEXT("VMCLiveLink", "MetersToCm", "Meters?cm"))
+							SNew(STextBlock).Text(NSLOCTEXT("VMCLiveLink", "MetersToCm", "Convert meters to centimeters"))
 						]
 				]
 		]

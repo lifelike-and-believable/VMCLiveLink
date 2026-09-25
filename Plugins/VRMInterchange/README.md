@@ -8,22 +8,22 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 
 ### Core Import Capabilities
 - **VRM Format Support**: Imports VRM 0.x and VRM 1.0 files (glTF 2.0-based avatar format)
-- **Skeletal Mesh**: Full skeleton hierarchy with proper bone orientations
-- **Textures**: Automatic texture import with proper material setup
+- **Skeletal Mesh**: Skeleton built from the skin joints. Bone rest rotations are reset to identity (see [Coordinate System](#coordinate-system))
+- **Textures**: Embedded PNG/JPEG textures imported and assigned to material instances
 - **Blend Shapes**: Morph target support for facial expressions
-- **Materials**: Basic material setup with texture assignments
+- **Materials**: Basic material instances with texture assignments (glTF factors and MToon parameters are not yet applied)
 
 ### Spring Bones (Physics Hair/Clothing)
 - **Automatic Spring Data Generation**: Parses VRM spring bone configurations into data assets
-- **Real-time Physics Simulation**: Verlet integration-based spring bone system
-- **Collider Support**: Sphere and capsule colliders for realistic physics interactions
+- **Real-time Physics Simulation**: Verlet-style spring bone solver (see [Spring Bone Simulation Details](#spring-bone-simulation-details) for current limitations)
+- **Collider Support**: Sphere, capsule and plane colliders, including inside colliders
 - **Animation Blueprint Integration**: Optional post-process AnimBP for automatic spring simulation
 - **Customizable Parameters**: Stiffness, gravity, damping, and more
 
 ### IK Rig Integration
-- **Automatic IK Rig Setup**: Generates IK Rig assets from templates
+- **Automatic IK Rig Setup**: Generates IK Rig assets by duplicating a template
 - **Preview Mesh Assignment**: Automatically configures preview meshes
-- **VRM-to-UE5 Bone Mapping**: Proper bone chain setup for animation retargeting
+- **VRM-to-UE5 Bone Mapping**: The template's retarget chains assume VRoid-style bone names (`J_Bip_*`)
 
 ### Live Link Support
 - **Character Scaffold Generation**: Creates ready-to-use Actor and AnimBP blueprints
@@ -44,6 +44,8 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 3. Open your project in Unreal Engine. The plugin will be enabled automatically.
 
 4. If prompted, allow Unreal to rebuild the plugin modules.
+
+5. **Register the VRM import pipelines.** The first time the editor starts with the plugin, a notification offers to register them. Click **Register**, or use **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** at any time. This adds the spring bone, IK Rig, Live Link and material pipelines to the `.vrm` entry in **Project Settings > Interchange** and saves that setting. The plugin does not change your project settings unless you ask it to.
 
 ### Requirements
 
@@ -198,11 +200,16 @@ When re-importing:
 
 ### Spring Bone Simulation Details
 
-The spring bone solver uses:
-- **Verlet Integration**: Stable physics simulation
-- **Deterministic Sub-stepping**: Consistent results regardless of frame rate
-- **Hierarchical Propagation**: Parent-child bone chain resolution
-- **Collision Detection**: Per-joint sphere and capsule collision
+The spring bone solver:
+- Integrates each joint's tail position with Verlet-style inertia, stiffness toward the animated pose, and gravity
+- Keeps each segment at its rest length
+- Resolves collisions against sphere, capsule and plane colliders in the spring's collider groups
+
+Current limitations, tracked in `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` (Phase 2):
+- Simulation runs in component space, so moving or turning the character does not add inertia. Use the node's **External Velocity** input as a workaround.
+- There is no fixed-rate sub-stepping, so behaviour varies with frame rate.
+- Each joint follows the animated rotation of its parent rather than the parent's simulated rotation.
+- The spring `center` setting is ignored.
 
 Debug visualization is available via console commands:
 
@@ -215,6 +222,9 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 ```
 
 ## Troubleshooting
+
+### VRM Pipelines Missing From the Import Dialog
+- Run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines**
 
 ### Import Dialog Doesn't Appear
 - Ensure the Interchange and InterchangeEditor plugins are enabled
@@ -282,17 +292,24 @@ VRM is a 3D avatar format based on glTF 2.0, specifically designed for VR applic
 
 ### Coordinate System
 
-VRM uses Y-up, right-handed coordinates. The importer converts to UE5's Z-up, left-handed system:
-- Mirrors across the Y axis
-- Applies 90° rotation around Z
-- Adjusts bone transforms accordingly
+glTF (and so VRM) uses Y-up, right-handed coordinates in metres. UE uses Z-up, left-handed coordinates in centimetres. The importer's net conversion for positions, normals and morph deltas is:
+
+```
+UE (X, Y, Z) = glTF (X, Z, Y) * 100
+```
+
+This swaps Y and Z, which also converts handedness. Bone rest rotations are then reset to identity, so each bone's local transform is a pure translation. This matches how VMC streams local rotations, but it means bone orientations differ from the source file.
 
 ## Known Limitations
 
-- **VRM Version**: Supports VRM 0.x and VRM 1.0
-- **Material Complexity**: Complex shader graphs may require manual adjustment
-- **Expression Mapping**: Blend shape to morph target mapping is direct (no presets)
+- **VRM Version**: Supports VRM 0.x and VRM 1.0 files. VRM 0.x and 1.0 files face opposite directions in glTF space, and the importer does not yet correct for this, so one of the two may import rotated 180°.
+- **Skinning**: Only the first skin in the file is used. Files with several skins (common in UniVRM/VRoid exports) or with joint order that differs from node order may bind vertices to the wrong bones.
+- **Materials**: MToon and glTF material factors (base colour, emissive, alpha mode, double-sided) are not applied. Normal maps are imported as sRGB without a green-channel flip.
+- **Expressions**: VRM expressions (blend shape groups) are not imported. Morph targets are imported individually by name.
+- **Spring bones**: VRM 0.x bone groups simulate only the listed root bones, not their descendants. Collider offsets are not converted to UE axes. VRM 1.0 per-joint parameters are reduced to one set per spring.
 - **Texture Formats**: Embedded textures must be PNG or JPEG
+
+See `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` for the plan that addresses these.
 
 ## Support and Contribution
 

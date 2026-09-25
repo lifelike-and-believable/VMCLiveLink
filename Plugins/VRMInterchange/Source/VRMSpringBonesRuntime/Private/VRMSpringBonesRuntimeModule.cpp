@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMSpringBonesRuntimeModule.h"
 #include "Modules/ModuleManager.h"
 

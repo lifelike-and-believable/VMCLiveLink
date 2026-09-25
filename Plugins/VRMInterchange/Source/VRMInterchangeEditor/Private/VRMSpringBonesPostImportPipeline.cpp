@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 // VRMSpringBonesPostImportPipeline
 // - Defers any on-disk mutations until after the user confirms the import dialog.
 // - Creates assets (Spring data + optional post-process ABP), marks packages dirty,
