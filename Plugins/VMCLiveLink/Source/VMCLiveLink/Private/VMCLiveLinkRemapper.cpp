@@ -1,5 +1,6 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkRemapper.h"
+#include "VMCLog.h"
 
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
@@ -16,6 +17,11 @@
 #include "Factories/DataAssetFactory.h"
 #include "Misc/PackageName.h"
 #endif
+
+// Presets that seed map entries (None and Custom seed nothing).
+static const ELLRemapPreset AllSeedPresets[] = {
+	ELLRemapPreset::ARKit, ELLRemapPreset::VMC_VRM, ELLRemapPreset::VMC_VRM1, ELLRemapPreset::VRoid, ELLRemapPreset::Rokoko
+};
 
 static void GetBoneNames(TSoftObjectPtr<USkeletalMesh> Mesh, TArray<FName>& Out)
 {
@@ -61,8 +67,14 @@ void UVMCLiveLinkRemapper::Initialize(const FLiveLinkSubjectKey& InSubjectKey)
 				if (BoneNameMap.Num() == 0)  for (const FName& N : Skel.GetBoneNames())     BoneNameMap.Add(N, N);
 				if (CurveNameMap.Num() == 0) for (const FName& N : Base.PropertyNames)      CurveNameMap.Add(N, N);
 
-				Preset = GuessPreset(Skel.GetBoneNames(), Base.PropertyNames);
-				ApplyPreset(Preset);
+				// Only guess when the user has not chosen a preset (or applied a mapping asset,
+				// which sets Custom). ApplyPreset removes other presets' entries, so guessing on
+				// every Initialize would undo a deliberate choice.
+				if (Preset == ELLRemapPreset::None)
+				{
+					Preset = GuessPreset(Skel.GetBoneNames(), Base.PropertyNames);
+					ApplyPreset(Preset);
+				}
 			}
 		}
 	}
@@ -109,14 +121,20 @@ void UVMCLiveLinkRemapper::DetectAndSeedFromSubject()
 
 void UVMCLiveLinkRemapper::ApplyPreset(ELLRemapPreset InPreset)
 {
-	switch (InPreset)
+	// Remove entries that a preset added and the user has not changed since, so switching
+	// presets does not accumulate stale mappings. Entries the user edited are kept.
+	for (const ELLRemapPreset Other : AllSeedPresets)
 	{
-	case ELLRemapPreset::ARKit:		SeedCurves_ARKit();   break;
-	case ELLRemapPreset::VMC_VRM:	SeedCurves_VMC_VRM(); break;
-	case ELLRemapPreset::VRoid:		SeedCurvesAndBones_VRoid(); break;
-	case ELLRemapPreset::Rokoko:	SeedCurves_Rokoko();  break;
-	default: break;
+		TMap<FName, FName> OtherBones, OtherCurves;
+		GetPresetMaps(Other, OtherBones, OtherCurves);
+		RemoveUnchangedEntries(BoneNameMap, OtherBones);
+		RemoveUnchangedEntries(CurveNameMap, OtherCurves);
 	}
+
+	TMap<FName, FName> PresetBones, PresetCurves;
+	GetPresetMaps(InPreset, PresetBones, PresetCurves);
+	BoneNameMap.Append(PresetBones);
+	CurveNameMap.Append(PresetCurves);
 
 	// If we have subject data, nudge humanoid bone names toward the reference mesh
 	if (IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
@@ -166,11 +184,131 @@ void UVMCLiveLinkRemapper::LoadCustomCurveMapFromJSON(const FString& JsonText)
 	RequestStaticDataRefresh();
 }
 
+// -------------- Worker --------------
+
+void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOutStaticData)
+{
+	if (!InOutStaticData.IsValid() ||
+		!InOutStaticData.GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>()) return;
+
+	auto& Skel = *InOutStaticData.Cast<FLiveLinkSkeletonStaticData>();
+
+	// Bones (use accessors for safety)
+	TArray<FName> Remapped = Skel.GetBoneNames();
+	for (FName& N : Remapped)
+	{
+		if (const FName* Out = BoneNameMap.Find(N)) N = *Out;
+	}
+	Skel.SetBoneNames(Remapped);
+
+	// Curves live on base static data in 5.6
+	FLiveLinkBaseStaticData& Base = static_cast<FLiveLinkBaseStaticData&>(Skel);
+	for (FName& C : Base.PropertyNames)
+	{
+		if (const FName* Out = CurveNameMap.Find(C)) C = *Out;
+	}
+
+	if (!bWarnedDuplicateCurves)
+	{
+		TSet<FName> Seen;
+		TArray<FString> Duplicates;
+		for (const FName& C : Base.PropertyNames)
+		{
+			bool bAlreadySeen = false;
+			Seen.Add(C, &bAlreadySeen);
+			if (bAlreadySeen)
+			{
+				Duplicates.AddUnique(C.ToString());
+			}
+		}
+		if (Duplicates.Num() > 0)
+		{
+			UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC remapper: several incoming curves map to the same name (%s). Only one value per name is usable; edit the Curve Name Map so each target has one source."),
+				*FString::Join(Duplicates, TEXT(", ")));
+			bWarnedDuplicateCurves = true;
+		}
+	}
+
+	// Normalizer: add missing counterparts at the end of the property list. Incoming curves are
+	// never modified.
+	SynthesizedCurves.Reset();
+	IncomingPropertyCount = Base.PropertyNames.Num();
+	if (!bEnableMetaHumanCurveNormalizer)
+	{
+		return;
+	}
+
+	auto IndexOf = [&Base](const TCHAR* Name) { return Base.PropertyNames.IndexOfByKey(FName(Name)); };
+	auto AddCounterpart = [&](const TCHAR* A, const TCHAR* B, float Scale)
+	{
+		const int32 IndexA = IndexOf(A);
+		const int32 IndexB = IndexOf(B);
+		if (IndexA != INDEX_NONE && IndexB == INDEX_NONE)
+		{
+			SynthesizedCurves.Add({ IndexA, Scale });
+			Base.PropertyNames.Add(FName(B));
+		}
+		else if (IndexB != INDEX_NONE && IndexA == INDEX_NONE)
+		{
+			SynthesizedCurves.Add({ IndexB, Scale });
+			Base.PropertyNames.Add(FName(A));
+		}
+	};
+
+	AddCounterpart(TEXT("eyeBlinkLeft"), TEXT("eyeBlinkRight"), BlinkMirrorStrength);
+	AddCounterpart(TEXT("mouthSmileLeft"), TEXT("mouthSmileRight"), JoyToSmileStrength);
+
+	const int32 FunnelIndex = IndexOf(TEXT("mouthFunnel"));
+	if (FunnelIndex != INDEX_NONE && IndexOf(TEXT("mouthPucker")) == INDEX_NONE)
+	{
+		SynthesizedCurves.Add({ FunnelIndex, 0.5f });
+		Base.PropertyNames.Add(FName(TEXT("mouthPucker")));
+	}
+}
+
+void FVMCLiveLinkRemapperWorker::RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData)
+{
+	if (SynthesizedCurves.Num() == 0) return;
+	if (!InOutFrameData.IsValid() || !InOutFrameData.GetStruct()->IsChildOf<FLiveLinkAnimationFrameData>()) return;
+
+	TArray<float>& Values = InOutFrameData.Cast<FLiveLinkAnimationFrameData>()->PropertyValues;
+
+	// Only extend frames that carry exactly the incoming properties this worker saw at static
+	// time; anything else was built against different static data.
+	if (Values.Num() != IncomingPropertyCount) return;
+
+	Values.Reserve(Values.Num() + SynthesizedCurves.Num());
+	for (const FSynthesizedCurve& Synth : SynthesizedCurves)
+	{
+		const float Value = Values.IsValidIndex(Synth.SourceIndex)
+			? FMath::Clamp(Values[Synth.SourceIndex] * Synth.Scale, 0.f, 1.f)
+			: 0.f;
+		Values.Add(Value);
+	}
+}
+
 // -------------- Seeding --------------
 
-void UVMCLiveLinkRemapper::SeedCurves_ARKit()
+namespace VMCRemapPresets
 {
-	static const TCHAR* ARKit[] = {
+	template <int32 N>
+	static void AddIdentity(TMap<FName, FName>& Map, const TCHAR* const (&Names)[N])
+	{
+		for (const TCHAR* Name : Names)
+		{
+			Map.Add(FName(Name), FName(Name));
+		}
+	}
+
+	static void AddPairs(TMap<FName, FName>& Map, std::initializer_list<TPair<const TCHAR*, const TCHAR*>> Pairs)
+	{
+		for (const TPair<const TCHAR*, const TCHAR*>& Pair : Pairs)
+		{
+			Map.Add(FName(Pair.Key), FName(Pair.Value));
+		}
+	}
+
+	static const TCHAR* const ARKitCurves[] = {
 		TEXT("browDownLeft"), TEXT("browDownRight"), TEXT("browInnerUp"),
 		TEXT("browOuterUpLeft"), TEXT("browOuterUpRight"),
 		TEXT("cheekPuff"), TEXT("cheekSquintLeft"), TEXT("cheekSquintRight"),
@@ -194,134 +332,151 @@ void UVMCLiveLinkRemapper::SeedCurves_ARKit()
 		TEXT("noseSneerLeft"), TEXT("noseSneerRight"),
 		TEXT("tongueOut")
 	};
-	for (const TCHAR* Name : ARKit)
+}
+
+void UVMCLiveLinkRemapper::GetPresetMaps(ELLRemapPreset InPreset, TMap<FName, FName>& OutBones, TMap<FName, FName>& OutCurves)
+{
+	using namespace VMCRemapPresets;
+	using FPair = TPair<const TCHAR*, const TCHAR*>;
+
+	OutBones.Reset();
+	OutCurves.Reset();
+
+	// Each preset maps every target from at most one source, so the published curve list never
+	// contains the same name twice. Expressions without a clear ARKit equivalent are left unmapped
+	// (they pass through under their original names).
+	switch (InPreset)
 	{
-		CurveNameMap.FindOrAdd(FName(Name)) = FName(Name);
+	case ELLRemapPreset::ARKit:
+		AddIdentity(OutCurves, ARKitCurves);
+		break;
+
+	case ELLRemapPreset::Rokoko:
+		// Rokoko forwards ARKit names; add aliases for its short-form smile names.
+		AddIdentity(OutCurves, ARKitCurves);
+		AddPairs(OutCurves, {
+			FPair(TEXT("mouthSmile_L"), TEXT("mouthSmileLeft")),
+			FPair(TEXT("mouthSmile_R"), TEXT("mouthSmileRight")),
+		});
+		// The aliases share targets with the identity entries; only one of each pair is expected
+		// in a given stream.
+		break;
+
+	case ELLRemapPreset::VMC_VRM:
+		// VRM 0.x blend shape preset names -> ARKit-style targets.
+		// Unmapped: Blink (both eyes; use Blink_L/Blink_R), I and E (no single ARKit shape),
+		// Angry (BrowDownLeft already maps to browDownLeft), Surprised, Neutral.
+		AddPairs(OutCurves, {
+			FPair(TEXT("Blink_L"),       TEXT("eyeBlinkLeft")),
+			FPair(TEXT("Blink_R"),       TEXT("eyeBlinkRight")),
+			FPair(TEXT("Joy"),           TEXT("mouthSmileLeft")),
+			FPair(TEXT("Sorrow"),        TEXT("mouthFrownLeft")),
+			FPair(TEXT("Fun"),           TEXT("cheekPuff")),
+			FPair(TEXT("A"),             TEXT("jawOpen")),
+			FPair(TEXT("U"),             TEXT("mouthPucker")),
+			FPair(TEXT("O"),             TEXT("mouthFunnel")),
+			FPair(TEXT("BrowDownLeft"),  TEXT("browDownLeft")),
+			FPair(TEXT("BrowDownRight"), TEXT("browDownRight")),
+			FPair(TEXT("BrowUpLeft"),    TEXT("browOuterUpLeft")),
+			FPair(TEXT("BrowUpRight"),   TEXT("browOuterUpRight")),
+		});
+		break;
+
+	case ELLRemapPreset::VMC_VRM1:
+		// VRM 1.0 expression preset names -> ARKit-style targets.
+		// Unmapped: blink (both eyes; use blinkLeft/blinkRight), ih and ee (no single ARKit shape),
+		// angry, relaxed, surprised, neutral, look*.
+		AddPairs(OutCurves, {
+			FPair(TEXT("blinkLeft"),  TEXT("eyeBlinkLeft")),
+			FPair(TEXT("blinkRight"), TEXT("eyeBlinkRight")),
+			FPair(TEXT("happy"),      TEXT("mouthSmileLeft")),
+			FPair(TEXT("sad"),        TEXT("mouthFrownLeft")),
+			FPair(TEXT("aa"),         TEXT("jawOpen")),
+			FPair(TEXT("ou"),         TEXT("mouthPucker")),
+			FPair(TEXT("oh"),         TEXT("mouthFunnel")),
+		});
+		break;
+
+	case ELLRemapPreset::VRoid:
+		// VMC humanoid bone names -> VRoid Studio skeleton names.
+		AddPairs(OutBones, {
+			FPair(TEXT("Hips"),          TEXT("J_Bip_C_Hips")),
+			FPair(TEXT("Spine"),         TEXT("J_Bip_C_Spine")),
+			FPair(TEXT("Chest"),         TEXT("J_Bip_C_Chest")),
+			FPair(TEXT("UpperChest"),    TEXT("J_Bip_C_UpperChest")),
+			FPair(TEXT("Neck"),          TEXT("J_Bip_C_Neck")),
+			FPair(TEXT("Head"),          TEXT("J_Bip_C_Head")),
+			FPair(TEXT("LeftEye"),       TEXT("J_Adj_L_FaceEye")),
+			FPair(TEXT("RightEye"),      TEXT("J_Adj_R_FaceEye")),
+			FPair(TEXT("LeftUpperLeg"),  TEXT("J_Bip_L_UpperLeg")),
+			FPair(TEXT("RightUpperLeg"), TEXT("J_Bip_R_UpperLeg")),
+			FPair(TEXT("LeftLowerLeg"),  TEXT("J_Bip_L_LowerLeg")),
+			FPair(TEXT("RightLowerLeg"), TEXT("J_Bip_R_LowerLeg")),
+			FPair(TEXT("LeftFoot"),      TEXT("J_Bip_L_Foot")),
+			FPair(TEXT("RightFoot"),     TEXT("J_Bip_R_Foot")),
+			FPair(TEXT("LeftToes"),      TEXT("J_Bip_L_Toes")),
+			FPair(TEXT("RightToes"),     TEXT("J_Bip_R_Toes")),
+			FPair(TEXT("LeftShoulder"),  TEXT("J_Bip_L_Shoulder")),
+			FPair(TEXT("RightShoulder"), TEXT("J_Bip_R_Shoulder")),
+			FPair(TEXT("LeftUpperArm"),  TEXT("J_Bip_L_UpperArm")),
+			FPair(TEXT("RightUpperArm"), TEXT("J_Bip_R_UpperArm")),
+			FPair(TEXT("LeftLowerArm"),  TEXT("J_Bip_L_LowerArm")),
+			FPair(TEXT("RightLowerArm"), TEXT("J_Bip_R_LowerArm")),
+			FPair(TEXT("LeftHand"),      TEXT("J_Bip_L_Hand")),
+			FPair(TEXT("RightHand"),     TEXT("J_Bip_R_Hand")),
+		});
+		{
+			// Fingers: <Side><Finger><Proximal|Intermediate|Distal> -> J_Bip_<S>_<Finger><1|2|3>
+			static const TCHAR* const Sides[] = { TEXT("Left"), TEXT("Right") };
+			static const TCHAR* const ShortSides[] = { TEXT("L"), TEXT("R") };
+			static const TCHAR* const Fingers[] = { TEXT("Thumb"), TEXT("Index"), TEXT("Middle"), TEXT("Ring"), TEXT("Little") };
+			static const TCHAR* const Segments[] = { TEXT("Proximal"), TEXT("Intermediate"), TEXT("Distal") };
+			for (int32 SideIndex = 0; SideIndex < 2; ++SideIndex)
+			{
+				const TCHAR* Side = Sides[SideIndex];
+				const TCHAR* ShortSide = ShortSides[SideIndex];
+				for (const TCHAR* Finger : Fingers)
+				{
+					for (int32 Seg = 0; Seg < 3; ++Seg)
+					{
+						OutBones.Add(
+							FName(*FString::Printf(TEXT("%s%s%s"), Side, Finger, Segments[Seg])),
+							FName(*FString::Printf(TEXT("J_Bip_%s_%s%d"), ShortSide, Finger, Seg + 1)));
+					}
+				}
+			}
+		}
+		AddPairs(OutCurves, {
+			FPair(TEXT("Blink"),     TEXT("Fcl_EYE_Close")),
+			FPair(TEXT("Blink_L"),   TEXT("Fcl_EYE_Close_L")),
+			FPair(TEXT("Blink_R"),   TEXT("Fcl_EYE_Close_R")),
+			FPair(TEXT("Joy"),       TEXT("Fcl_ALL_Joy")),
+			FPair(TEXT("Angry"),     TEXT("Fcl_ALL_Angry")),
+			FPair(TEXT("Sorrow"),    TEXT("Fcl_ALL_Sorrow")),
+			FPair(TEXT("Fun"),       TEXT("Fcl_ALL_Fun")),
+			FPair(TEXT("Surprised"), TEXT("Fcl_ALL_Surprised")),
+			FPair(TEXT("A"),         TEXT("Fcl_MTH_A")),
+			FPair(TEXT("I"),         TEXT("Fcl_MTH_I")),
+			FPair(TEXT("U"),         TEXT("Fcl_MTH_U")),
+			FPair(TEXT("E"),         TEXT("Fcl_MTH_E")),
+			FPair(TEXT("O"),         TEXT("Fcl_MTH_O")),
+		});
+		break;
+
+	default:
+		break;
 	}
 }
 
-void UVMCLiveLinkRemapper::SeedCurvesAndBones_VRoid()
+void UVMCLiveLinkRemapper::RemoveUnchangedEntries(TMap<FName, FName>& InOutMap, const TMap<FName, FName>& PresetEntries)
 {
-	BoneNameMap.FindOrAdd("Hips")			= "J_Bip_C_Hips";
-	BoneNameMap.FindOrAdd("Spine")			= "J_Bip_C_Spine";
-	BoneNameMap.FindOrAdd("Chest")			= "J_Bip_C_Chest";
-	BoneNameMap.FindOrAdd("UpperChest")		= "J_Bip_C_UpperChest";
-	BoneNameMap.FindOrAdd("Neck")			= "J_Bip_C_Neck";
-	BoneNameMap.FindOrAdd("Head")			= "J_Bip_C_Head";
-	BoneNameMap.FindOrAdd("LeftEye")		= "J_Adj_L_FaceEye";
-	BoneNameMap.FindOrAdd("RightEye")		= "J_Adj_R_FaceEye";
-	BoneNameMap.FindOrAdd("LeftUpperLeg")	= "J_Bip_L_UpperLeg";
-	BoneNameMap.FindOrAdd("RightUpperLeg")	= "J_Bip_R_UpperLeg";
-	BoneNameMap.FindOrAdd("LeftLowerLeg")	= "J_Bip_L_LowerLeg";
-	BoneNameMap.FindOrAdd("RightLowerLeg")	= "J_Bip_R_LowerLeg";
-	BoneNameMap.FindOrAdd("LeftFoot")		= "J_Bip_L_Foot";
-	BoneNameMap.FindOrAdd("RightFoot")		= "J_Bip_R_Foot";
-	BoneNameMap.FindOrAdd("LeftToes")		= "J_Bip_L_Toes";
-	BoneNameMap.FindOrAdd("RightToes")		= "J_Bip_R_Toes";
-	BoneNameMap.FindOrAdd("LeftShoulder")	= "J_Bip_L_Shoulder";
-	BoneNameMap.FindOrAdd("RightShoulder")	= "J_Bip_R_Shoulder";
-	BoneNameMap.FindOrAdd("LeftUpperArm")	= "J_Bip_L_UpperArm";
-	BoneNameMap.FindOrAdd("RightUpperArm")	= "J_Bip_R_UpperArm";
-	BoneNameMap.FindOrAdd("LeftLowerArm")	= "J_Bip_L_LowerArm";
-	BoneNameMap.FindOrAdd("RightLowerArm")	= "J_Bip_R_LowerArm";
-	BoneNameMap.FindOrAdd("LeftHand")		= "J_Bip_L_Hand";
-	BoneNameMap.FindOrAdd("RightHand")		= "J_Bip_R_Hand";
-	BoneNameMap.FindOrAdd("LeftThumbProximal")			= "J_Bip_L_Thumb1";
-	BoneNameMap.FindOrAdd("LeftThumbIntermediate")		= "J_Bip_L_Thumb2";
-	BoneNameMap.FindOrAdd("LeftThumbDistal")			= "J_Bip_L_Thumb3";
-	BoneNameMap.FindOrAdd("RightThumbProximal")			= "J_Bip_R_Thumb1";
-	BoneNameMap.FindOrAdd("RightThumbIntermediate")		= "J_Bip_R_Thumb2";
-	BoneNameMap.FindOrAdd("RightThumbDistal")			= "J_Bip_R_Thumb3";
-
-	BoneNameMap.FindOrAdd("LeftIndexProximal")			= "J_Bip_L_Index1";
-	BoneNameMap.FindOrAdd("LeftIndexIntermediate")		= "J_Bip_L_Index2";
-	BoneNameMap.FindOrAdd("LeftIndexDistal")			= "J_Bip_L_Index3";
-	BoneNameMap.FindOrAdd("RightIndexProximal")			= "J_Bip_R_Index1";
-	BoneNameMap.FindOrAdd("RightIndexIntermediate")		= "J_Bip_R_Index2";
-	BoneNameMap.FindOrAdd("RightIndexDistal")			= "J_Bip_R_Index3";
-
-	BoneNameMap.FindOrAdd("LeftMiddleProximal")			= "J_Bip_L_Middle1";
-	BoneNameMap.FindOrAdd("LeftMiddleIntermediate")		= "J_Bip_L_Middle2";
-	BoneNameMap.FindOrAdd("LeftMiddleDistal")			= "J_Bip_L_Middle3";
-	BoneNameMap.FindOrAdd("RightMiddleProximal")		= "J_Bip_R_Middle1";
-	BoneNameMap.FindOrAdd("RightMiddleIntermediate")	= "J_Bip_R_Middle2";
-	BoneNameMap.FindOrAdd("RightMiddleDistal")			= "J_Bip_R_Middle3";
-
-	BoneNameMap.FindOrAdd("LeftRingProximal")			= "J_Bip_L_Ring1";
-	BoneNameMap.FindOrAdd("LeftRingIntermediate")		= "J_Bip_L_Ring2";
-	BoneNameMap.FindOrAdd("LeftRingDistal")				= "J_Bip_L_Ring3";
-	BoneNameMap.FindOrAdd("RightRingProximal")			= "J_Bip_R_Ring1";
-	BoneNameMap.FindOrAdd("RightRingIntermediate")		= "J_Bip_R_Ring2";
-	BoneNameMap.FindOrAdd("RightRingDistal")			= "J_Bip_R_Ring3";
-
-	BoneNameMap.FindOrAdd("LeftLittleProximal")			= "J_Bip_L_Little1";
-	BoneNameMap.FindOrAdd("LeftLittleIntermediate")		= "J_Bip_L_Little2";
-	BoneNameMap.FindOrAdd("LeftLittleDistal")			= "J_Bip_L_Little3";
-	BoneNameMap.FindOrAdd("RightLittleProximal")		= "J_Bip_R_Little1";
-	BoneNameMap.FindOrAdd("RightLittleIntermediate")	= "J_Bip_R_Little2";
-	BoneNameMap.FindOrAdd("RightLittleDistal")			= "J_Bip_R_Little3";
-
-	CurveNameMap.FindOrAdd("Blink") = "Fcl_EYE_Close"; // single blink → we’ll mirror in runtime
-	CurveNameMap.FindOrAdd("Blink_L") = "Fcl_EYE_Close_L";
-	CurveNameMap.FindOrAdd("Blink_R") = "Fcl_EYE_Close_R";
-
-	CurveNameMap.FindOrAdd("Joy") = "Fcl_ALL_Joy";
-	CurveNameMap.FindOrAdd("Angry") = "Fcl_ALL_Angry";
-	CurveNameMap.FindOrAdd("Sorrow") = "Fcl_ALL_Sorrow";
-	CurveNameMap.FindOrAdd("Fun") = "Fcl_ALL_Fun";
-	CurveNameMap.FindOrAdd("Surprised") = "Fcl_ALL_Surprised";
-
-	// A I U E O → a pragmatic ARKit set
-	CurveNameMap.FindOrAdd("A") = "Fcl_MTH_A";
-	CurveNameMap.FindOrAdd("I") = "Fcl_MTH_I";
-	CurveNameMap.FindOrAdd("U") = "Fcl_MTH_U";
-	CurveNameMap.FindOrAdd("E") = "Fcl_MTH_E";
-	CurveNameMap.FindOrAdd("O") = "Fcl_MTH_O";
-}
-
-void UVMCLiveLinkRemapper::SeedCurves_VMC_VRM()
-{
-	// Common VMC/VRM → ARKit-ish targets. Expand to match your source.
-	CurveNameMap.FindOrAdd("Blink") = "eyeBlinkLeft"; // single blink → we’ll mirror in runtime
-	CurveNameMap.FindOrAdd("Blink_L") = "eyeBlinkLeft";
-	CurveNameMap.FindOrAdd("Blink_R") = "eyeBlinkRight";
-
-	CurveNameMap.FindOrAdd("Joy") = "mouthSmileLeft";
-	CurveNameMap.FindOrAdd("Angry") = "browDownLeft";
-	CurveNameMap.FindOrAdd("Sorrow") = "mouthFrownLeft";
-	CurveNameMap.FindOrAdd("Fun") = "cheekPuff";
-
-	// A I U E O → a pragmatic ARKit set
-	CurveNameMap.FindOrAdd("A") = "jawOpen";
-	CurveNameMap.FindOrAdd("I") = "mouthSmileLeft";
-	CurveNameMap.FindOrAdd("U") = "mouthPucker";
-	CurveNameMap.FindOrAdd("E") = "mouthStretchLeft";
-	CurveNameMap.FindOrAdd("O") = "mouthFunnel";
-
-	// Brows
-	CurveNameMap.FindOrAdd("BrowDownLeft") = "browDownLeft";
-	CurveNameMap.FindOrAdd("BrowDownRight") = "browDownRight";
-	CurveNameMap.FindOrAdd("BrowUpLeft") = "browOuterUpLeft";
-	CurveNameMap.FindOrAdd("BrowUpRight") = "browOuterUpRight";
-
-	//	BoneNameMap.FindOrAdd("Hips")			= "J_Bip_C_Hips";
-	//	BoneNameMap.FindOrAdd("Spine")			= "J_Bip_C_Spine";
-	//	BoneNameMap.FindOrAdd("Chest")			= "J_Bip_C_Chest";
-	//	BoneNameMap.FindOrAdd("UpperChest")		= "J_Bip_C_UpperChest";
-	//	BoneNameMap.FindOrAdd("Neck")			= "J_Bip_C_Neck";
-	//	BoneNameMap.FindOrAdd("Head")			= "J_Bip_C_Head";
-
-
-}
-
-
-
-void UVMCLiveLinkRemapper::SeedCurves_Rokoko()
-{
-	SeedCurves_ARKit(); // Rokoko typically forwards ARKit names
-	// Common alias fixes
-	CurveNameMap.FindOrAdd("mouthSmile_L") = "mouthSmileLeft";
-	CurveNameMap.FindOrAdd("mouthSmile_R") = "mouthSmileRight";
+	for (const TPair<FName, FName>& Entry : PresetEntries)
+	{
+		if (const FName* Current = InOutMap.Find(Entry.Key); Current && *Current == Entry.Value)
+		{
+			InOutMap.Remove(Entry.Key);
+		}
+	}
 }
 
 void UVMCLiveLinkRemapper::SeedBones_FromHumanoidLike(const TArray<FName>& Incoming)
@@ -557,6 +712,16 @@ ELLRemapPreset UVMCLiveLinkRemapper::GuessPreset(const TArray<FName>& BoneNames,
 			++ARKitHits;
 	}
 	if (ARKitHits >= 20) return ELLRemapPreset::ARKit;
+
+	bool HasVRM1Visemes = false, HasVRM1Blink = false, HasVRM1Emotes = false;
+	for (const FName& N : CurveNames)
+	{
+		const FString S = N.ToString();
+		if (S == TEXT("aa") || S == TEXT("ih") || S == TEXT("ou") || S == TEXT("ee") || S == TEXT("oh")) HasVRM1Visemes = true;
+		if (S == TEXT("blinkLeft") || S == TEXT("blinkRight")) HasVRM1Blink = true;
+		if (S == TEXT("happy") || S == TEXT("angry") || S == TEXT("sad") || S == TEXT("relaxed")) HasVRM1Emotes = true;
+	}
+	if ((HasVRM1Visemes && HasVRM1Blink) || (HasVRM1Visemes && HasVRM1Emotes)) return ELLRemapPreset::VMC_VRM1;
 
 	bool HasVisemes = false, HasBlinkLR = false, HasEmotes = false;
 	for (const FName& N : CurveNames)
