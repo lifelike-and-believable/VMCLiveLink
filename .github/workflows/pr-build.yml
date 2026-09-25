@@ -36,7 +36,8 @@ jobs:
       ENGINE_ROOT: 'C:\Program Files\Epic Games\UE_5.6'
       PROJECT_FILE: 'VMCLiveLinkProject.uproject'
       HEADER_HOLDER: 'Lifelike & Believable Animation Design, Inc. | Athomas Goldberg'
-      TEST_FILTER: 'VRM.;VMC.'
+      # Test path prefixes, separated by '+' (RunTests syntax). ';' would end the RunTests command.
+      TEST_FILTER: 'VRM.+VMC.'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -109,6 +110,12 @@ jobs:
           }
 
           if ($Ran -eq 0) { Write-Error "No tests matched '$env:TEST_FILTER'"; exit 1 }
+          # Every prefix must match at least one test, so a filter mistake can't silently skip a suite.
+          foreach ($Prefix in $env:TEST_FILTER.Split('+')) {
+            $Matched = @($Report.tests | Where-Object { $_.fullTestPath -like "$Prefix*" }).Count
+            Write-Host "Prefix '$Prefix': $Matched test(s)"
+            if ($Matched -eq 0) { Write-Error "No tests ran for prefix '$Prefix'"; exit 1 }
+          }
           if ($Report.failed -gt 0) { exit 1 }
 
       - name: Upload test report
