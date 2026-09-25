@@ -18,8 +18,11 @@
  * the axis mapping and reverses the sense, so q = (x, y, z, w) becomes (-x, -z, -y, w). Then
  * ToUEDirection(q * v) == ToUERotation(q) * ToUEDirection(v) for any q and v.
  *
- * Facing: VRM 1.0 models face +Z in glTF and VRM 0.x models are expected to face -Z [Verify, T-05].
- * These functions don't yaw; plan task P1.9 adds a per-version yaw on top of them.
+ * Facing: VRM 1.0 models face +Z in glTF (VRM 1.0 spec), and VRM 0.x models face -Z (three-vrm's
+ * VRMUtils.rotateVRM0 turns VRM 0.x scenes 180 degrees about Y for the same reason). The mapping
+ * above takes glTF +Z to UE +Y, the direction the UE mannequin faces, so VRM 1.0 needs nothing more
+ * and VRM 0.x needs a 180-degree yaw. FVRMAxisConvention adds that yaw; importer code should convert
+ * through a convention for the file's version rather than call the functions below directly.
  */
 namespace VRM::Coord
 {
@@ -39,4 +42,50 @@ namespace VRM::Coord
 
 	/** A per-axis scale: the axes swap like directions, and magnitudes are unchanged. */
 	inline FVector ToUEScale(const FVector& S) { return FVector(S.X, S.Z, S.Y); }
+
+	enum class EVRMVersion : uint8
+	{
+		Unknown,	// not a VRM file; imported as generic glTF, which faces +Z like VRM 1.0
+		VRM0,
+		VRM1,
+	};
+
+	/**
+	 * How a given file's geometry maps to UE: the axis mapping above, the unit scale, and a
+	 * 180-degree yaw about UE Z for VRM 0.x so every version faces UE +Y. The yaw is a proper
+	 * rotation, so it doesn't change handedness or winding.
+	 */
+	struct FVRMAxisConvention
+	{
+		float Scale = MetersToCentimeters;
+		bool bYaw180 = false;
+
+		static FVRMAxisConvention ForVersion(EVRMVersion Version, float InScale = MetersToCentimeters)
+		{
+			FVRMAxisConvention Convention;
+			Convention.Scale = InScale;
+			Convention.bYaw180 = (Version == EVRMVersion::VRM0);
+			return Convention;
+		}
+
+		FVector Direction(const FVector& V) const
+		{
+			const FVector D = ToUEDirection(V);
+			return bYaw180 ? FVector(-D.X, -D.Y, D.Z) : D;
+		}
+		FVector3f Direction(const FVector3f& V) const
+		{
+			const FVector3f D = ToUEDirection(V);
+			return bYaw180 ? FVector3f(-D.X, -D.Y, D.Z) : D;
+		}
+		FVector Position(const FVector& V) const { return Direction(V) * Scale; }
+		FVector3f Position(const FVector3f& V) const { return Direction(V) * Scale; }
+
+		/** Conjugating by a 180-degree yaw about Z negates the rotation's X and Y. */
+		FQuat Rotation(const FQuat& Q) const
+		{
+			const FQuat R = ToUERotation(Q);
+			return bYaw180 ? FQuat(-R.X, -R.Y, R.Z, R.W) : R;
+		}
+	};
 }

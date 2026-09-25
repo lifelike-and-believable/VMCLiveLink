@@ -76,6 +76,44 @@ bool FVRMCoordinateConversionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMFacingTest, "VRM.Coordinates.Facing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMFacingTest::RunTest(const FString& Parameters)
+{
+	using namespace VRM::Coord;
+	using VRMCoordinateTests::Tolerance;
+
+	// Version detection from the top-level extensions.
+	{
+		FVRMParsedModel Model0, Model1;
+		if (TestTrue(TEXT("vrm0_minimal loads"), VRM::LoadVRMFile(VRMCoordinateTests::FixturePath(TEXT("vrm0_minimal")), Model0)))
+		{
+			TestTrue(TEXT("vrm0_minimal is VRM 0.x"), Model0.Version == EVRMVersion::VRM0);
+		}
+		if (TestTrue(TEXT("vrm1_minimal loads"), VRM::LoadVRMFile(VRMCoordinateTests::FixturePath(TEXT("vrm1_minimal")), Model1)))
+		{
+			TestTrue(TEXT("vrm1_minimal is VRM 1.0"), Model1.Version == EVRMVersion::VRM1);
+		}
+	}
+
+	// Each version's front (VRM 1.0: glTF +Z, VRM 0.x: glTF -Z) faces UE +Y, like the mannequin.
+	const FVRMAxisConvention VRM0 = FVRMAxisConvention::ForVersion(EVRMVersion::VRM0);
+	const FVRMAxisConvention VRM1 = FVRMAxisConvention::ForVersion(EVRMVersion::VRM1);
+	const FVRMAxisConvention Generic = FVRMAxisConvention::ForVersion(EVRMVersion::Unknown);
+	TestTrue(TEXT("VRM 1.0 front is UE +Y"), VRM1.Direction(FVector(0, 0, 1)).Equals(FVector(0, 1, 0), Tolerance));
+	TestTrue(TEXT("VRM 0.x front is UE +Y"), VRM0.Direction(FVector(0, 0, -1)).Equals(FVector(0, 1, 0), Tolerance));
+	TestTrue(TEXT("Generic glTF front (+Z) is UE +Y"), Generic.Direction(FVector(0, 0, 1)).Equals(FVector(0, 1, 0), Tolerance));
+	TestTrue(TEXT("Up stays up for VRM 0.x"), VRM0.Direction(FVector(0, 1, 0)).Equals(FVector(0, 0, 1), Tolerance));
+	TestTrue(TEXT("VRM 0.x left and right swap sides with the yaw"), VRM0.Direction(FVector(1, 0, 0)).Equals(FVector(-1, 0, 0), Tolerance));
+
+	// The yaw is a rotation, so the convention's rotation stays consistent with its directions.
+	const FQuat Q(FVector(0.3, -0.5, 0.8).GetSafeNormal(), 1.3);
+	const FVector V(0.2, -1.5, 0.9);
+	TestTrue(TEXT("VRM 0.x rotation consistency"), VRM0.Rotation(Q).RotateVector(VRM0.Direction(V)).Equals(VRM0.Direction(Q.RotateVector(V)), Tolerance));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringCoordinatesTest, "VRM.SpringBones.Coordinates",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -144,7 +182,8 @@ bool FVRMSpringCoordinatesTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// VRM 0.x collider offsets have Z negated relative to glTF (as three-vrm's VRM 0.x loader treats them).
+	// VRM 0.x collider offsets have Z negated relative to glTF (as three-vrm's VRM 0.x loader treats them),
+	// and VRM 0.x output gets the same 180-degree yaw as the mesh.
 	{
 		FVRMSpringConfig Config;
 		const FString Json = TEXT(R"JSON({
@@ -160,7 +199,9 @@ bool FVRMSpringCoordinatesTest::RunTest(const FString& Parameters)
 			&& TestTrue(TEXT("VRM 0.x sphere"), Config.Colliders.Num() == 1 && Config.Colliders[0].Spheres.Num() == 1))
 		{
 			const FVector Offset = Config.Colliders[0].Spheres[0].Offset;
-			TestTrue(FString::Printf(TEXT("VRM 0.x z offset is negated (%s)"), *Offset.ToString()), Offset.Equals(ToUEPosition(FVector(0, 0, -0.1), MetersToCentimeters), Tolerance));
+			const FVector Expected = FVRMAxisConvention::ForVersion(EVRMVersion::VRM0).Position(FVector(0, 0, -0.1));
+			TestTrue(FString::Printf(TEXT("VRM 0.x z offset is negated and yawed (%s vs %s)"), *Offset.ToString(), *Expected.ToString()), Offset.Equals(Expected, Tolerance));
+			TestTrue(TEXT("That puts it in front of the face (UE +Y)"), Offset.Equals(FVector(0, 10, 0), Tolerance));
 		}
 	}
 	return true;

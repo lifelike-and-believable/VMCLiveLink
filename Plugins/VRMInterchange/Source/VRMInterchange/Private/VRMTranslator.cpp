@@ -104,7 +104,7 @@ struct FCgltfScoped
 };
 
 // glTF -> UE conversion lives in VRMCoordinateConversion.h (shared with the spring bone parser).
-using VRM::Coord::ToUEDirection;
+// Everything here converts through the parsed model's Convention(), which carries the facing.
 
 template<typename TWeight>
 static void BindAllToRoot(TArray<TWeight>& Weights);
@@ -814,6 +814,11 @@ FVector VRM::GltfPositionToUE(const FVector& GltfPosition, float GlobalScale)
     return VRM::Coord::ToUEPosition(GltfPosition, GlobalScale);
 }
 
+FVector VRM::GltfPositionToUE(const FVector& GltfPosition, float GlobalScale, VRM::Coord::EVRMVersion Version)
+{
+    return VRM::Coord::FVRMAxisConvention::ForVersion(Version, GlobalScale).Position(GltfPosition);
+}
+
 static TArray<FVRMMeshInstance> CollectMeshInstances(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone)
 {
     TArray<FVRMMeshInstance> Instances;
@@ -942,6 +947,7 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
     FVRMParsedModel& Out, TArray<FMatrix44f>& OutVertexToRest)
 {
     if (!Data) return false;
+    const VRM::Coord::FVRMAxisConvention Convention = Out.Convention();
 
     TMap<const cgltf_skin*, FVRMSkinRestPose> SkinRestPoses;
 
@@ -1071,11 +1077,11 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
                 }
 
                 const FVector RestPos = FVector(VertexXf.TransformPosition(FVector(PosLocal[v])));
-                Out.Mesh.Positions.Add(FVector3f(VRM::GltfPositionToUE(RestPos, Out.GlobalScale)));
+                Out.Mesh.Positions.Add(FVector3f(Convention.Position(RestPos)));
 
                 if (NrmLocal.IsValidIndex(v))
                 {
-                    Out.Mesh.Normals.Add(ToUEDirection(TransformNormal(NormalXf, NrmLocal[v])));
+                    Out.Mesh.Normals.Add(Convention.Direction(TransformNormal(NormalXf, NrmLocal[v])));
                 }
                 else
                 {
@@ -1152,6 +1158,26 @@ bool VRM::LoadVRMFile(const FString& Filename, FVRMParsedModel& Out)
 
     // Bones: the joints of every skin (names, parents, UE-space local binds, reference pose fix).
     // Also fills Out.NodeToBoneMap for spring bone resolution.
+    // VRM version from the top-level extensions; it decides the facing (VRMCoordinateConversion.h).
+    Out.Version = VRM::Coord::EVRMVersion::Unknown;
+    for (cgltf_size i = 0; i < Data->data_extensions_count; ++i)
+    {
+        const char* ExtName = Data->data_extensions[i].name;
+        if (ExtName && FCStringAnsi::Strcmp(ExtName, "VRMC_vrm") == 0)
+        {
+            Out.Version = VRM::Coord::EVRMVersion::VRM1;
+            break;
+        }
+        if (ExtName && FCStringAnsi::Strcmp(ExtName, "VRM") == 0)
+        {
+            Out.Version = VRM::Coord::EVRMVersion::VRM0;
+        }
+    }
+    if (Out.Version == VRM::Coord::EVRMVersion::Unknown)
+    {
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] '%s' has no VRM or VRMC_vrm extension: not a VRM file, importing as generic glTF (facing +Z, like VRM 1.0)."), *Filename);
+    }
+
     TMap<int32, int32> NodeToBone;
     PopulateBonesFromSkins(Data, Out, NodeToBone);
     if (Data->skins_count > 0 && Out.Bones.Num() == 0)
@@ -1517,6 +1543,7 @@ static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out)
 static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FMatrix44f>& VertexToRest, FVRMParsedModel& Out)
 {
     if (!Data) return;
+    const VRM::Coord::FVRMAxisConvention Convention = Out.Convention();
 
     const int32 TotalVertices = Out.Mesh.Positions.Num();
     if (TotalVertices <= 0) return;
@@ -1638,7 +1665,7 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
                     const int32 GlobalIndex = VertexBase2 + v;
                     // Deltas are offsets, so they take only the linear part of the vertex's rest transform.
                     const FVector3f Src = VertexToRest.IsValidIndex(GlobalIndex) ? FVector3f(VertexToRest[GlobalIndex].TransformVector(DeltaLocal[v])) : DeltaLocal[v];
-                    const FVector3f Conv = VRM::Coord::ToUEPosition(Src, Out.GlobalScale);
+                    const FVector3f Conv = Convention.Position(Src);
                     if (Out.Mesh.Morphs.IsValidIndex(GlobalMorphIndex) && Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions.IsValidIndex(GlobalIndex))
                     {
                         Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions[GlobalIndex] = Conv;
@@ -1656,6 +1683,7 @@ static void ResetParsedModel(FVRMParsedModel& Out)
 {
     // Default global scale used throughout the translator
     Out.GlobalScale = 100.0f;
+    Out.Version = VRM::Coord::EVRMVersion::Unknown;
 
     Out.Materials.Reset();
     Out.Images.Reset();
@@ -1781,7 +1809,7 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
 
         // Rest pose position from the full node hierarchy: non-joint ancestors (an "Armature"
         // node, for example), rotations, scale and node matrices all apply.
-        RestPositions[bi] = VRM::GltfPositionToUE(NodeWorldMatrix(J).GetOrigin(), Out.GlobalScale);
+        RestPositions[bi] = Out.Convention().Position(NodeWorldMatrix(J).GetOrigin());
     }
 
     BuildReferencePoseBinds(RestPositions, Out.Bones);

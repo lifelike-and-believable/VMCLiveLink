@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "InterchangeTranslatorBase.h"
+#include "VRMCoordinateConversion.h"
 
 #if __has_include("Mesh/InterchangeMeshPayloadInterface.h")
   #include "Mesh/InterchangeMeshPayloadInterface.h"
@@ -94,6 +95,11 @@ struct FVRMParsedModel
     TMap<int32, FName> NodeToBoneMap;
 
     float GlobalScale = 100.f;
+
+    // VRM version, from the file's top-level extensions. Decides the facing (see VRMCoordinateConversion.h).
+    VRM::Coord::EVRMVersion Version = VRM::Coord::EVRMVersion::Unknown;
+
+    VRM::Coord::FVRMAxisConvention Convention() const { return VRM::Coord::FVRMAxisConvention::ForVersion(Version, GlobalScale); }
 };
 
 namespace VRM
@@ -101,8 +107,11 @@ namespace VRM
     /** Parses a .vrm file into Out (what UVRMTranslator translates). Exposed for tests. */
     VRMINTERCHANGE_API bool LoadVRMFile(const FString& Filename, FVRMParsedModel& Out);
 
-    /** The importer's glTF-to-UE position conversion (axes and GlobalScale). Exposed for tests. */
+    /** The importer's glTF-to-UE position conversion (axes and GlobalScale) for a VRM 1.0 or generic glTF file. Exposed for tests. */
     VRMINTERCHANGE_API FVector GltfPositionToUE(const FVector& GltfPosition, float GlobalScale);
+
+    /** The same for a file of the given version (VRM 0.x adds a 180-degree yaw). */
+    VRMINTERCHANGE_API FVector GltfPositionToUE(const FVector& GltfPosition, float GlobalScale, VRM::Coord::EVRMVersion Version);
 }
 
 #include "VRMTranslator.generated.h"
