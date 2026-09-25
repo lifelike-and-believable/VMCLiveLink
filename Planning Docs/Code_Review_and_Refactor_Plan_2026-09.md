@@ -470,7 +470,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **Stacked PRs get no CI:** `pr-build.yml` only triggers for PRs that target `main`, so stacked PRs are never built until they are retargeted.
 - **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
 - **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
-- **Tag named `main`:** the remote has a tag called `main` as well as the branch, so `git fetch origin main` fetches the tag, not the branch.
+- **Tag named `main`:** the remote had a tag called `main` as well as the branch, so `git fetch origin main` fetched the tag, not the branch. (Deleted by the owner on 2026-09-25.)
 - **VMC tests never ran:** the filter `VRM.;VMC.` was passed to `Automation RunTests`, where `;` ends the command. Only `VRM.` tests ran, and nothing reported it. Fixed by using `VRM.+VMC.` and failing when any prefix matches no tests.
 - **Retargeting and squash merges:** retargeting a PR did not start a build (fixed in P0.5). Because PRs are squash-merged, a stacked PR must first merge its old base branch's final commit, then `main`. Merging `main` directly shows every file of the base PR as a conflict.
 
@@ -545,12 +545,12 @@ Goal: make regressions visible before large changes land.
 - **Steps:**
   1. Build stacked PRs too: change `pr-build.yml`'s `pull_request.branches` to `['**']`, or drop the filter. Keep the rule that fork PRs never run on the self-hosted runner.
   2. Move to `actions/checkout@v5` and `actions/upload-artifact@v5` (Node 24).
-  3. Owner: delete the `main` tag (`git push origin :refs/tags/main`) unless it is intentional.
-  4. Owner: install MSVC 14.38 on the runner, or accept the warning. Consider a second runner if PR volume stays high.
+  3. Owner: delete the `main` tag (`git push origin :refs/tags/main`) unless it is intentional. **Done 2026-09-25.**
+  4. Owner: install MSVC 14.38 on the runner, or accept the warning. Consider a second runner if PR volume stays high. **Decision 2026-09-25: accept the toolchain warning for now (no hands-on access to the runner).** Revisit if the toolchain causes a real build difference.
   5. Move `UVRMTranslator` to the non-deprecated `GetMeshPayloadData(const FInterchangeMeshPayLoadKey&)` overload (X-06). The mesh global transform then comes from the payload key or the pipeline. Verify this in 5.6, 5.7 and 5.8, as #98 targets them.
   6. Optional: fail the build on new C4996 warnings in plugin code (not engine headers), so deprecations are caught as they appear.
 - **Acceptance:** a PR stacked on another PR gets a `PR Build and Tests` run. No Node 20 warning. No C4996 from plugin sources.
-- **Status:** steps 1, 2 and 5 merged in #112. The test-filter fix (X-07) followed separately. Steps 3 and 4 are for the owner. Step 6 is open.
+- **Status:** steps 1, 2 and 5 merged in #112. The test-filter fix (X-07) followed separately. Step 3 done by the owner; step 4 resolved by accepting the warning. Step 6 is open.
 
 ---
 
@@ -988,7 +988,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25, end of day.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all automation tests pass. That is 15 `VRM.` tests; the `VMC.` tests start running with the test-filter fix (X-07).
+*Last updated 2026-09-25, end of day.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 19 automation tests pass (15 `VRM.`, 4 `VMC.`).
 
 ### Status by task
 
@@ -998,7 +998,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P0.2 Synthetic VRM fixtures | #105 | Merged | Seventh fixture `bind_pose_offset` added in #109 |
 | P0.3 VMC test sender | #106 | Merged | |
 | P0.4 Logging categories | #100 | Merged | |
-| P0.5 CI hardening | #112 | Merged (steps 1, 2, 5) | Steps 3 and 4 are for the owner; step 6 is open |
+| P0.5 CI hardening | #112 | Merged (steps 1, 2, 5) | Step 3 done (tag deleted); step 4: toolchain warning accepted; step 6 open |
 | P1.1, P1.3, P1.5 VMC receive path | #107 | Merged | |
 | P1.2, P1.4 Source lifetime, subject settings | #101 | Merged | |
 | P1.6 Normalizer and presets | #102 | Merged | |
@@ -1008,7 +1008,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P1.18 Hygiene | #100 | Merged | |
 | P7.1 README corrections and this plan | #99, #111 | Merged | |
 | (unplanned) Six stale tests | #110 | Merged | X-05 |
-| (unplanned) Test filter so VMC tests run | this PR | Open | X-07 |
+| (unplanned) Test filter so VMC tests run | #113 | Merged | X-07. The first run with it: 19/19 tests (15 VRM, 4 VMC) |
 
 **Not started:** P1.9 to P1.16, and Phases 2 to 7.
 
@@ -1043,7 +1043,6 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 ### Verification still owed
 
 - **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8), and receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
-- **Owner:** delete the `main` tag, and decide on the runner toolchain (P0.5 steps 3 and 4).
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
   - T-02: one skin per mesh in VRoid exports.
