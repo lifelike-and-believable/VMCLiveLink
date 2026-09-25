@@ -183,7 +183,7 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
             TestEqual(TEXT("Spring references collider group"), Spring.ColliderGroupIndices.Num(), 1);
             TestTrue(TEXT("Spring stiffness in valid range"), Spring.Stiffness >= 0.0f && Spring.Stiffness <= 1.0f);
             TestTrue(TEXT("Spring drag in valid range"), Spring.Drag >= 0.0f && Spring.Drag <= 1.0f);
-            TestTrue(TEXT("Spring gravity power reasonable"), Spring.GravityPower >= 0.0f && Spring.GravityPower <= 1.0f);
+            TestTrue(TEXT("Spring gravity power reasonable (UE units)"), Spring.GravityPower >= 0.0f && Spring.GravityPower <= 100.0f);
         }
         
         AddInfo(FString::Printf(TEXT("Successfully parsed VRM with %d springs, %d colliders, %d joints"), 

@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMSpringBonesParser.h"
 #include "VRMInterchangeLog.h"
+#include "VRMCoordinateConversion.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonReader.h"
 #include "Misc/Paths.h"
@@ -65,20 +66,31 @@ namespace
         return !OutJson.IsEmpty();
     }
 
+    // Reads a vector in either form VRM uses: an array [x, y, z] (VRM 1.0) or an object
+    // {"x": .., "y": .., "z": ..} (VRM 0.x secondaryAnimation). Missing object members read as 0.
     static FVector ReadVec3(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field, const FVector& Default = FVector::ZeroVector)
     {
+        if (!Obj.IsValid()) return Default;
         const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
-        if (!Obj.IsValid() || !Obj->TryGetArrayField(Field, Arr) || !Arr || Arr->Num() < 3) return Default;
-        auto GetF = [](const TSharedPtr<FJsonValue>& V)->double { return V.IsValid() ? V->AsNumber() : 0.0; };
-        return FVector((float)GetF((*Arr)[0]), (float)GetF((*Arr)[1]), (float)GetF((*Arr)[2]));
-    }
-
-    // Convert a direction from glTF/VRM coordinate space into Unreal coordinate space (Z-up)
-    // glTF: (X right, Y up, Z forward) -> Unreal: (X forward, Y right, Z up)
-    // Mapping used here: UE = (glTF.Z, glTF.X, glTF.Y)
-    static FORCEINLINE FVector GltfToUE_Dir(const FVector& V)
-    {
-        return FVector(V.Z, V.X, V.Y);
+        if (Obj->TryGetArrayField(Field, Arr) && Arr && Arr->Num() >= 3)
+        {
+            double XYZ[3] = { 0.0, 0.0, 0.0 };
+            for (int32 k = 0; k < 3; ++k)
+            {
+                if ((*Arr)[k].IsValid()) { (*Arr)[k]->TryGetNumber(XYZ[k]); }
+            }
+            return FVector(XYZ[0], XYZ[1], XYZ[2]);
+        }
+        const TSharedPtr<FJsonObject>* VecObj = nullptr;
+        if (Obj->TryGetObjectField(Field, VecObj) && VecObj && VecObj->IsValid())
+        {
+            double X = 0.0, Y = 0.0, Z = 0.0;
+            (*VecObj)->TryGetNumberField(TEXT("x"), X);
+            (*VecObj)->TryGetNumberField(TEXT("y"), Y);
+            (*VecObj)->TryGetNumberField(TEXT("z"), Z);
+            return FVector(X, Y, Z);
+        }
+        return Default;
     }
 
     // Helper: Some exporters wrap shapes as { "sphere": {..} } or { "capsule": {..} }
@@ -486,7 +498,6 @@ namespace
                     if ((*SObj)->TryGetArrayField(TEXT("gravityDir"), Arr) && Arr && Arr->Num() >= 3)
                     {
                         S.GravityDir = ReadVec3(*SObj, TEXT("gravityDir"), FVector(0,-1,0));
-                        S.GravityDir = GltfToUE_Dir(S.GravityDir);
                         bGravDirSet = true;
                     }
                 }
@@ -514,7 +525,6 @@ namespace
                                 if ((*JObj)->TryGetArrayField(TEXT("gravityDir"), Arr) && Arr && Arr->Num() >= 3)
                                 {
                                     S.GravityDir = ReadVec3(*JObj, TEXT("gravityDir"), FVector(0,-1,0));
-                                    S.GravityDir = GltfToUE_Dir(S.GravityDir);
                                     bGravDirSet = true; bAnyAdopted = true;
                                 }
                             }
@@ -553,6 +563,10 @@ namespace
                     {
                         S.ColliderGroupIndices.Add((int32)Gv->AsNumber());
                     }
+                }
+                if (!bGravDirSet)
+                {
+                    S.GravityDir = FVector(0, -1, 0); // glTF down; converted with everything else below
                 }
                 Out.Springs.Add(MoveTemp(S));
             }
@@ -652,7 +666,6 @@ namespace
                 (*BObj)->TryGetNumberField(TEXT("stiffness"), Spring.Stiffness);
                 (*BObj)->TryGetNumberField(TEXT("dragForce"), Spring.Drag);
                 Spring.GravityDir = ReadVec3(*BObj, TEXT("gravityDir"), FVector(0, -1, 0));
-                Spring.GravityDir = GltfToUE_Dir(Spring.GravityDir);
                 (*BObj)->TryGetNumberField(TEXT("gravityPower"), Spring.GravityPower);
                 (*BObj)->TryGetNumberField(TEXT("hitRadius"), Spring.HitRadius);
 
@@ -690,6 +703,166 @@ namespace
     }
 }
 
+namespace
+{
+    // World (model-space) transform of every glTF node, in glTF axes and metres. Row-vector FMatrix,
+    // like the translator's: Global = Local * ParentGlobal.
+    static TArray<FMatrix> ComputeNodeWorldMatrices(const TSharedPtr<FJsonObject>& Root)
+    {
+        TArray<FMatrix> World;
+        const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
+        if (!Root.IsValid() || !Root->TryGetArrayField(TEXT("nodes"), Nodes) || !Nodes)
+        {
+            return World;
+        }
+
+        const int32 Num = Nodes->Num();
+        TArray<FMatrix> Local;
+        Local.Init(FMatrix::Identity, Num);
+        TArray<int32> Parent;
+        Parent.Init(INDEX_NONE, Num);
+        for (int32 i = 0; i < Num; ++i)
+        {
+            const TSharedPtr<FJsonObject>* Node = nullptr;
+            if (!(*Nodes)[i].IsValid() || !(*Nodes)[i]->TryGetObject(Node) || !Node || !Node->IsValid())
+            {
+                continue;
+            }
+
+            const TArray<TSharedPtr<FJsonValue>>* Matrix = nullptr;
+            if ((*Node)->TryGetArrayField(TEXT("matrix"), Matrix) && Matrix && Matrix->Num() == 16)
+            {
+                // Column-major for column vectors; the same 16 numbers row-major are the row-vector FMatrix.
+                for (int32 r = 0; r < 4; ++r)
+                {
+                    for (int32 c = 0; c < 4; ++c)
+                    {
+                        double V = (r == c) ? 1.0 : 0.0;
+                        if ((*Matrix)[r * 4 + c].IsValid()) { (*Matrix)[r * 4 + c]->TryGetNumber(V); }
+                        Local[i].M[r][c] = V;
+                    }
+                }
+            }
+            else
+            {
+                FQuat Rotation = FQuat::Identity;
+                const TArray<TSharedPtr<FJsonValue>>* Rot = nullptr;
+                if ((*Node)->TryGetArrayField(TEXT("rotation"), Rot) && Rot && Rot->Num() == 4)
+                {
+                    double Q[4] = { 0.0, 0.0, 0.0, 1.0 };
+                    for (int32 k = 0; k < 4; ++k) { if ((*Rot)[k].IsValid()) { (*Rot)[k]->TryGetNumber(Q[k]); } }
+                    Rotation = FQuat(Q[0], Q[1], Q[2], Q[3]).GetNormalized();
+                }
+                Local[i] = FTransform(Rotation, ReadVec3(*Node, TEXT("translation")), ReadVec3(*Node, TEXT("scale"), FVector::OneVector)).ToMatrixWithScale();
+            }
+
+            const TArray<TSharedPtr<FJsonValue>>* Children = nullptr;
+            if ((*Node)->TryGetArrayField(TEXT("children"), Children) && Children)
+            {
+                for (const TSharedPtr<FJsonValue>& Child : *Children)
+                {
+                    double ChildIndex = -1.0;
+                    if (Child.IsValid() && Child->TryGetNumber(ChildIndex) && ChildIndex >= 0.0 && ChildIndex < Num)
+                    {
+                        Parent[int32(ChildIndex)] = i;
+                    }
+                }
+            }
+        }
+
+        World.SetNum(Num);
+        TArray<uint8> State; // 0 = not visited, 1 = in progress (a cycle in a malformed file), 2 = done
+        State.Init(0, Num);
+        TFunction<void(int32)> Resolve = [&](int32 i)
+        {
+            if (State[i] == 2) { return; }
+            if (State[i] == 1) { World[i] = Local[i]; return; }
+            State[i] = 1;
+            const int32 P = Parent[i];
+            if (P != INDEX_NONE)
+            {
+                Resolve(P);
+                World[i] = Local[i] * World[P];
+            }
+            else
+            {
+                World[i] = Local[i];
+            }
+            State[i] = 2;
+        };
+        for (int32 i = 0; i < Num; ++i)
+        {
+            Resolve(i);
+        }
+        return World;
+    }
+
+    /**
+     * Converts a parsed spring config from glTF (node-local offsets, metres) to what the importer
+     * and the runtime use: Unreal axes and centimetres, with collider offsets expressed in the
+     * axis-aligned bone space of the imported skeleton.
+     *
+     * Imported bones have identity rest rotation (see the translator's reference pose), so a
+     * node-local offset is first taken through the node's original glTF world transform (rotation
+     * and scale), then converted like mesh vertices (VRMCoordinateConversion.h). Collider radii
+     * follow the node's world scale. Gravity is already in model space, so it only changes axes.
+     *
+     * VRM 0.x writes collider offsets with Z negated relative to glTF (UniVRM 0.x); three-vrm's
+     * VRM 0.x loader negates it back ("z is opposite in VRM0.0"). Its gravityDir is not negated.
+     */
+    static void ConvertSpringConfigToUE(const TSharedPtr<FJsonObject>& Root, FVRMSpringConfig& Config)
+    {
+        using namespace VRM::Coord;
+        const float Scale = MetersToCentimeters;
+        const TArray<FMatrix> NodeWorld = ComputeNodeWorldMatrices(Root);
+        const bool bVRM0 = (Config.Spec == EVRMSpringSpec::VRM0);
+
+        for (FVRMSpringCollider& Collider : Config.Colliders)
+        {
+            const FMatrix World = NodeWorld.IsValidIndex(Collider.NodeIndex) ? NodeWorld[Collider.NodeIndex] : FMatrix::Identity;
+            const FMatrix NormalXf = World.Inverse().GetTransposed();
+            const float RadiusScale = Scale * float(FVector(World.M[0][0], World.M[0][1], World.M[0][2]).Size());
+            auto ConvertOffset = [&World, bVRM0, Scale](FVector Offset)
+            {
+                if (bVRM0)
+                {
+                    Offset.Z = -Offset.Z;
+                }
+                return ToUEPosition(FVector(World.TransformVector(Offset)), Scale);
+            };
+
+            for (FVRMSpringColliderSphere& Sphere : Collider.Spheres)
+            {
+                Sphere.Offset = ConvertOffset(Sphere.Offset);
+                Sphere.Radius *= RadiusScale;
+            }
+            for (FVRMSpringColliderCapsule& Capsule : Collider.Capsules)
+            {
+                Capsule.Offset = ConvertOffset(Capsule.Offset);
+                Capsule.TailOffset = ConvertOffset(Capsule.TailOffset);
+                Capsule.Radius *= RadiusScale;
+            }
+            for (FVRMSpringColliderPlane& Plane : Collider.Planes)
+            {
+                Plane.Offset = ConvertOffset(Plane.Offset);
+                Plane.Normal = ToUEDirection(FVector(NormalXf.TransformVector(Plane.Normal))).GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, 1));
+            }
+        }
+
+        for (FVRMSpringJoint& Joint : Config.Joints)
+        {
+            Joint.HitRadius *= Scale;
+        }
+
+        for (FVRMSpring& Spring : Config.Springs)
+        {
+            Spring.GravityDir = ToUEDirection(Spring.GravityDir).GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
+            Spring.GravityPower *= Scale;
+            Spring.HitRadius *= Scale;
+        }
+    }
+}
+
 namespace VRM
 {
     bool ParseSpringBonesFromJson(const FString& Json, FVRMSpringConfig& OutConfig, FString& OutError)
@@ -699,8 +872,8 @@ namespace VRM
         if (Json.IsEmpty()) { OutError = TEXT("Empty JSON."); return false; }
         TSharedPtr<FJsonObject> Root; const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
         if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) { OutError = TEXT("Failed to parse JSON."); return false; }
-        if (ParseVRM1(Root, OutConfig, OutError)) { OutConfig.RawJson = Json; UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM1: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
-        FString Err0; FVRMSpringConfig As0; if (ParseVRM0(Root, As0, Err0)) { OutConfig = MoveTemp(As0); OutConfig.RawJson = Json; OutError.Reset(); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM0: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
+        if (ParseVRM1(Root, OutConfig, OutError)) { ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM1: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
+        FString Err0; FVRMSpringConfig As0; if (ParseVRM0(Root, As0, Err0)) { OutConfig = MoveTemp(As0); ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; OutError.Reset(); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM0: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
         OutError = TEXT("No VRM spring bone data detected."); return false;
     }
     bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, FString& OutError)
