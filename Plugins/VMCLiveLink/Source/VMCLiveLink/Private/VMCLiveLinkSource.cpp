@@ -1,6 +1,8 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkSource.h"
 #include "VMCLog.h"
+#include "VMCHumanoid.h"
+#include "VMCProtocol.h"
 
 // Live Link
 #include "ILiveLinkClient.h"
@@ -12,7 +14,6 @@
 #include "LiveLinkSubjectSettings.h"
 #include "LiveLinkSubjectRemapper.h"
 #include "VMCLiveLinkRemapper.h"
-#include "Async/Async.h"
 
 // OSC (cpp-only)
 #include "OSCServer.h"
@@ -23,75 +24,41 @@
 #include "Math/RotationMatrix.h"
 #include "Engine/SkeletalMesh.h" // for BuildRefOffsetsFromMesh
 
-// ---------------- Utils: OSC argument reading (UE5.6) ----------------
-
-static bool ReadStringFloat7(const FOSCMessage& Msg, FString& OutName,
-    float& px, float& py, float& pz,
-    float& qx, float& qy, float& qz, float& qw)
-{
-    const TArray<UE::OSC::FOSCData>& A = Msg.GetArgumentsChecked();
-    if (A.Num() != 8) return false;
-    OutName = A[0].GetString();
-    px = A[1].GetFloat(); py = A[2].GetFloat(); pz = A[3].GetFloat();
-    qx = A[4].GetFloat(); qy = A[5].GetFloat(); qz = A[6].GetFloat(); qw = A[7].GetFloat();
-    return true;
-}
-
-static bool ReadFloat7(const FOSCMessage& Msg,
-    float& px, float& py, float& pz,
-    float& qx, float& qy, float& qz, float& qw)
-{
-    const TArray<UE::OSC::FOSCData>& A = Msg.GetArgumentsChecked();
-    if (A.Num() != 7) return false;
-    px = A[0].GetFloat();
-    py = A[1].GetFloat();
-    pz = A[2].GetFloat();
-    
-    qx = A[3].GetFloat();
-    qy = A[4].GetFloat();
-    qz = A[5].GetFloat();
-    qw = A[6].GetFloat();
-    
-    return true;
-}
-
-// Helpers for basis/unit conversion (Unity → UE)
-static FVector ToUEPosition(bool bUnityToUE, bool bMetersToCm, float px, float py, float pz)
-{
-    FVector P = bUnityToUE ? FVector(-px, pz, py) : FVector(px, py, pz);
-    if (bMetersToCm) P *= 100.f;
-    return P;
-}
-
-static FQuat ToUERotation(bool bUnityToUE, float qx, float qy, float qz, float qw)
-{
-    const FQuat Q = bUnityToUE ? FQuat(-qx, qz, qy, qw) : FQuat(qx, qy, qz, qw);
-    FQuat N = Q;
-    N.Normalize();
-    return N;
-}
-
 // ---------------- Ctors & status ----------------
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName)
     : SourceName(InSourceName), ListenPort(39539), bUnityToUE(true), bMetersToCm(true), YawOffsetDeg(0.f)
 {
+    InitSkeleton();
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort)
     : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(true), bMetersToCm(true), YawOffsetDeg(0.f)
 {
+    InitSkeleton();
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg)
     : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), bMetersToCm(bInMetersToCm), YawOffsetDeg(InYawDeg)
 {
+    InitSkeleton();
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg, FString InSubject)
     : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), bMetersToCm(bInMetersToCm), YawOffsetDeg(InYawDeg), SubjectName(InSubject)
 
 {
+    InitSkeleton();
+}
+
+void FVMCLiveLinkSource::InitSkeleton()
+{
+    VMCHumanoid::BuildSkeleton(BoneNames, BoneParents);
+    BoneIndexByName.Reset();
+    for (int32 i = 0; i < BoneNames.Num(); ++i)
+    {
+        BoneIndexByName.Add(BoneNames[i], i);
+    }
 }
 
 void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid)
@@ -99,16 +66,27 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     Client = InClient;
     SourceGuid = InSourceGuid;
     bIsValid = StartOSC();
-    AsyncTask(ENamedThreads::GameThread, [this]()
-    {
-        EnsureSubjectSettingsWithDefaults();
-    });
+    // Subject settings are bootstrapped on the first /VMC/Ext/Blend/Apply (before anything is
+    // pushed), not here. Deferring lets a Live Link preset, which adds its sources before its
+    // subjects, create the subject with its saved settings first; EnsureSubjectSettingsWithDefaults
+    // then leaves those settings alone.
     // Warm caches and republish static once with mapped names
     RefreshStaticMapsFromSettings();
     bForceStaticNext = true;
 
     UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %d (valid=%d, unity2ue=%d, m_to_cm=%d, yaw=%.1f)"),
         *SourceName, ListenPort, bIsValid ? 1 : 0, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, YawOffsetDeg);
+}
+
+FVMCLiveLinkSource::~FVMCLiveLinkSource()
+{
+    // The OSC delegate is bound with AddRaw(this), so it must be removed even if Live Link
+    // never called RequestSourceShutdown. Skip this if the UObject system is already gone
+    // (very late teardown), since the OSC server is a UObject.
+    if (UObjectInitialized())
+    {
+        StopOSC();
+    }
 }
 
 bool FVMCLiveLinkSource::RequestSourceShutdown()
@@ -173,40 +151,73 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
 {
     const FString Addr = Msg.GetAddress().GetFullPath();
 
+    auto WarnMalformed = [this, &Addr]()
+    {
+        if (!bWarnedMalformed)
+        {
+            UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC source '%s': ignoring malformed %s message (unexpected argument count or types). Further malformed messages are ignored silently."),
+                *SourceName, *Addr);
+            bWarnedMalformed = true;
+        }
+    };
+
     if (Addr == TEXT("/VMC/Ext/Bone/Pos"))
     {
-        FString Bone; float px, py, pz, qx, qy, qz, qw;
-        if (!ReadStringFloat7(Msg, Bone, px, py, pz, qx, qy, qz, qw))
+        VMCProtocol::FArgs Args;
+        VMCProtocol::ReadArgs(Msg, Args);
+        VMCProtocol::FPose Pose;
+        if (!VMCProtocol::ParseBonePos(Args, Pose))
+        {
+            WarnMalformed();
             return;
+        }
 
-        const FName BoneName(*Bone);
-
-        FVector P = ToUEPosition(bUnityToUE, bMetersToCm, px, py, pz);
-        FQuat   Q = ToUERotation(bUnityToUE, qx, qy, qz, qw);
-
-        const FTransform Xf(Q, P, FVector(1));
+        const FName BoneName(*Pose.Name);
+        const FTransform Xf(
+            VMCProtocol::ToUERotation(Pose.Rotation, bUnityToUE),
+            VMCProtocol::ToUEPosition(Pose.Position, bUnityToUE, bMetersToCm),
+            FVector::OneVector);
 
         FScopeLock Lock(&DataGuard);
-        if (!BoneNames.Contains(BoneName))
+        if (!BoneIndexByName.Contains(BoneName))
         {
-            // Default: first seen bone becomes root (-1 parent). Others parent to 0 unless explicitly "root".
-            int32 Parent = BoneNames.Num() == 0 ? -1 : 0;
-            if (BoneName == FName("root")) Parent = -1;
-            BoneNames.Add(BoneName);
-            BoneParents.Add(Parent);
-            bStaticSent = false;          // ensure we republish new skeleton
+            // Not a Unity humanoid bone: append it (existing indices never move) under Hips.
+            const int32 NewIndex = BoneNames.Add(BoneName);
+            BoneParents.Add(VMCHumanoid::FallbackParentIndex);
+            BoneIndexByName.Add(BoneName, NewIndex);
+            UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': bone '%s' is not a Unity humanoid bone; parenting it to Hips."),
+                *SourceName, *BoneName.ToString());
             bForceStaticNext = true;
         }
         PendingPose.Add(BoneName, Xf);
     }
     else if (Addr == TEXT("/VMC/Ext/Root/Pos"))
     {
-        float px, py, pz, qx, qy, qz, qw;
-        if (!ReadFloat7(Msg, px, py, pz, qx, qy, qz, qw))
+        VMCProtocol::FArgs Args;
+        VMCProtocol::ReadArgs(Msg, Args);
+        VMCProtocol::FPose Pose;
+        bool bLegacyForm = false;
+        if (!VMCProtocol::ParseRootPos(Args, Pose, bLegacyForm))
+        {
+            WarnMalformed();
             return;
+        }
+        if (bLegacyForm && !bWarnedLegacyRoot)
+        {
+            UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': /VMC/Ext/Root/Pos arrived without a name (7 floats). Accepting it, but the VMC protocol sends a name first."),
+                *SourceName);
+            bWarnedLegacyRoot = true;
+        }
+        if (Pose.bHasScaleAndOffset && !bWarnedRootScaleOffset)
+        {
+            // VMC v2.1 scale/offset is for mixed-reality calibration; not applied yet.
+            UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': sender provides VMC v2.1 root scale and offset; they are currently ignored."),
+                *SourceName);
+            bWarnedRootScaleOffset = true;
+        }
 
-        FVector PR = ToUEPosition(bUnityToUE, bMetersToCm, px, py, pz);
-        FQuat   QR = ToUERotation(bUnityToUE, qx, qy, qz, qw);
+        FVector PR = VMCProtocol::ToUEPosition(Pose.Position, bUnityToUE, bMetersToCm);
+        FQuat   QR = VMCProtocol::ToUERotation(Pose.Rotation, bUnityToUE);
 
         // Apply extra yaw offset about UE Z
         if (!FMath::IsNearlyZero(YawOffsetDeg))
@@ -216,27 +227,22 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
             PR = YawDelta.RotateVector(PR);
         }
 
-        {
-            FScopeLock Lock(&DataGuard);
-            PendingRoot = FTransform(QR, PR, FVector(1));
-
-            // Ensure a 'root' exists in the skeleton so we have a slot to apply it
-            if (!BoneNames.Contains(FName("root")))
-            {
-                BoneNames.Insert(FName("root"), 0);
-                BoneParents.Insert(-1, 0);
-                bStaticSent = false;
-                bForceStaticNext = true;
-            }
-        }
+        FScopeLock Lock(&DataGuard);
+        PendingRoot = FTransform(QR, PR, FVector::OneVector);
     }
     else if (Addr == TEXT("/VMC/Ext/Blend/Val"))
     {
-        const TArray<UE::OSC::FOSCData>& A = Msg.GetArgumentsChecked();
-        if (A.Num() != 2) return;
+        VMCProtocol::FArgs Args;
+        VMCProtocol::ReadArgs(Msg, Args);
+        FString Name;
+        float Val = 0.f;
+        if (!VMCProtocol::ParseBlendVal(Args, Name, Val))
+        {
+            WarnMalformed();
+            return;
+        }
 
-        const FName CurveName(*A[0].GetString());
-        const float Val = A[1].GetFloat();
+        const FName CurveName(*Name);
 
         FScopeLock Lock(&DataGuard);
         if (!CurveNameToIndex.Contains(CurveName))
@@ -249,36 +255,37 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
     }
     else if (Addr == TEXT("/VMC/Ext/Blend/Apply"))
     {
-        // If we haven't yet attached defaults, do it now. OSC messages are always
-        // dispatched on the Game Thread (see UOSCServer::PumpPacketQueue), so this can
-        // run synchronously; deferring it via AsyncTask raced the PushStaticData/PushFrame
-        // calls below and could let the subject get auto-created (with generic default
-        // settings, not our default remapper) before this ever ran on the first Apply.
+        // OSC messages are dispatched on the Game Thread (see UOSCServer::PumpPacketQueue), so the
+        // subject bootstrap can run synchronously here, before anything is pushed.
         if (!bEnsuredDefaults)
         {
-            EnsureSubjectSettingsWithDefaults(); // already calls RefreshStaticMapsFromSettings() internally
+            EnsureSubjectSettingsWithDefaults(); // also refreshes the cached maps
         }
         else
         {
             RefreshStaticMapsFromSettings();
         }
 
-        if (bForceStaticNext || !bStaticSent)
+        // Decide on static data before building the frame, so a frame never carries more curve
+        // values than the static data it is validated against. Push static at most once.
+        bool bNeedStatic = false;
         {
+            FScopeLock Lock(&DataGuard);
+            bNeedStatic = !bStaticSent || bForceStaticNext || bStaticCurvesDirty;
             bForceStaticNext = false;
+            bStaticCurvesDirty = false;
+        }
+        if (bNeedStatic)
+        {
             PushStaticData(/*bForce=*/true);
         }
 
-        PushStaticData(/*bForce=*/false);
         PushFrame();
 
-        FScopeLock Lock(&DataGuard);
-        PendingCurves.Reset();
-
-        if (bStaticCurvesDirty)
+        if (bZeroMissingCurves)
         {
-            bStaticCurvesDirty = false;
-            PushStaticData(/*bForce=*/true);
+            FScopeLock Lock(&DataGuard);
+            PendingCurves.Reset();
         }
     }
 }
@@ -325,7 +332,6 @@ void FVMCLiveLinkSource::PushFrame()
 
     // Snapshot state under lock
     TArray<FName>            LocalBoneNames;
-    TArray<int32>            LocalBoneParents;
     TMap<FName, FTransform>  LocalPose;
     FTransform               LocalRoot = FTransform::Identity;
     TArray<FName>            LocalCurveNames;
@@ -341,7 +347,6 @@ void FVMCLiveLinkSource::PushFrame()
     {
         FScopeLock Lock(&DataGuard);
         LocalBoneNames = BoneNames;
-        LocalBoneParents = BoneParents;
         LocalPose = PendingPose;
         LocalRoot = PendingRoot;
         LocalCurveNames = CurveNamesOrdered;
@@ -377,55 +382,37 @@ void FVMCLiveLinkSource::PushFrame()
     for (int32 i = 0; i < NumBones; ++i)
     {
         const FName SrcName = LocalBoneNames[i];
+        const FTransform* In = LocalPose.Find(SrcName);
         FTransform X = FTransform::Identity;
 
-        // Rotation from incoming stream (if present)
-        if (const FTransform* In = LocalPose.Find(SrcName))
+        if (i == 0)
         {
-            X.SetRotation(In->GetRotation());
-            if (bLocalPreferIncoming) // only if your stream provides proper local translations
-                X.SetTranslation(In->GetTranslation());
-        }
-
-        // Translation handling
-        if (LocalBoneParents.IsValidIndex(i) && LocalBoneParents[i] == -1)
-        {
-            // Root gets live root translation. Prefer a Bone/Pos entry explicitly
-            // named "root" if the sender provided one; otherwise fall back to the
-            // dedicated /VMC/Ext/Root/Pos stream (LocalRoot), which is the common case
-            // and the only source of root data with the bundled sample sender.
-            if (const FTransform* In = LocalPose.Find(SrcName))
-            {
-                X.SetTranslation(In->GetTranslation());
-            }
-            else
-            {
-                X.SetTranslation(LocalRoot.GetTranslation());
-                X.SetRotation(LocalRoot.GetRotation());
-            }
+            // Root: a Bone/Pos entry named "root" if the sender provides one, otherwise the
+            // dedicated /VMC/Ext/Root/Pos stream.
+            X = In ? *In : LocalRoot;
         }
         else
         {
-            // Rotation from incoming stream (if present)
-            if (const FTransform* In = LocalPose.Find(SrcName))
+            if (In)
             {
                 X.SetRotation(In->GetRotation());
-                if (bLocalPreferIncoming)
-                {
-                    X.SetTranslation(In->GetTranslation());
-                }
             }
 
-            // Translation handling
-            if (!bLocalPreferIncoming || X.GetTranslation().IsNearlyZero())
+            // Hips always uses the streamed translation: it carries the body's height and
+            // movement relative to the root. Other bones use it only when the stream is trusted
+            // to send proper local translations; otherwise the reference skeleton's offsets.
+            const bool bIsHips = (i == VMCHumanoid::HipsSkeletonIndex);
+            bool bHaveTranslation = false;
+            if (In && (bIsHips || bLocalPreferIncoming))
             {
-                if (bLocalUseRefOffsets && bLocalHaveRefOffsets)
+                X.SetTranslation(In->GetTranslation());
+                bHaveTranslation = bIsHips || !X.GetTranslation().IsNearlyZero();
+            }
+            if (!bHaveTranslation && bLocalUseRefOffsets && bLocalHaveRefOffsets)
+            {
+                if (const FVector* Off = LocalRefOffsets.Find(MapBoneName(SrcName)))
                 {
-                    const FName Mapped = MapBoneName(SrcName);
-                    if (const FVector* Off = LocalRefOffsets.Find(Mapped))
-                    {
-                        X.SetTranslation(*Off);
-                    }
+                    X.SetTranslation(*Off);
                 }
             }
         }
@@ -542,31 +529,40 @@ void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
 
     const FLiveLinkSubjectKey Key{ SourceGuid, SubjectName };
 
-    // Bootstrap the subject settings if they don't exist yet.
-    FLiveLinkSubjectPreset Preset;
-    Preset.Key = FLiveLinkSubjectKey{ SourceGuid, SubjectName };
-    Preset.Role = ULiveLinkAnimationRole::StaticClass();
+    if (Client->GetSubjectSettings(Key) != nullptr)
+    {
+        // The subject already exists (for example, created by a Live Link preset or configured by
+        // the user). Keep its settings, including its remapper choice, as they are.
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC subject '%s' already exists; keeping its settings."), *SubjectName.ToString());
+    }
+    else
+    {
+        // Bootstrap the subject with our default remapper.
+        FLiveLinkSubjectPreset Preset;
+        Preset.Key = Key;
+        Preset.Role = ULiveLinkAnimationRole::StaticClass();
 
-    // Create a settings object we can hand to the client
-    ULiveLinkSubjectSettings* NewSettings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
+        ULiveLinkSubjectSettings* NewSettings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
 
-    const UVMCLiveLinkSettings* Proj = GetDefault<UVMCLiveLinkSettings>();
-    UClass* RemapperClass = (Proj && !Proj->DefaultRemapperClass.IsNull())
-        ? Proj->DefaultRemapperClass.LoadSynchronous()
-        : UVMCLiveLinkRemapper::StaticClass();
+        const UVMCLiveLinkSettings* Proj = GetDefault<UVMCLiveLinkSettings>();
+        UClass* RemapperClass = (Proj && !Proj->DefaultRemapperClass.IsNull())
+            ? Proj->DefaultRemapperClass.LoadSynchronous()
+            : UVMCLiveLinkRemapper::StaticClass();
+        if (!RemapperClass)
+        {
+            RemapperClass = UVMCLiveLinkRemapper::StaticClass();
+        }
 
-    NewSettings->Remapper = NewObject<ULiveLinkSubjectRemapper>(NewSettings, RemapperClass);
-    Preset.Settings = NewSettings;
+        NewSettings->Remapper = NewObject<ULiveLinkSubjectRemapper>(NewSettings, RemapperClass);
+        Preset.Settings = NewSettings;
 
-    // This creates the subject + settings in the client now (not “eventually”)
-    Client->CreateSubject(Preset);
-    Client->SetSubjectEnabled(Preset.Key, true);
+        // This creates the subject + settings in the client now (not "eventually")
+        Client->CreateSubject(Preset);
+        Client->SetSubjectEnabled(Preset.Key, true);
+    }
 
-    // 3) Warm caches and make sure we publish remapped names once
+    // Warm caches and make sure the next Apply publishes remapped names
     RefreshStaticMapsFromSettings();
     bForceStaticNext = true;
     bEnsuredDefaults = true;
-
-    // If bones are already known, push now; otherwise this will early-out harmlessly
-    PushStaticData(/*bForce=*/true);
 }

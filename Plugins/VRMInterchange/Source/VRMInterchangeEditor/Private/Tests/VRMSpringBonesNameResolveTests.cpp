@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #if !__has_include("cgltf.h")

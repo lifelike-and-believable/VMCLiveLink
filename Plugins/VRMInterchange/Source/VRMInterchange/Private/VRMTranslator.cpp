@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+// Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMTranslator.h"
 #include "VRMInterchangeLog.h"
 #include "InterchangeSourceData.h"
@@ -691,16 +691,6 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
 
         return Data;
     }
-}
-
-TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
-    const FInterchangeMeshPayLoadKey& PayLoadKey,
-    const FTransform& MeshGlobalTransform) const
-{
-    using namespace UE::Interchange;
-    FAttributeStorage Attributes;
-    Attributes.RegisterAttribute(UE::Interchange::FAttributeKey{ MeshPayload::Attributes::MeshGlobalTransform }, MeshGlobalTransform);
-    return GetMeshPayloadData(PayLoadKey, Attributes);
 }
 
 // ===== Texture Payload Interface (UE 5.6) =====

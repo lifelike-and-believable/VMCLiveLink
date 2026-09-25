@@ -24,7 +24,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           lfs: true
           
@@ -49,8 +49,12 @@ jobs:
 
       - name: Verify copyright headers
         run: |
-          $PluginDir = $env:PLUGIN_DIR
-          ./scripts/verify_copyright_headers.ps1 -PluginDir $PluginDir -Holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
+          $failed = $false
+          foreach ($pd in @($env:PLUGIN_DIR, $env:VRM_PLUGIN_DIR)) {
+            ./scripts/verify_copyright_headers.ps1 -PluginDir $pd -Holder "Lifelike & Believable Animation Design, Inc. | Athomas Goldberg"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
 
       - name: Build Fab packages (VMCLiveLink and VRMInterchange)
         run: |
@@ -192,7 +196,7 @@ jobs:
           Remove-Item -Path $TempDirVRM -Recurse -Force
 
       - name: Upload artifacts (all three zips)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: VMCLiveLink-Packages
           path: |
