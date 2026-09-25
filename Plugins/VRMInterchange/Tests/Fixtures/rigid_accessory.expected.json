@@ -1,0 +1,155 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": "Spine",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.0
+      ]
+    },
+    "3": {
+      "name": "Head",
+      "node": 3,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    }
+  },
+  "note": "Hat is not skinned: its vertices use the Hat node's world transform and bind to Head.",
+  "vertices": [
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 6,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 7,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 8,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Hat",
+      "vertex": 0,
+      "world_position_gltf": [
+        0.0,
+        1.75,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Hat",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.0,
+        1.75,
+        -0.1
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Hat",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.85,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

@@ -1,0 +1,125 @@
+{
+  "bones": {
+    "2": {
+      "name": "Hips",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "3": {
+      "name": "Spine",
+      "node": 3,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.0
+      ]
+    },
+    "4": {
+      "name": "Head",
+      "node": 4,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    }
+  },
+  "note": "Armature is not a joint; its rotation and scale must still apply to the bone positions (Hips at (0,1,0), Spine at (0,1.2,0), Head at (0,1.6,0) in metres).",
+  "vertices": [
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 6,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 7,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 8,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

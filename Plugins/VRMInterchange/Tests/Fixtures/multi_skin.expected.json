@@ -1,0 +1,194 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": "Spine",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.0
+      ]
+    },
+    "3": {
+      "name": "Head",
+      "node": 3,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    },
+    "4": {
+      "name": "LeftArm",
+      "node": 4,
+      "world_position_gltf": [
+        0.2,
+        1.5,
+        0.0
+      ]
+    }
+  },
+  "note": "LeftArm is a joint of the second skin only; it must still be in the skeleton.",
+  "vertices": [
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 6,
+      "world_position_gltf": [
+        -0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 7,
+      "world_position_gltf": [
+        0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 8,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "ArmMesh",
+      "vertex": 0,
+      "world_position_gltf": [
+        0.18,
+        1.5,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "ArmMesh",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.22,
+        1.5,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "ArmMesh",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.2,
+        1.52,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "ArmMesh",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "ArmMesh",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "ArmMesh",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

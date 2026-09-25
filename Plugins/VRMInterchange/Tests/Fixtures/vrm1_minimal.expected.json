@@ -1,0 +1,327 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": "Spine",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.0
+      ]
+    },
+    "3": {
+      "name": "Head",
+      "node": 3,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    },
+    "4": {
+      "name": "Hair1",
+      "node": 4,
+      "world_position_gltf": [
+        0.0,
+        1.7,
+        -0.05
+      ]
+    },
+    "5": {
+      "name": "Hair2",
+      "node": 5,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        -0.05
+      ]
+    },
+    "6": {
+      "name": "Hair3",
+      "node": 6,
+      "world_position_gltf": [
+        0.0,
+        1.5,
+        -0.05
+      ]
+    }
+  },
+  "expressions": {
+    "happy": [
+      {
+        "morph": "Fcl_ALL_Joy",
+        "weight": 1.0
+      }
+    ]
+  },
+  "humanoid": {
+    "head": 3,
+    "hips": 1,
+    "spine": 2
+  },
+  "morph_targets": [
+    "Fcl_ALL_Joy"
+  ],
+  "springs": {
+    "chains": [
+      {
+        "joint_nodes": [
+          4,
+          5,
+          6
+        ],
+        "name": "hair"
+      }
+    ],
+    "colliders": [
+      {
+        "inside": false,
+        "node": 3,
+        "radius_m": 0.08,
+        "sphere_offset_gltf": [
+          0,
+          0.1,
+          0
+        ]
+      },
+      {
+        "inside": true,
+        "node": 2,
+        "note": "extended collider replaces the base (fallback) sphere of radius 0.05",
+        "radius_m": 0.3,
+        "sphere_offset_gltf": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "joint_params": {
+      "4": {
+        "drag": 0.4,
+        "gravity_dir_gltf": [
+          0,
+          -1,
+          0
+        ],
+        "gravity_power": 0.0,
+        "hit_radius_m": 0.02,
+        "stiffness": 1.0
+      },
+      "5": {
+        "drag": 0.5,
+        "gravity_dir_gltf": [
+          0,
+          -1,
+          0
+        ],
+        "gravity_power": 0.1,
+        "hit_radius_m": 0.015,
+        "stiffness": 0.6
+      },
+      "6": {
+        "drag": 0.6,
+        "gravity_dir_gltf": [
+          0,
+          -1,
+          0
+        ],
+        "gravity_power": 0.2,
+        "hit_radius_m": 0.01,
+        "stiffness": 0.3
+      }
+    }
+  },
+  "vertices": [
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 6,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 7,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 8,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 9,
+      "world_position_gltf": [
+        -0.02,
+        1.7,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 10,
+      "world_position_gltf": [
+        0.02,
+        1.7,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 11,
+      "world_position_gltf": [
+        0.0,
+        1.72,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 5,
+      "mesh_node": "Body",
+      "vertex": 12,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 5,
+      "mesh_node": "Body",
+      "vertex": 13,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 5,
+      "mesh_node": "Body",
+      "vertex": 14,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 6,
+      "mesh_node": "Body",
+      "vertex": 15,
+      "world_position_gltf": [
+        -0.02,
+        1.5,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 6,
+      "mesh_node": "Body",
+      "vertex": 16,
+      "world_position_gltf": [
+        0.02,
+        1.5,
+        -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 6,
+      "mesh_node": "Body",
+      "vertex": 17,
+      "world_position_gltf": [
+        0.0,
+        1.52,
+        -0.05
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

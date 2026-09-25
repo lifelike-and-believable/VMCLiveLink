@@ -1,0 +1,170 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": null,
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.2,
+        0.0
+      ]
+    },
+    "3": {
+      "name": "Bone",
+      "node": 3,
+      "world_position_gltf": [
+        0.0,
+        1.4,
+        0.0
+      ]
+    },
+    "4": {
+      "name": "Bone",
+      "node": 4,
+      "world_position_gltf": [
+        0.1,
+        1.4,
+        0.0
+      ]
+    }
+  },
+  "expected_bone_names_by_node": {
+    "1": "Hips",
+    "2": "Node_2",
+    "3": "Bone",
+    "4": "Bone_1"
+  },
+  "note": "Bone names must be unique and identical between the skeleton and the mesh payload.",
+  "vertices": [
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.2,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.22,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 6,
+      "world_position_gltf": [
+        -0.02,
+        1.4,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 7,
+      "world_position_gltf": [
+        0.02,
+        1.4,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 3,
+      "mesh_node": "Body",
+      "vertex": 8,
+      "world_position_gltf": [
+        0.0,
+        1.42,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 9,
+      "world_position_gltf": [
+        0.08,
+        1.4,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 10,
+      "world_position_gltf": [
+        0.12,
+        1.4,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 4,
+      "mesh_node": "Body",
+      "vertex": 11,
+      "world_position_gltf": [
+        0.1,
+        1.42,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}
