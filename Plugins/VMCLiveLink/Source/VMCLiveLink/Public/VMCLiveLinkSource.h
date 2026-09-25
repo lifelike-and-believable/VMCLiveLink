@@ -95,9 +95,12 @@ private:
     // Static (skeleton) tracking
     bool bStaticSent = false;
 
-    // Bones
+    // Bones: "root" at 0, then the Unity humanoid bones (see VMCHumanoid), then any other bone
+    // names the sender streams, appended in arrival order. Indices never change once assigned.
     TArray<FName> BoneNames;    // index-aligned
     TArray<int32> BoneParents;  // -1 for root
+    TMap<FName, int32> BoneIndexByName;
+    void InitSkeleton();
 
     // Per-frame pose cache
     TMap<FName, FTransform> PendingPose; // bone -> transform
@@ -106,8 +109,17 @@ private:
     // Curves → Properties (UE 5.6)
     TArray<FName>     CurveNamesOrdered;     // advertised in StaticData.PropertyNames
     TMap<FName, int32> CurveNameToIndex;      // name → index in CurveNamesOrdered
-    TMap<FName, float> PendingCurves;         // per-frame values
+    TMap<FName, float> PendingCurves;         // latest value per curve (held between frames)
     bool              bStaticCurvesDirty = false; // republish static when set grows
+
+    // When true, curves not sent since the previous Blend/Apply are published as 0 instead of
+    // holding their last value. Senders that stream only changed blend shapes need this off.
+    bool bZeroMissingCurves = false;
+
+    // One-time warnings for non-conformant or unsupported input
+    bool bWarnedLegacyRoot = false;
+    bool bWarnedRootScaleOffset = false;
+    bool bWarnedMalformed = false;
    
     // Track which remapper is currently bound (from subject settings)
     TWeakObjectPtr<ULiveLinkSubjectRemapper> LastSeenRemapper;
