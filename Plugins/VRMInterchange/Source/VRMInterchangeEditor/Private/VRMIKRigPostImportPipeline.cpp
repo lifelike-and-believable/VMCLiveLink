@@ -14,6 +14,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Rig/IKRigDefinition.h"
 #include "VRMInterchangeSettings.h"
+#include "VRMInterchangeLog.h"
 
 #if WITH_EDITOR
 #include "UnrealEdGlobals.h"
@@ -104,7 +105,7 @@ bool UVRMIKRigPostImportPipeline::DuplicateTemplateIKRig(const FString& TargetPa
 	UIKRigDefinition* TemplateRig = Cast<UIKRigDefinition>(StaticLoadObject(UIKRigDefinition::StaticClass(), nullptr, TemplatePath));
 	if (!TemplateRig)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] IK Rig pipeline: Could not find template IK Rig at '%s'."), TemplatePath);
+		UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] IK Rig pipeline: Could not find template IK Rig at '%s'."), TemplatePath);
 		return false;
 	}
 
@@ -126,7 +127,7 @@ bool UVRMIKRigPostImportPipeline::DuplicateTemplateIKRig(const FString& TargetPa
 	if (!Pkg) return false;
 
 	UObject* Duplicated = StaticDuplicateObject(TemplateRig, Pkg, *UniqueName);
-	if (!Duplicated) { UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] IK Rig pipeline: Failed to duplicate template IK Rig.")); return false; }
+	if (!Duplicated) { UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] IK Rig pipeline: Failed to duplicate template IK Rig.")); return false; }
 	FAssetRegistryModule::AssetCreated(Duplicated);
 	OutIKRig = Cast<UIKRigDefinition>(Duplicated);
 	return OutIKRig != nullptr;
