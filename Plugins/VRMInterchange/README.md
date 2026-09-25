@@ -45,6 +45,8 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 
 4. If prompted, allow Unreal to rebuild the plugin modules.
 
+5. **Register the VRM import pipelines.** The first time the editor starts with the plugin, a notification offers to register them. Click **Register**, or use **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** at any time. This adds the spring bone, IK Rig, Live Link and material pipelines to the `.vrm` entry in **Project Settings > Interchange** and saves that setting. The plugin does not change your project settings unless you ask it to.
+
 ### Requirements
 
 - **Unreal Engine**: 5.6 or later
@@ -215,6 +217,9 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 ```
 
 ## Troubleshooting
+
+### VRM Pipelines Missing From the Import Dialog
+- Run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines**
 
 ### Import Dialog Doesn't Appear
 - Ensure the Interchange and InterchangeEditor plugins are enabled
