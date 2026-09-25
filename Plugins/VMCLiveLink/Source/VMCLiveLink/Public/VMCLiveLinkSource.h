@@ -27,6 +27,7 @@ public:
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort);
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg);
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg, FString Subject);
+    virtual ~FVMCLiveLinkSource();
 
     // ILiveLinkSource
     virtual void ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid) override;
