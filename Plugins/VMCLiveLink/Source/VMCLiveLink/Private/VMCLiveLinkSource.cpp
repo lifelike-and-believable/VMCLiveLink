@@ -12,7 +12,6 @@
 #include "LiveLinkSubjectSettings.h"
 #include "LiveLinkSubjectRemapper.h"
 #include "VMCLiveLinkRemapper.h"
-#include "Async/Async.h"
 
 // OSC (cpp-only)
 #include "OSCServer.h"
@@ -99,16 +98,27 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     Client = InClient;
     SourceGuid = InSourceGuid;
     bIsValid = StartOSC();
-    AsyncTask(ENamedThreads::GameThread, [this]()
-    {
-        EnsureSubjectSettingsWithDefaults();
-    });
+    // Subject settings are bootstrapped on the first /VMC/Ext/Blend/Apply (before anything is
+    // pushed), not here. Deferring lets a Live Link preset, which adds its sources before its
+    // subjects, create the subject with its saved settings first; EnsureSubjectSettingsWithDefaults
+    // then leaves those settings alone.
     // Warm caches and republish static once with mapped names
     RefreshStaticMapsFromSettings();
     bForceStaticNext = true;
 
     UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %d (valid=%d, unity2ue=%d, m_to_cm=%d, yaw=%.1f)"),
         *SourceName, ListenPort, bIsValid ? 1 : 0, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, YawOffsetDeg);
+}
+
+FVMCLiveLinkSource::~FVMCLiveLinkSource()
+{
+    // The OSC delegate is bound with AddRaw(this), so it must be removed even if Live Link
+    // never called RequestSourceShutdown. Skip this if the UObject system is already gone
+    // (very late teardown), since the OSC server is a UObject.
+    if (UObjectInitialized())
+    {
+        StopOSC();
+    }
 }
 
 bool FVMCLiveLinkSource::RequestSourceShutdown()
@@ -542,27 +552,39 @@ void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
 
     const FLiveLinkSubjectKey Key{ SourceGuid, SubjectName };
 
-    // Bootstrap the subject settings if they don't exist yet.
-    FLiveLinkSubjectPreset Preset;
-    Preset.Key = FLiveLinkSubjectKey{ SourceGuid, SubjectName };
-    Preset.Role = ULiveLinkAnimationRole::StaticClass();
+    if (Client->GetSubjectSettings(Key) != nullptr)
+    {
+        // The subject already exists (for example, created by a Live Link preset or configured by
+        // the user). Keep its settings, including its remapper choice, as they are.
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC subject '%s' already exists; keeping its settings."), *SubjectName.ToString());
+    }
+    else
+    {
+        // Bootstrap the subject with our default remapper.
+        FLiveLinkSubjectPreset Preset;
+        Preset.Key = Key;
+        Preset.Role = ULiveLinkAnimationRole::StaticClass();
 
-    // Create a settings object we can hand to the client
-    ULiveLinkSubjectSettings* NewSettings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
+        ULiveLinkSubjectSettings* NewSettings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
 
-    const UVMCLiveLinkSettings* Proj = GetDefault<UVMCLiveLinkSettings>();
-    UClass* RemapperClass = (Proj && !Proj->DefaultRemapperClass.IsNull())
-        ? Proj->DefaultRemapperClass.LoadSynchronous()
-        : UVMCLiveLinkRemapper::StaticClass();
+        const UVMCLiveLinkSettings* Proj = GetDefault<UVMCLiveLinkSettings>();
+        UClass* RemapperClass = (Proj && !Proj->DefaultRemapperClass.IsNull())
+            ? Proj->DefaultRemapperClass.LoadSynchronous()
+            : UVMCLiveLinkRemapper::StaticClass();
+        if (!RemapperClass)
+        {
+            RemapperClass = UVMCLiveLinkRemapper::StaticClass();
+        }
 
-    NewSettings->Remapper = NewObject<ULiveLinkSubjectRemapper>(NewSettings, RemapperClass);
-    Preset.Settings = NewSettings;
+        NewSettings->Remapper = NewObject<ULiveLinkSubjectRemapper>(NewSettings, RemapperClass);
+        Preset.Settings = NewSettings;
 
-    // This creates the subject + settings in the client now (not “eventually”)
-    Client->CreateSubject(Preset);
-    Client->SetSubjectEnabled(Preset.Key, true);
+        // This creates the subject + settings in the client now (not "eventually")
+        Client->CreateSubject(Preset);
+        Client->SetSubjectEnabled(Preset.Key, true);
+    }
 
-    // 3) Warm caches and make sure we publish remapped names once
+    // Warm caches and make sure we publish remapped names once
     RefreshStaticMapsFromSettings();
     bForceStaticNext = true;
     bEnsuredDefaults = true;
