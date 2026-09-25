@@ -113,7 +113,7 @@ bool FVRMIntegrationTestVRM10::RunTest(const FString& Parameters)
             
             if (Collider.Spheres.Num() > 0)
             {
-                TestEqual(TEXT("Sphere radius"), Collider.Spheres[0].Radius, 0.15f);
+                TestEqual(TEXT("Sphere radius (cm)"), Collider.Spheres[0].Radius, 15.0f); // 0.15 m; the parser returns UE units
             }
         }
         
@@ -199,8 +199,8 @@ bool FVRMIntegrationTestVRM0x::RunTest(const FString& Parameters)
             const FVRMSpring& Spring = Config.Springs[0];
             TestEqual(TEXT("Spring stiffness"), Spring.Stiffness, 0.8f);
             TestEqual(TEXT("Spring drag"), Spring.Drag, 0.2f);
-            TestEqual(TEXT("Spring gravity power"), Spring.GravityPower, 0.1f);
-            TestEqual(TEXT("Spring hit radius"), Spring.HitRadius, 0.02f);
+            TestEqual(TEXT("Spring gravity power (UE units)"), Spring.GravityPower, 10.0f); // 0.1, scaled like a length
+            TestEqual(TEXT("Spring hit radius (cm)"), Spring.HitRadius, 2.0f);
         }
         
         TestTrue(TEXT("Config is valid"), Config.IsValid());

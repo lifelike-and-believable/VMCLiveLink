@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMTranslator.h"
 #include "VRMInterchangeLog.h"
+#include "VRMCoordinateConversion.h"
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "InterchangeSceneNode.h"
@@ -102,47 +103,8 @@ struct FCgltfScoped
     }
 };
 
-// glTF->UE axis conversion helpers
-static FORCEINLINE FVector3f GltfToUE_Vector(const FVector3f& V)
-{
-    // glTF: +X Right, +Y Up, +Z Forward
-    // UE:   +X Forward, +Y Right, +Z Up
-    // Map (Xg,Yg,Zg) -> (Zg, Xg, Yg)
-    return FVector3f(V.Z, V.X, V.Y);
-}
-static FORCEINLINE FVector  GltfToUE_Vector(const FVector& V)
-{
-    return FVector(V.Z, V.X, V.Y);
-}
-static FQuat GltfToUE_Quat(const FQuat& Q)
-{
-    // Rue = C * Rg * C^-1, where C maps glTF basis to UE basis.
-    const FMatrix C( FPlane(0,0,1,0),  // col0 -> X components
-                     FPlane(1,0,0,0),  // col1 -> Y components
-                     FPlane(0,1,0,0),  // col2 -> Z components
-                     FPlane(0,0,0,1) );
-    const FMatrix CInv = C.GetTransposed();
-    const FMatrix Rg = FQuatRotationMatrix(Q);
-    const FMatrix Rue = C * Rg * CInv;
-    return Rue.ToQuat().GetNormalized();
-}
-
-// --- Reference pose fix helpers ---
-// Apply a minimal correction so that:
-// 1) Left/Right is unmirrored (mirror across Y axis),
-// 2) Forward faces +Y (apply +90deg rotation around Z)
-static FORCEINLINE FVector3f RefFix_Vector(const FVector3f& V)
-{
-    // Mirror across Y (flip sign)
-    const FVector3f M(V.X, -V.Y, V.Z);
-    // Rotate +90 degrees around Z: (x,y,z) -> (-y,x,z)
-    return FVector3f(-M.Y, M.X, M.Z);
-}
-static FORCEINLINE FVector RefFix_Vector(const FVector& V)
-{
-    const FVector M(V.X, -V.Y, V.Z);
-    return FVector(-M.Y, M.X, M.Z);
-}
+// glTF -> UE conversion lives in VRMCoordinateConversion.h (shared with the spring bone parser).
+using VRM::Coord::ToUEDirection;
 
 template<typename TWeight>
 static void BindAllToRoot(TArray<TWeight>& Weights);
@@ -849,7 +811,7 @@ static FVector3f TransformNormal(const FMatrix& InverseTranspose, const FVector3
 
 FVector VRM::GltfPositionToUE(const FVector& GltfPosition, float GlobalScale)
 {
-    return RefFix_Vector(GltfToUE_Vector(GltfPosition)) * GlobalScale;
+    return VRM::Coord::ToUEPosition(GltfPosition, GlobalScale);
 }
 
 static TArray<FVRMMeshInstance> CollectMeshInstances(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone)
@@ -1113,7 +1075,7 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
 
                 if (NrmLocal.IsValidIndex(v))
                 {
-                    Out.Mesh.Normals.Add(RefFix_Vector(GltfToUE_Vector(TransformNormal(NormalXf, NrmLocal[v]))));
+                    Out.Mesh.Normals.Add(ToUEDirection(TransformNormal(NormalXf, NrmLocal[v])));
                 }
                 else
                 {
@@ -1676,7 +1638,7 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
                     const int32 GlobalIndex = VertexBase2 + v;
                     // Deltas are offsets, so they take only the linear part of the vertex's rest transform.
                     const FVector3f Src = VertexToRest.IsValidIndex(GlobalIndex) ? FVector3f(VertexToRest[GlobalIndex].TransformVector(DeltaLocal[v])) : DeltaLocal[v];
-                    const FVector3f Conv = RefFix_Vector(GltfToUE_Vector(Src)) * Out.GlobalScale;
+                    const FVector3f Conv = VRM::Coord::ToUEPosition(Src, Out.GlobalScale);
                     if (Out.Mesh.Morphs.IsValidIndex(GlobalMorphIndex) && Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions.IsValidIndex(GlobalIndex))
                     {
                         Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions[GlobalIndex] = Conv;

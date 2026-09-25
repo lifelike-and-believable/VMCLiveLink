@@ -7,7 +7,8 @@
 /* ============================================================================
  *  VRM Spring Bones Runtime - Core Simulation Node Implementation
  *  NOTE: All SpringData geometry and scalar lengths are expected to be in UE units (cm).
- *        No runtime scaling by 100.f remains; pipeline converts from meters to cm when needed.
+ *        The spring bone parser converts from glTF (metres, node-local offsets) to UE axes and cm, with
+ *        collider offsets in the axis-aligned bone space of the imported skeleton (VRMCoordinateConversion.h).
  * ============================================================================ */
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
