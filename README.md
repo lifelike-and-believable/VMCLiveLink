@@ -34,11 +34,17 @@ Whether you’re crafting an XR dance performance, streaming a VTuber show, or b
 
 This repository includes automated GitHub Actions to keep the plugins Fab-ready.
 
+### ✅ Pull Request Build and Tests
+Runs on every pull request to `main` (from branches in this repository) and manually via **Actions → PR Build and Tests**:
+- Verifies copyright headers in both plugins.
+- Compiles the project's Editor target and the Game target (Development and Shipping) against UE 5.6.
+- Runs the plugin automation tests (`VRM.*`, `VMC.*`) headless and uploads the report as an artifact. The job fails if any test fails or no tests run.
+
 ### 🔎 Verify Build & Package
 [![Fab Plugin Builds](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/fab-plugin-build.yml/badge.svg)](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/fab-plugin-build.yml)
 
 Runs on tag push (`release/*`) or manually via **Actions → Fab Plugin Builds**:
-- Verifies all source files in `Plugins/VMCLiveLink` have a valid copyright header.
+- Verifies all source files in both plugins have a valid copyright header.
 - Builds both the VMCLiveLink and VRMInterchange plugins against the UE 5.6 engine root configured in the workflow.
 - Produces Fab-ready zips (a combined package plus one per plugin) as downloadable artifacts.
 - On a `release/*` tag push, also publishes those zips to a GitHub Release. Manual `workflow_dispatch` runs skip release creation and only produce the build artifacts.
