@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 // Editor-only post-import reparent: MI_VRM_<Character>_<Mat> -> MI_VRM_<Character>
 // Robust to underscores; matches by prefix within the same folder.
 // Hooks both UImportSubsystem::OnAssetPostImport and AssetRegistry::OnAssetAdded.
