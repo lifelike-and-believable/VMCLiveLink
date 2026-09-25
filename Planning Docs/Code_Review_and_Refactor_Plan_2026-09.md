@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-25):** 5 tasks are merged (P0.1, P0.4, P1.18, P7.1, and a test fix) and 10 more are in PRs going through CI. Findings X-05 to X-08 and task P0.5 were added from the first CI results. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-25, end of day):** 16 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.8, P1.17, P1.18 and P7.1), plus one unplanned test fix. `main` builds and passes all VRM and VMC tests. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -471,6 +471,8 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
 - **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
 - **Tag named `main`:** the remote has a tag called `main` as well as the branch, so `git fetch origin main` fetches the tag, not the branch.
+- **VMC tests never ran:** the filter `VRM.;VMC.` was passed to `Automation RunTests`, where `;` ends the command. Only `VRM.` tests ran, and nothing reported it. Fixed by using `VRM.+VMC.` and failing when any prefix matches no tests.
+- **Retargeting and squash merges:** retargeting a PR did not start a build (fixed in P0.5). Because PRs are squash-merged, a stacked PR must first merge its old base branch's final commit, then `main`. Merging `main` directly shows every file of the base PR as a conflict.
 
 ### X-08 (P2) Parallel PRs used symbols from each other
 - #103 was branched from `main` but used `LogVRMInterchange`, which only #100 declares. It failed to compile in the PR build. The fix ported #100's two-line declaration into #103.
@@ -485,7 +487,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 1. **One task per branch/PR.** Keep diffs minimal and scoped to the task's findings. Reference the task ID (for example `P1.7`) and the finding IDs in the PR description.
 2. **Verify the API before using it.** For every UE 5.6 API you touch (Interchange nodes, `ILiveLinkClient`, `UOSCServer`, `UIKRigController`, AnimGraph node APIs), confirm the signature in the engine source or the official API reference. Don't guess. If you can't confirm, stop and say so in the PR.
 3. **Resolve [Verify] items first.** For tasks that depend on a [Verify] finding, the first commit must add evidence: a spec excerpt, a failing test or fixture, or a captured OSC dump.
-4. **Build matrix.** Before opening a PR, compile `VMCLiveLinkProjectEditor Win64 Development` and a Game target (`Development` and `Shipping`). Run `Automation RunTests VRM;VMC` headless. If you can't compile in your environment, say so explicitly in the PR and list what was verified statically.
+4. **Build matrix.** Before opening a PR, compile `VMCLiveLinkProjectEditor Win64 Development` and a Game target (`Development` and `Shipping`). Run `Automation RunTests VRM.+VMC.` headless (`+` separates filters; `;` ends the command). If you can't compile in your environment, say so explicitly in the PR and list what was verified statically.
 5. **Asset compatibility.** Any change to a `USTRUCT`/`UCLASS` layout or the meaning of saved data must bump a custom version (`FVRMInterchangeCustomVersion`, `FVMCLiveLinkCustomVersion`) and include a `PostLoad`/`Serialize` upgrade path, plus a test that loads a pre-change asset or struct.
 6. **Binary assets.** Avoid `.uasset` edits where code can do the job (for example, generate IK Rigs with the controller instead of editing the template). If a `.uasset` must change, describe the change precisely in the PR, because reviewers can't diff it.
 7. **Logging.** Use the plugin log categories (`LogVMCLiveLink`, `LogVRMInterchange`, `LogVRMSpring`). No new `LogTemp`. Import problems go to an `FMessageLog("VRMInterchange")` page as well as the log.
@@ -508,7 +510,7 @@ Goal: make regressions visible before large changes land.
 - **Files:** `.github/workflows/` (new `pr-build.yml`), `scripts/`
 - **Steps:**
   1. Add a workflow on `pull_request` (self-hosted Windows runner, same engine root as `fab-plugin-build.yml`) that runs `RunUAT BuildPlugin` for both plugins, or builds the project Editor target.
-  2. Add a step that runs `UnrealEditor-Cmd.exe VMCLiveLinkProject.uproject -ExecCmds="Automation RunTests VRM;VMC;Quit" -unattended -nullrhi -nosplash -log` and fails on test failures (parse the automation report JSON with `-ReportExportPath`).
+  2. Add a step that runs `UnrealEditor-Cmd.exe VMCLiveLinkProject.uproject -ExecCmds="Automation RunTests VRM.+VMC.;Quit" -unattended -nullrhi -nosplash -log` and fails on test failures (parse the automation report JSON with `-ReportExportPath`).
   3. Extend the copyright verification to `Plugins/VRMInterchange`, then add the missing headers to the 16 files (use `scripts/add_copyright_headers.py`).
 - **Acceptance:** a PR that breaks compilation or a test goes red. The header check covers both plugins and passes.
 
@@ -548,6 +550,7 @@ Goal: make regressions visible before large changes land.
   5. Move `UVRMTranslator` to the non-deprecated `GetMeshPayloadData(const FInterchangeMeshPayLoadKey&)` overload (X-06). The mesh global transform then comes from the payload key or the pipeline. Verify this in 5.6, 5.7 and 5.8, as #98 targets them.
   6. Optional: fail the build on new C4996 warnings in plugin code (not engine headers), so deprecations are caught as they appear.
 - **Acceptance:** a PR stacked on another PR gets a `PR Build and Tests` run. No Node 20 warning. No C4996 from plugin sources.
+- **Status:** steps 1, 2 and 5 merged in #112. The test-filter fix (X-07) followed separately. Steps 3 and 4 are for the owner. Step 6 is open.
 
 ---
 
@@ -985,45 +988,62 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25, 16:45 UTC.* The PR build (#104) is live on the self-hosted runner. `main` builds Editor, Game Development and Shipping and passes all 12 `VRM.`/`VMC.` tests. Standing instruction from the owner: merge each PR once its build is green and it merges cleanly into the current `main`.
+*Last updated 2026-09-25, end of day.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all automation tests pass. That is 15 `VRM.` tests; the `VMC.` tests start running with the test-filter fix (X-07).
 
 ### Status by task
 
-| Task | PR | Base | Status | Notes |
-|---|---|---|---|---|
-| P0.1 CI builds PRs and runs tests | #104 | `main` | **Merged** | Needed one fix: the header script did not `exit 0` (rule 12) |
-| (unplanned) Fix six stale tests | #110 | `main` | **Merged** | X-05 |
-| P7.1 README corrections + this plan | #99 | `main` | **Merged** | CI green |
-| P0.4 Logging categories, P1.18 hygiene | #100 | `main` | **Merged** | CI green |
-| P1.2 Source lifetime, P1.4 subject settings | #101 | `main` | CI queued | |
-| P1.6 Normalizer and presets | #102 | `main` | CI queued | |
-| P1.17 No startup edits | #103 | `main` | CI queued | First build failed to compile (X-08); fix pushed |
-| P0.2 Synthetic VRM fixtures | #105 | `main` | CI queued | |
-| P0.3 VMC test sender | #106 | `main` | CI queued | |
-| P1.1, P1.3, P1.5 VMC receive path | #107 | #101 | Waiting on #101 | Retarget to `main` after #101 merges |
-| P1.7 Joint mapping, multiple skins | #108 | #100 (includes #105) | Waiting on #100 and #105 | Retarget after both merge |
-| P1.8 Node transforms, rigid meshes | #109 | #108 | Waiting on #108 | Adds the `bind_pose_offset` fixture |
+| Task | PR | Status | Notes |
+|---|---|---|---|
+| P0.1 CI builds PRs and runs tests | #104 | Merged | |
+| P0.2 Synthetic VRM fixtures | #105 | Merged | Seventh fixture `bind_pose_offset` added in #109 |
+| P0.3 VMC test sender | #106 | Merged | |
+| P0.4 Logging categories | #100 | Merged | |
+| P0.5 CI hardening | #112 | Merged (steps 1, 2, 5) | Steps 3 and 4 are for the owner; step 6 is open |
+| P1.1, P1.3, P1.5 VMC receive path | #107 | Merged | |
+| P1.2, P1.4 Source lifetime, subject settings | #101 | Merged | |
+| P1.6 Normalizer and presets | #102 | Merged | |
+| P1.7 Joint mapping, multiple skins | #108 | Merged | |
+| P1.8 Node transforms, rigid meshes, bind pose | #109 | Merged | First build failed on a shadowed local (C4456) in the new test |
+| P1.17 No startup edits | #103 | Merged | First build failed to compile (X-08) |
+| P1.18 Hygiene | #100 | Merged | |
+| P7.1 README corrections and this plan | #99, #111 | Merged | |
+| (unplanned) Six stale tests | #110 | Merged | X-05 |
+| (unplanned) Test filter so VMC tests run | this PR | Open | X-07 |
 
-Not started: P0.5 (new, see below), P1.9 to P1.16, and Phases 2 to 7. Recommended next: **P0.5 steps 1 and 2** first (small, and they give the stacked PRs CI), then P1.11 (with SP-08), P1.9, P1.12, P1.13 and P1.10.
+**Not started:** P1.9 to P1.16, and Phases 2 to 7.
 
-### Merge order and known conflicts
+**Recommended next:**
+1. P1.11, one conversion module for spring geometry, including SP-08.
+2. P1.9, forward axis. It needs the T-05 check below first.
+3. P1.12 and P1.13, spring chain and parser fixes.
+4. P1.10, texture colour space.
 
-1. #101, #102, #103, #105 and #106 are independent. Merge each when green. #103 adds the same `LogVRMInterchange` declaration as the merged #100, and still merges cleanly.
-2. Stacked: #107 after #101; #108 after #105 (#100 is merged); #109 after #108. Retarget each to `main` once its base has merged. Until P0.5 step 1 lands, that retarget is what starts their first build.
-3. #98 (the owner's UE 5.7/5.8 PR, not part of this plan) will need `main` merged in: #104 changed `fab-plugin-build.yml`.
-4. After #109 merges, add a README line about rest-pose placement (held back to avoid conflicting with #99).
+### How the merges went
+
+- Each PR was merged (squash) once its PR build was green and it merged cleanly into the current `main`. When `main` had changed files the PR also touched, the PR was rebuilt on top of `main` first.
+- **Three PRs needed fixes their first build exposed:**
+  - #104: the header script's exit code.
+  - #103: it used a symbol from another unmerged PR.
+  - #109: a shadowed local variable in the new test.
+- **Stacked PRs (#107, #108, #109)** were moved onto `main` after their bases merged. With squash merges, the old base branch's final commit has to be merged in before `main` (X-07).
+- **#98** (the owner's UE 5.7/5.8 PR, not part of this plan) still needs `main` merged in. #104 and #112 both changed `fab-plugin-build.yml`.
 
 ### Results so far, and what changed because of them
 
-- **The first CI runs found three problems no one had seen.** The header step always failed (rule 12). Six tests failed on `main` (X-05). And #103 did not compile on its own (X-08). All three are fixed. The general lesson is that code which had not been compiled or run needed a round of fixes once it was.
-- **New rules:** B.0 rules 10 to 12 capture these. New task P0.5 covers the CI gaps (X-07) and the deprecated translator API (X-06).
-- **Process:** keep PRs small and independent where possible. The single runner builds serially, and stacked PRs get no CI until P0.5 step 1. When a PR must build on another, stack it explicitly rather than borrowing symbols.
-- **Runner:** one unexplained cancellation (X-07). If it recurs, check what else runs on EIGHTYGEE-DT during the Shipping build.
+- **The first CI runs found problems nobody had seen:**
+  - the header step always failed (rule 12);
+  - six tests failed on `main` (X-05);
+  - #103 didn't compile on its own (X-08);
+  - the VMC tests never ran (X-07).
+
+  All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
+- **New rules:** B.0 rules 10 to 12. New task: P0.5.
+- **Runner:** one unexplained cancellation (X-07). It has not happened again in about 20 runs since.
 
 ### Verification still owed
 
-- **Build and tests:** each PR above, through `PR Build and Tests`.
-- **In the editor:** import real VRoid VRM 0.x and 1.0 models with #108 and #109 merged, and receive from a real VMC sender with #107 merged. These are not covered by automated tests.
+- **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8), and receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
+- **Owner:** delete the `main` tag, and decide on the runner toolchain (P0.5 steps 3 and 4).
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
   - T-02: one skin per mesh in VRoid exports.
