@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-25):** 3 tasks are merged (P0.1, P7.1, and a test fix) and 12 more are in PRs going through CI. Findings X-05 to X-08 and task P0.5 were added from the first CI results. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-25):** 5 tasks are merged (P0.1, P0.4, P1.18, P7.1, and a test fix) and 10 more are in PRs going through CI. Findings X-05 to X-08 and task P0.5 were added from the first CI results. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -985,7 +985,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25, 17:05 UTC.* The PR build (#104) is live on the self-hosted runner. `main` builds Editor, Game Development and Shipping and passes all 12 `VRM.`/`VMC.` tests. Standing instruction from the owner: merge each PR once its build is green and it merges cleanly into the current `main`.
+*Last updated 2026-09-25, 16:45 UTC.* The PR build (#104) is live on the self-hosted runner. `main` builds Editor, Game Development and Shipping and passes all 12 `VRM.`/`VMC.` tests. Standing instruction from the owner: merge each PR once its build is green and it merges cleanly into the current `main`.
 
 ### Status by task
 
@@ -994,7 +994,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P0.1 CI builds PRs and runs tests | #104 | `main` | **Merged** | Needed one fix: the header script did not `exit 0` (rule 12) |
 | (unplanned) Fix six stale tests | #110 | `main` | **Merged** | X-05 |
 | P7.1 README corrections + this plan | #99 | `main` | **Merged** | CI green |
-| P0.4 Logging categories, P1.18 hygiene | #100 | `main` | CI running | |
+| P0.4 Logging categories, P1.18 hygiene | #100 | `main` | **Merged** | CI green |
 | P1.2 Source lifetime, P1.4 subject settings | #101 | `main` | CI queued | |
 | P1.6 Normalizer and presets | #102 | `main` | CI queued | |
 | P1.17 No startup edits | #103 | `main` | CI queued | First build failed to compile (X-08); fix pushed |
@@ -1008,8 +1008,8 @@ Not started: P0.5 (new, see below), P1.9 to P1.16, and Phases 2 to 7. Recommende
 
 ### Merge order and known conflicts
 
-1. #100, #101, #102, #103, #105 and #106 are independent. Merge each when green. #100 and #103 both add the same `LogVRMInterchange` declaration, which merges cleanly in either order.
-2. Stacked: #107 after #101; #108 after #100 and #105; #109 after #108. Retarget each to `main` once its base has merged. Until P0.5 step 1 lands, that retarget is what starts their first build.
+1. #101, #102, #103, #105 and #106 are independent. Merge each when green. #103 adds the same `LogVRMInterchange` declaration as the merged #100, and still merges cleanly.
+2. Stacked: #107 after #101; #108 after #105 (#100 is merged); #109 after #108. Retarget each to `main` once its base has merged. Until P0.5 step 1 lands, that retarget is what starts their first build.
 3. #98 (the owner's UE 5.7/5.8 PR, not part of this plan) will need `main` merged in: #104 changed `fab-plugin-build.yml`.
 4. After #109 merges, add a README line about rest-pose placement (held back to avoid conflicting with #99).
 
