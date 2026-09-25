@@ -4,6 +4,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "VRMSpringBonesPostImportPipeline.h"
+#include "VRMInterchangeSettings.h"
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 
@@ -61,8 +62,13 @@ bool FVRMSpringBonesPipelineDefaultValues::RunTest(const FString& Parameters)
     // Test default values are correct
     UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
     
-    TestFalse(TEXT("bGenerateSpringBoneData defaults to false"), Pipeline->bGenerateSpringBoneData);
-    TestFalse(TEXT("bOverwriteExisting defaults to false"), Pipeline->bOverwriteExisting);
+    // The toggles come from the project's VRM Interchange settings (see PostInitProperties).
+    const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>();
+    if (TestNotNull(TEXT("Settings object exists"), Settings))
+    {
+        TestEqual(TEXT("bGenerateSpringBoneData follows settings"), Pipeline->bGenerateSpringBoneData, Settings->bGenerateSpringBoneData);
+        TestEqual(TEXT("bOverwriteExisting follows settings"), Pipeline->bOverwriteExisting, Settings->bOverwriteExistingSpringAssets);
+    }
     TestEqual(TEXT("SubFolder has correct default"), Pipeline->SubFolder, FString(TEXT("SpringBones")));
    // TestEqual(TEXT("DataAssetName has correct default"), Pipeline->DataAssetName, FString(TEXT("SpringBonesData")));
     

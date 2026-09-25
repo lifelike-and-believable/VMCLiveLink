@@ -7,6 +7,7 @@
 #include "VRMSpringBonesParser.h"
 #include "VRMSpringBonesTypes.h"
 #include "VRMInterchangeSettings.h"
+#include "VRMSpringBonesPostImportPipeline.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
@@ -51,20 +52,13 @@ bool FVRMIntegrationTestVRM10::RunTest(const FString& Parameters)
           "colliders": [0]
         }
       ],
-      "joints": [
-        {
-          "node": 2,
-          "hitRadius": 0.02
-        },
-        {
-          "node": 3,
-          "hitRadius": 0.015
-        }
-      ],
       "springs": [
         {
           "name": "HairSpring",
-          "joints": [0, 1],
+          "joints": [
+            {"node": 2, "hitRadius": 0.02},
+            {"node": 3, "hitRadius": 0.015}
+          ],
           "colliderGroups": [0],
           "center": 0,
           "stiffness": 0.8,
@@ -100,6 +94,11 @@ bool FVRMIntegrationTestVRM10::RunTest(const FString& Parameters)
             const FVRMSpring& Spring = Config.Springs[0];
             TestEqual(TEXT("Spring name"), Spring.Name, FString(TEXT("HairSpring")));
             TestEqual(TEXT("Spring joint count"), Spring.JointIndices.Num(), 2);
+            if (Spring.JointIndices.Num() == 2 && Config.Joints.IsValidIndex(Spring.JointIndices[0]) && Config.Joints.IsValidIndex(Spring.JointIndices[1]))
+            {
+                TestEqual(TEXT("First joint node"), Config.Joints[Spring.JointIndices[0]].NodeIndex, 2);
+                TestEqual(TEXT("Second joint node"), Config.Joints[Spring.JointIndices[1]].NodeIndex, 3);
+            }
             TestEqual(TEXT("Spring collider group count"), Spring.ColliderGroupIndices.Num(), 1);
             TestEqual(TEXT("Spring stiffness"), Spring.Stiffness, 0.8f);
             TestEqual(TEXT("Spring drag"), Spring.Drag, 0.2f);
@@ -226,11 +225,13 @@ bool FVRMIntegrationTestPipelineSettings::RunTest(const FString& Parameters)
     
     if (Settings)
     {
-        // Test default values match expectations from design document
-        TestTrue(TEXT("Generate spring bone data enabled by default"), Settings->bGenerateSpringBoneData);
-        TestFalse(TEXT("Generate post-process ABP disabled by default"), Settings->bGeneratePostProcessAnimBP);
-        TestFalse(TEXT("Assign post-process ABP disabled by default"), Settings->bAssignPostProcessABP);
-        TestFalse(TEXT("Overwrite existing disabled by default"), Settings->bOverwriteExistingSpringAssets);
+        // The settings are config (DefaultGame.ini), so their values belong to the project and are
+        // not asserted here. What must hold is that new import pipelines pick them up.
+        const UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+        TestEqual(TEXT("Pipeline follows bGenerateSpringBoneData"), Pipeline->bGenerateSpringBoneData, Settings->bGenerateSpringBoneData);
+        TestEqual(TEXT("Pipeline follows bGeneratePostProcessAnimBP"), Pipeline->bGeneratePostProcessAnimBP, Settings->bGeneratePostProcessAnimBP);
+        TestEqual(TEXT("Pipeline follows bAssignPostProcessABP"), Pipeline->bAssignPostProcessABP, Settings->bAssignPostProcessABP);
+        TestEqual(TEXT("Pipeline follows bOverwriteExistingSpringAssets"), Pipeline->bOverwriteExisting, Settings->bOverwriteExistingSpringAssets);
     }
     
     return true;
