@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-25):** 15 of 47 tasks have open draft PRs (#99 to #109). None has been compiled or merged yet. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-25):** 3 tasks are merged (P0.1, P7.1, and a test fix) and 12 more are in PRs going through CI. Findings X-05 to X-08 and task P0.5 were added from the first CI results. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -453,6 +453,29 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - The repo root has about 2,300 lines of planning and readiness documents plus 13 post-mortems, which makes it hard to tell what is current.
 - There is no CHANGELOG, and both plugins are still `0.1.0`.
 
+*Findings X-05 to X-08 were added on 2026-09-25, after the first CI runs (see B.10).*
+
+### X-05 (P1) Existing tests had never run, and some depended on project config
+- When the PR build first ran the automation tests, 6 of 12 failed on `main` (fixed in #110).
+- Three asserted fixed default values for the spring pipeline toggles. The pipeline copies `UVRMInterchangeSettings` in `PostInitProperties`, and this project's `Config/DefaultGame.ini` turns those settings on, so the tests were checking the sample project's config.
+- Three used a non-spec VRM 1.0 spring layout (a top-level `joints` array with `springs[].joints` as indices into it). After 00de610 the parser appended every joint twice for that layout without any test noticing.
+- **Impact:** a test suite that isn't run gives false confidence. Tests that read project config break when the config changes.
+
+### X-06 (P2) Deprecated engine API in the translator
+- `VRMTranslator.h:117` overrides the deprecated `IInterchangeMeshPayloadInterface::GetMeshPayloadData(const FInterchangeMeshPayLoadKey&, const FTransform&)`. UE 5.6 warns (C4996) that this will stop compiling in the next release. This matters for #98's 5.7 and 5.8 support.
+
+### X-07 (P2) CI infrastructure gaps
+- **One runner:** there is one self-hosted Windows runner (EIGHTYGEE-DT). Each PR build takes 3 to 5 minutes and they queue serially, so seven PRs take about 35 minutes.
+- **Spurious cancellation:** one run (36149565264, attempt 1) was cancelled by the runner itself 5 s into the Shipping build. There was no user, timeout or concurrency cancel, and the re-run passed. The likely cause is a console Ctrl+C on the runner machine.
+- **Stacked PRs get no CI:** `pr-build.yml` only triggers for PRs that target `main`, so stacked PRs are never built until they are retargeted.
+- **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
+- **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
+- **Tag named `main`:** the remote has a tag called `main` as well as the branch, so `git fetch origin main` fetches the tag, not the branch.
+
+### X-08 (P2) Parallel PRs used symbols from each other
+- #103 was branched from `main` but used `LogVRMInterchange`, which only #100 declares. It failed to compile in the PR build. The fix ported #100's two-line declaration into #103.
+- With CI in place this is caught automatically, but only when each PR is built against its own base.
+
 ---
 
 # Part B: Implementation plan
@@ -468,6 +491,9 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 7. **Logging.** Use the plugin log categories (`LogVMCLiveLink`, `LogVRMInterchange`, `LogVRMSpring`). No new `LogTemp`. Import problems go to an `FMessageLog("VRMInterchange")` page as well as the log.
 8. **Headers.** New files start with the copyright header the CI enforces.
 9. **Docs travel with code.** If behaviour changes, update the relevant README section and `CHANGELOG.md` in the same PR.
+10. **Build against your own base.** Don't use a type, function or log category that only exists in another unmerged PR. Either stack on that PR (and say so) or port the minimal change unchanged, so the identical edits merge cleanly (X-08).
+11. **Tests don't depend on project config.** Tests that read `UDeveloperSettings` or other config must compare against the loaded settings, or set the values they need and restore them. Never assert on values that `Config/*.ini` can change (X-05).
+12. **CI must go green.** A PR is ready only when `PR Build and Tests` passes on its latest commit. Scripts called from CI must `exit 0` explicitly: PowerShell leaves `$LASTEXITCODE` unset after a script that doesn't exit, and `$null -ne 0` is true.
 
 Task format below: **Resolves** (finding IDs) · **Depends on** · **Files** · **Steps** · **Acceptance**.
 
@@ -511,6 +537,17 @@ Goal: make regressions visible before large changes land.
 - **Resolves:** T-14 (logging part)
 - **Steps:** add `LogVRMInterchange` (runtime translator) and `LogVRMInterchangeEditor`, and replace all 21 `LogTemp` uses.
 - **Acceptance:** `grep -rn LogTemp Plugins/` returns nothing.
+
+### P0.5 CI hardening (added 2026-09-25)
+- **Resolves:** X-07, X-06
+- **Steps:**
+  1. Build stacked PRs too: change `pr-build.yml`'s `pull_request.branches` to `['**']`, or drop the filter. Keep the rule that fork PRs never run on the self-hosted runner.
+  2. Move to `actions/checkout@v5` and `actions/upload-artifact@v5` (Node 24).
+  3. Owner: delete the `main` tag (`git push origin :refs/tags/main`) unless it is intentional.
+  4. Owner: install MSVC 14.38 on the runner, or accept the warning. Consider a second runner if PR volume stays high.
+  5. Move `UVRMTranslator` to the non-deprecated `GetMeshPayloadData(const FInterchangeMeshPayLoadKey&)` overload (X-06). The mesh global transform then comes from the payload key or the pipeline. Verify this in 5.6, 5.7 and 5.8, as #98 targets them.
+  6. Optional: fail the build on new C4996 warnings in plugin code (not engine headers), so deprecations are caught as they appear.
+- **Acceptance:** a PR stacked on another PR gets a `PR Build and Tests` run. No Node 20 warning. No C4996 from plugin sources.
 
 ---
 
@@ -615,6 +652,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   4. Rewrite the tests to use spec JSON. Keep a separate test for each lenient variant if they're kept.
   5. Remove the undefined `ParseSpringBonesFromJson(... TArray<int32> ...)` declaration. (The `FVRMValidationResult` export macro is already fixed in PR #98.)
   6. Make `ReadVec3` accept the VRM 0.x `{x,y,z}` object form as well as arrays (SP-08).
+- **Note (2026-09-25):** #110 moved the existing tests to the spec layout. When the top-level `joints` handling is removed here, add a test showing that a numeric `springs[].joints` entry is rejected or warned about, rather than silently appended (X-05).
 - **Acceptance:** spec fixtures parse with correct per-joint values and extended colliders. The old non-spec tests either move to "lenient" tests or are deleted.
 
 ### P1.14 Anim node robustness
@@ -947,43 +985,45 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25.* #104 (PR build) and #110 (test fixes) are merged, and `main` builds Editor, Game Development and Shipping with all 12 `VRM.`/`VMC.` tests passing. `main` has been merged into every open PR that targets it, which starts its first PR build. The stacked PRs (#107, #108, #109) get CI once they are retargeted to `main`. Each PR description lists what to verify in the editor.
+*Last updated 2026-09-25, 17:05 UTC.* The PR build (#104) is live on the self-hosted runner. `main` builds Editor, Game Development and Shipping and passes all 12 `VRM.`/`VMC.` tests. Standing instruction from the owner: merge each PR once its build is green and it merges cleanly into the current `main`.
 
 ### Status by task
 
 | Task | PR | Base | Status | Notes |
 |---|---|---|---|---|
-| P7.1 README corrections (+ this plan) | #99 | `main` | Draft, awaiting review | Docs only |
-| P0.4 Logging categories | #100 | `main` | Draft, not compiled | Also covers P1.18 |
-| P1.18 Hygiene items | #100 | `main` | Draft, not compiled | Labels, `cgltf_validate` failure is fatal, buffer-view bounds, empty header removed, `Animations` removed |
-| P1.2 Source lifetime safety | #101 | `main` | Draft, not compiled | |
-| P1.4 Keep user subject settings | #101 | `main` | Draft, not compiled | |
-| P1.6 Non-destructive normalizer and presets | #102 | `main` | Draft, not compiled | Adds `VMC_VRM1` preset |
-| P1.17 No startup edits to config or content | #103 | `main` | Draft, not compiled | Opt-in registration prompt and settings button |
-| P0.1 CI builds PRs and runs tests | #104 | `main` | **Merged** | `pr-build.yml`; header check covers both plugins |
-| (unplanned) Fix six stale tests on `main` | #110 | `main` | **Merged** | Settings tests depended on project config; spring-joint tests used a non-spec JSON layout |
-| P0.2 Synthetic VRM fixtures | #105 | `main` | Draft; fixtures checked with cgltf | Seventh fixture (`bind_pose_offset`) added in #109 |
-| P0.3 VMC test sender | #106 | `main` | Draft; self-test passes | `scripts/vmc_sender.py` |
-| P1.1 `Root/Pos` per spec | #107 | #101 | Draft, not compiled | |
-| P1.3 Humanoid hierarchy, stable indices | #107 | #101 | Draft, not compiled | |
-| P1.5 Apply ordering, curve persistence | #107 | #101 | Draft, not compiled | |
-| P1.7 Joint mapping, multiple skins, names | #108 | #100 (includes #105) | Draft, not compiled | |
-| P1.8 Node transforms, rigid meshes, bind pose | #109 | #108 | Draft, not compiled | Inverse bind matrices that differ from the rest pose are baked (step 3, preferred option) |
+| P0.1 CI builds PRs and runs tests | #104 | `main` | **Merged** | Needed one fix: the header script did not `exit 0` (rule 12) |
+| (unplanned) Fix six stale tests | #110 | `main` | **Merged** | X-05 |
+| P7.1 README corrections + this plan | #99 | `main` | **Merged** | CI green |
+| P0.4 Logging categories, P1.18 hygiene | #100 | `main` | CI running | |
+| P1.2 Source lifetime, P1.4 subject settings | #101 | `main` | CI queued | |
+| P1.6 Normalizer and presets | #102 | `main` | CI queued | |
+| P1.17 No startup edits | #103 | `main` | CI queued | First build failed to compile (X-08); fix pushed |
+| P0.2 Synthetic VRM fixtures | #105 | `main` | CI queued | |
+| P0.3 VMC test sender | #106 | `main` | CI queued | |
+| P1.1, P1.3, P1.5 VMC receive path | #107 | #101 | Waiting on #101 | Retarget to `main` after #101 merges |
+| P1.7 Joint mapping, multiple skins | #108 | #100 (includes #105) | Waiting on #100 and #105 | Retarget after both merge |
+| P1.8 Node transforms, rigid meshes | #109 | #108 | Waiting on #108 | Adds the `bind_pose_offset` fixture |
 
-Everything else is **not started**. Next in order: P1.11 (including the SP-08 fix), then P1.9, P1.12, P1.13 and P1.10. P1.11 is next because it unblocks P1.12, P1.13 and Phase 2.
+Not started: P0.5 (new, see below), P1.9 to P1.16, and Phases 2 to 7. Recommended next: **P0.5 steps 1 and 2** first (small, and they give the stacked PRs CI), then P1.11 (with SP-08), P1.9, P1.12, P1.13 and P1.10.
 
 ### Merge order and known conflicts
 
-1. Done: #110 and #104. #99, #100, #101, #102, #105 and #106 are independent and can merge in any order once their PR build is green.
-2. Done: the #103 conflict with #104 has been resolved by merging `main` into #103.
-3. #104 conflicts with #98 (not part of this plan) in `fab-plugin-build.yml`.
-4. Stacked PRs: #107 needs #101 merged first. #108 needs #100 and #105. #109 needs #108. After a base merges, retarget the stacked PR to `main`.
-5. #109 leaves the README alone because #99 rewrites the same section. Add a line about rest-pose placement once both have merged.
+1. #100, #101, #102, #103, #105 and #106 are independent. Merge each when green. #100 and #103 both add the same `LogVRMInterchange` declaration, which merges cleanly in either order.
+2. Stacked: #107 after #101; #108 after #100 and #105; #109 after #108. Retarget each to `main` once its base has merged. Until P0.5 step 1 lands, that retarget is what starts their first build.
+3. #98 (the owner's UE 5.7/5.8 PR, not part of this plan) will need `main` merged in: #104 changed `fab-plugin-build.yml`.
+4. After #109 merges, add a README line about rest-pose placement (held back to avoid conflicting with #99).
+
+### Results so far, and what changed because of them
+
+- **The first CI runs found three problems no one had seen.** The header step always failed (rule 12). Six tests failed on `main` (X-05). And #103 did not compile on its own (X-08). All three are fixed. The general lesson is that code which had not been compiled or run needed a round of fixes once it was.
+- **New rules:** B.0 rules 10 to 12 capture these. New task P0.5 covers the CI gaps (X-07) and the deprecated translator API (X-06).
+- **Process:** keep PRs small and independent where possible. The single runner builds serially, and stacked PRs get no CI until P0.5 step 1. When a PR must build on another, stack it explicitly rather than borrowing symbols.
+- **Runner:** one unexplained cancellation (X-07). If it recurs, check what else runs on EIGHTYGEE-DT during the Shipping build.
 
 ### Verification still owed
 
-- **Build:** compile every PR (Editor, Game Development and Shipping). `pr-build.yml` does this once #104 merges. One PR build run (36149565264, first attempt) was cancelled by the runner itself 5 s into the Shipping build, with no user or concurrency cancel. A re-run passed, so if it happens again, look at the runner machine.
-- **Tests:** run `VRM.` and `VMC.` in the automation tests.
+- **Build and tests:** each PR above, through `PR Build and Tests`.
+- **In the editor:** import real VRoid VRM 0.x and 1.0 models with #108 and #109 merged, and receive from a real VMC sender with #107 merged. These are not covered by automated tests.
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
   - T-02: one skin per mesh in VRoid exports.
@@ -1039,3 +1079,6 @@ Everything else is **not started**. Next in order: P1.11 (including the SP-08 fi
 | PE-05 | P4.3 | X-02 | P0.1 |
 | PE-06 to PE-08 | P3.4 | X-03 | P0.2, P0.3, per-task tests |
 | PE-09, PE-10 | P1.18, P3.3, P3.5 | X-04 | P7.1–P7.5b |
+| | | X-05 | #110 (done), B.0 rule 11, P1.13 |
+| | | X-06, X-07 | P0.5 |
+| | | X-08 | B.0 rule 10 |
