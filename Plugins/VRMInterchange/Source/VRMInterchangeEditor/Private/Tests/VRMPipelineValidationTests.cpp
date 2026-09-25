@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Lifelike & Believable Animation Design, Inc. All Rights Reserved.
+// Copyright (c) 2024-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 
 #if WITH_DEV_AUTOMATION_TESTS
 
