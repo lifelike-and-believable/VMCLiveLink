@@ -1,5 +1,6 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMTranslator.h"
+#include "VRMInterchangeLog.h"
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "InterchangeSceneNode.h"
@@ -154,8 +155,8 @@ TArray<FString> UVRMTranslator::GetSupportedFormats() const
 
 EInterchangeTranslatorAssetType UVRMTranslator::GetSupportedAssetTypes() const
 {
-    // We import scenes that include meshes, skeletons and textures
-    return EInterchangeTranslatorAssetType::Meshes | EInterchangeTranslatorAssetType::Textures | EInterchangeTranslatorAssetType::Animations;
+    // We import scenes that include meshes, skeletons and textures (no animations)
+    return EInterchangeTranslatorAssetType::Meshes | EInterchangeTranslatorAssetType::Textures;
 }
 
 bool UVRMTranslator::CanImportSourceData(const UInterchangeSourceData* InSourceData) const
@@ -168,7 +169,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
 {
     if (!LoadVRM(Parsed))
     {
-        UE_LOG(LogTemp, Error, TEXT("[VRMInterchange] Failed to read VRM."));
+        UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to read VRM."));
         return false;
     }
 
@@ -260,7 +261,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         }
         if (!bParentSet)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Failed to set Character MI parent. Tried '%s' and '%s'"), *MasterShortPath, *MasterFullPath);
+            UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to set Character MI parent. Tried '%s' and '%s'"), *MasterShortPath, *MasterFullPath);
         }
     }
 
@@ -324,7 +325,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
             }
             if (!bMatParentSet)
             {
-                UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Failed to set MI '%s' parent to master. Tried '%s' and '%s'"),
+                UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to set MI '%s' parent to master. Tried '%s' and '%s'"),
                     *PerMIDisplayName, *MasterShortPath, *MasterFullPath);
             }
         }
@@ -444,11 +445,11 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
             }
         }
 
-        UE_LOG(LogTemp, Verbose, TEXT("[VRMInterchange] Morph payload requested: Key='%s' ParsedIndex=%d"), *Unique, MorphIndex);
+        UE_LOG(LogVRMInterchange, Verbose, TEXT("[VRMInterchange] Morph payload requested: Key='%s' ParsedIndex=%d"), *Unique, MorphIndex);
 
         if (MorphIndex == INDEX_NONE || !PMesh.Morphs.IsValidIndex(MorphIndex))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Invalid morph payload request '%s' (index %d out of range)"), *Unique, MorphIndex);
+            UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Invalid morph payload request '%s' (index %d out of range)"), *Unique, MorphIndex);
             return TOptional<UE::Interchange::FMeshPayloadData>();
         }
 
@@ -565,7 +566,7 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
             }
         }
 
-        UE_LOG(LogTemp, Verbose, TEXT("[VRMInterchange] Returning MORPHTARGET payload for index %d"), MorphIndex);
+        UE_LOG(LogVRMInterchange, Verbose, TEXT("[VRMInterchange] Returning MORPHTARGET payload for index %d"), MorphIndex);
         return Data;
     }
 
@@ -699,7 +700,7 @@ TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(c
     // Expect keys like "Tex_0"
     if (!PayloadKey.StartsWith(TEXT("Tex_")))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Unexpected texture payload key '%s'"), *PayloadKey);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Unexpected texture payload key '%s'"), *PayloadKey);
         return {};
     }
 
@@ -708,7 +709,7 @@ TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(c
         const FString IndexStr = PayloadKey.Mid(4);
         if (!IndexStr.IsNumeric())
         {
-            UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Invalid texture payload key '%s'"), *PayloadKey);
+            UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Invalid texture payload key '%s'"), *PayloadKey);
             return {};
         }
         TextureIndex = FCString::Atoi(*IndexStr);
@@ -716,14 +717,14 @@ TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(c
 
     if (!Parsed.Images.IsValidIndex(TextureIndex))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Texture index %d out of range for payload '%s'"), TextureIndex, *PayloadKey);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Texture index %d out of range for payload '%s'"), TextureIndex, *PayloadKey);
         return {};
     }
 
     const TArray64<uint8>& CompressedBytes64 = Parsed.Images[TextureIndex].PNGOrJPEGBytes;
     if (CompressedBytes64.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] No image bytes for texture index %d"), TextureIndex);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] No image bytes for texture index %d"), TextureIndex);
         return {};
     }
 
@@ -735,14 +736,14 @@ TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(c
 
     if (ImageFormat == EImageFormat::Invalid)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Unknown image format for texture index %d"), TextureIndex);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Unknown image format for texture index %d"), TextureIndex);
         return {};
     }
 
     TSharedPtr<IImageWrapper> Wrapper = ImageWrapperModule.CreateImageWrapper(ImageFormat);
     if (!Wrapper.IsValid() || !Wrapper->SetCompressed(CompressedPtr, CompressedSize))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Failed to decode image for texture index %d"), TextureIndex);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to decode image for texture index %d"), TextureIndex);
         return {};
     }
 
@@ -752,7 +753,7 @@ TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(c
     TArray<uint8> RGBA8;
     if (!Wrapper->GetRaw(ERGBFormat::RGBA, 8, RGBA8))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] GetRaw RGBA8 failed for texture index %d"), TextureIndex);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] GetRaw RGBA8 failed for texture index %d"), TextureIndex);
         return {};
     }
 
@@ -805,7 +806,13 @@ static FCgltfScoped ParseCgltfFile(const FString& Filename, FString& OutError)
         return FCgltfScoped(nullptr);
     }
 
-    cgltf_validate(Data);
+    Res = cgltf_validate(Data);
+    if (Res != cgltf_result_success)
+    {
+        // Validation catches out-of-range accessors and buffer views that would otherwise be read out of bounds.
+        OutError = FString::Printf(TEXT("glTF validation failed (cgltf error %d): %s"), int32(Res), *Filename);
+        return FCgltfScoped(nullptr);
+    }
 
     return ScopedData;
 }
@@ -962,7 +969,7 @@ bool UVRMTranslator::LoadVRM(FVRMParsedModel& Out) const
     FCgltfScoped ScopedData = ParseCgltfFile(Filename, ParseError);
     if (!ScopedData.Data)
     {
-        UE_LOG(LogTemp, Error, TEXT("[VRMInterchange] %s"), *ParseError);
+        UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] %s"), *ParseError);
         return false;
     }
     cgltf_data* Data = ScopedData.Data;
@@ -970,7 +977,7 @@ bool UVRMTranslator::LoadVRM(FVRMParsedModel& Out) const
     // Centralized validation checks
     if (!ValidateCgltfData(Data, ParseError))
     {
-        UE_LOG(LogTemp, Error, TEXT("[VRMInterchange] %s"), *ParseError);
+        UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] %s"), *ParseError);
         return false;
     }
 
@@ -1012,7 +1019,7 @@ bool UVRMTranslator::LoadVRM(FVRMParsedModel& Out) const
     // Merge all primitives from all meshes (extracted)
     if (!MergePrimitivesFromMeshes(Data, Skin, NodeToBone, Out))
     {
-        UE_LOG(LogTemp, Error, TEXT("[VRMInterchange] Failed to merge mesh primitives."));
+        UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to merge mesh primitives."));
         return false;
     }
 
@@ -1242,10 +1249,19 @@ static bool LoadImagesFromCgltf(const cgltf_data* Data, const FString& Filename,
 
             if (Img->buffer_view)
             {
-                const uint8* Ptr = (const uint8*)Img->buffer_view->buffer->data + Img->buffer_view->offset;
-                const size_t Size = Img->buffer_view->size;
-                P.PNGOrJPEGBytes.SetNumUninitialized(Size);
-                FMemory::Memcpy(P.PNGOrJPEGBytes.GetData(), Ptr, Size);
+                const cgltf_buffer_view* View = Img->buffer_view;
+                const cgltf_buffer* Buffer = View->buffer;
+                if (Buffer && Buffer->data && View->offset + View->size <= Buffer->size)
+                {
+                    const uint8* Ptr = (const uint8*)Buffer->data + View->offset;
+                    const size_t Size = View->size;
+                    P.PNGOrJPEGBytes.SetNumUninitialized(Size);
+                    FMemory::Memcpy(P.PNGOrJPEGBytes.GetData(), Ptr, Size);
+                }
+                else
+                {
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Image %d references a buffer view that is missing or out of range; skipping."), ii);
+                }
             }
             else if (Img->uri)
             {
@@ -1453,7 +1469,7 @@ static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out)
 
                 if (DeltaLocal.Num() != PrimVertCount)
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("[VRMInterchange] Morph target vertex count mismatch (primitive %d.%d): %d vs %d. Skipping."), (int)mi2, (int)pi2, DeltaLocal.Num(), PrimVertCount);
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Morph target vertex count mismatch (primitive %d.%d): %d vs %d. Skipping."), (int)mi2, (int)pi2, DeltaLocal.Num(), PrimVertCount);
                     continue;
                 }
 

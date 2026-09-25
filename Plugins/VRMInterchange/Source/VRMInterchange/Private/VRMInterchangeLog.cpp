@@ -2,3 +2,4 @@
 #include "VRMInterchangeLog.h"
 
 DEFINE_LOG_CATEGORY(LogVRMSpring);
+DEFINE_LOG_CATEGORY(LogVRMInterchange);

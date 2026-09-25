@@ -7,6 +7,8 @@
 #include "UObject/Package.h"
 #include "Modules/ModuleManager.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogVMCLiveLinkEditor, Log, All);
+
 UVMCLiveLinkRetargetActorFactory::UVMCLiveLinkRetargetActorFactory()
 {
 	bCreateNew = true;
@@ -28,7 +30,7 @@ UObject* UVMCLiveLinkRetargetActorFactory::FactoryCreateNew(
 	UBlueprint* TemplateBP = Cast<UBlueprint>(TemplateObj);
 	if (!TemplateBP)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VMCLiveLink] Template Blueprint not found at '%s'."), *TemplateBlueprintPath.ToString());
+		UE_LOG(LogVMCLiveLinkEditor, Warning, TEXT("[VMCLiveLink] Template Blueprint not found at '%s'."), *TemplateBlueprintPath.ToString());
 		return nullptr;
 	}
 
@@ -36,7 +38,7 @@ UObject* UVMCLiveLinkRetargetActorFactory::FactoryCreateNew(
 	UObject* Duplicated = StaticDuplicateObject(TemplateBP, InParent, Name);
 	if (!Duplicated)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VMCLiveLink] Failed to duplicate template Blueprint."));
+		UE_LOG(LogVMCLiveLinkEditor, Warning, TEXT("[VMCLiveLink] Failed to duplicate template Blueprint."));
 		return nullptr;
 	}
 
