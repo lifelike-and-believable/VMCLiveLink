@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-25, end of day):** 16 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.8, P1.17, P1.18 and P7.1), plus one unplanned test fix. `main` builds and passes all VRM and VMC tests. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-25, evening):** 18 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.9, P1.11, P1.17, P1.18 and P7.1), plus two unplanned fixes. P1.11 merged before P1.16, which the plan said should land first; see [B.10](#b10-implementation-progress). `main` builds and passes all VRM and VMC tests. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -470,6 +470,8 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **Stacked PRs get no CI:** `pr-build.yml` only triggers for PRs that target `main`, so stacked PRs are never built until they are retargeted.
 - **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
 - **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
+- **Application Control block:** on #115 the test step failed to load a freshly built plugin DLL with Windows error 4551 ("An Application Control policy has blocked this file"), from Smart App Control or WDAC on the runner. A re-run of the job passed. If it recurs, the owner should add an exclusion for the runner's work folder (`C:\actions-runner\_work`) or turn off Smart App Control on that machine.
+- **Superseded runs:** retargeting a PR, or pushing right after it, starts a new run and cancels the older one (job-level concurrency). The PR then shows cancelled runs next to the real one. Judge a PR by its newest `build-and-test` run on the head commit.
 - **Tag named `main`:** the remote had a tag called `main` as well as the branch, so `git fetch origin main` fetched the tag, not the branch. (Deleted by the owner on 2026-09-25.)
 - **VMC tests never ran:** the filter `VRM.;VMC.` was passed to `Automation RunTests`, where `;` ends the command. Only `VRM.` tests ran, and nothing reported it. Fixed by using `VRM.+VMC.` and failing when any prefix matches no tests.
 - **Retargeting and squash merges:** retargeting a PR did not start a build (fixed in P0.5). Because PRs are squash-merged, a stacked PR must first merge its old base branch's final commit, then `main`. Merging `main` directly shows every file of the base PR as a conflict.
@@ -625,6 +627,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   2. Detect the version (`extensions.VRM` → 0.x, `extensions.VRMC_vrm` → 1.0, neither → warn "not a VRM file, importing as generic glTF").
   3. Apply a 180° yaw for the version that needs it, consistently to vertices, normals, morph deltas, bones and spring data (through the shared conversion header).
 - **Acceptance:** both fixture versions import facing the same UE direction (+Y, matching the mannequin). Spring colliders still line up (visual check with `vrm.SpringBones.DrawColliders 1`).
+- **Status (#116, merged):** steps 2 and 3 are done, covered by `VRM.Coordinates.Facing`. Step 1 could not be done in the implementing environment, which has no editor. Its place was taken by the reference implementation: three-vrm's `VRMUtils.rotateVRM0` turns VRM 0.x scenes 180° about Y, which confirms that VRM 0.x faces −Z. The editor import with screenshots and the collider visual check are still owed (B.10). Files with neither extension import with the VRM 1.0 facing.
 
 ### P1.10 Texture colour space and normal maps
 - **Resolves:** T-06
@@ -640,6 +643,11 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   3. Collider conversion: for a collider on node N, `offset_UE = ToUEDirection(R_N_global_original * offset_gltf) * Scale`, where `R_N_global_original` is the glTF node's original global rest rotation (identity bones in UE mean offsets are expressed in axis-aligned bone space). Apply the same to capsule tails, plane offsets, plane normals (no scale) and gravity direction (no scale).
   4. Move all unit and axis conversion into the parse step (not the pipeline), so `bConvertToUEUnits` is removed or becomes only a scale override.
 - **Acceptance:** for `vrm0_minimal.vrm`, a head collider authored with offset `(0, 0.1, 0)` (glTF up) ends up 10 cm **above** the head bone in UE. Gravity `(1, 0, 0)` in glTF maps to the same UE axis as the mesh's +X. Tests cover both.
+- **Status (#115, merged):** all four steps are done. The helpers live in a header only (`VRMCoordinateConversion.h`); no `.cpp` was needed. `bConvertToUEUnits` was removed outright. Two findings came up along the way:
+  - VRM 0.x collider offsets have Z negated relative to VRM 1.0 (three-vrm: "z is opposite in VRM0.0"). Gravity is not negated.
+  - VRM 1.0 springs without `gravityDir` used a UE-space default, which the new conversion would have turned sideways. The default is now glTF down, `(0, -1, 0)`, before conversion.
+  SP-08 (`ReadVec3` object form, P1.13 step 6) was fixed here too.
+- **Deviation:** this merged without P1.16. Spring data assets imported before #115 keep their old values (wrong axes, and VRM 0.x offsets and gravity read as defaults) and nothing flags them. Until P1.16 lands, reimport VRM files after updating.
 
 ### P1.12 Expand VRM 0.x chains
 - **Resolves:** SP-02 · **Depends on:** P1.7 (bone list includes all descendants)
@@ -654,7 +662,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   3. Move non-spec variants behind `bLenientSchema` (default on for one release, with a `Verbose` log naming the variant), or delete them (owner decision D-6).
   4. Rewrite the tests to use spec JSON. Keep a separate test for each lenient variant if they're kept.
   5. Remove the undefined `ParseSpringBonesFromJson(... TArray<int32> ...)` declaration. (The `FVRMValidationResult` export macro is already fixed in PR #98.)
-  6. Make `ReadVec3` accept the VRM 0.x `{x,y,z}` object form as well as arrays (SP-08).
+  6. Make `ReadVec3` accept the VRM 0.x `{x,y,z}` object form as well as arrays (SP-08). **Done in #115 (P1.11).**
 - **Note (2026-09-25):** #110 moved the existing tests to the spec layout. When the top-level `joints` handling is removed here, add a test showing that a numeric `springs[].joints` entry is rejected or warned about, rather than silently appended (X-05).
 - **Acceptance:** spec fixtures parse with correct per-joint values and extended colliders. The old non-spec tests either move to "lenient" tests or are deleted.
 
@@ -678,6 +686,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
 
 ### P1.16 Versioned data assets
 - **Resolves:** SP-07 · **Must land with or before** P1.11, P1.12 and P1.13 merge
+- **Note (2026-09-25):** P1.11 merged first, so the `ConvertedColliderAxes` entry now covers assets that already exist. Any asset without the new version was imported before #115 and needs a reimport. Do P1.16 next, before P1.12 or P1.13 change the data again.
 - **Steps:** add `FVRMSpringDataCustomVersion` with entries such as `ConvertedColliderAxes`, `PerJointParameters` and `ExpandedVRM0Chains`. In `UVRMSpringBoneData::Serialize`/`PostLoad`, upgrade older assets where possible (for example, copy spring-level parameters into joints). Where an upgrade isn't possible (axes can't be fixed without the source file), set a `bNeedsReimport` flag, log a clear warning with a one-click "Reimport from source" action (the source path is stored in `SourceFilename`), and mark the asset in the AnimGraph node's compile validation.
 - **Acceptance:** a test loads a struct serialized with the old version and checks that the upgrade result or warning is produced.
 
@@ -988,7 +997,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25, end of day.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 19 automation tests pass (15 `VRM.`, 4 `VMC.`).
+*Last updated 2026-09-25, evening.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all automation tests pass, including the new `VRM.Coordinates.*` and `VRM.SpringBones.Coordinates` tests.
 
 ### Status by task
 
@@ -1004,19 +1013,22 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P1.6 Normalizer and presets | #102 | Merged | |
 | P1.7 Joint mapping, multiple skins | #108 | Merged | |
 | P1.8 Node transforms, rigid meshes, bind pose | #109 | Merged | First build failed on a shadowed local (C4456) in the new test |
+| P1.9 Version detection and forward axis | #116 | Merged | Stacked on #115. T-05 confirmed from three-vrm, not in the editor |
+| P1.11 One conversion module; spring geometry | #115 | Merged | Also fixed SP-08. Merged before P1.16 (see P1.11 "Deviation"). Test step hit Windows error 4551 once (X-07) |
 | P1.17 No startup edits | #103 | Merged | First build failed to compile (X-08) |
 | P1.18 Hygiene | #100 | Merged | |
 | P7.1 README corrections and this plan | #99, #111 | Merged | |
 | (unplanned) Six stale tests | #110 | Merged | X-05 |
 | (unplanned) Test filter so VMC tests run | #113 | Merged | X-07. The first run with it: 19/19 tests (15 VRM, 4 VMC) |
+| (plan updates) | #114 | Merged | |
 
-**Not started:** P1.9 to P1.16, and Phases 2 to 7.
+**Not started:** P1.10, P1.12 to P1.16, and Phases 2 to 7.
 
 **Recommended next:**
-1. P1.11, one conversion module for spring geometry, including SP-08.
-2. P1.9, forward axis. It needs the T-05 check below first.
-3. P1.12 and P1.13, spring chain and parser fixes.
-4. P1.10, texture colour space.
+1. P1.16, versioned spring data. It is overdue: P1.11 already changed the meaning of saved spring data, and P1.12 and P1.13 will change it again.
+2. P1.13, then P1.12: spec-correct VRM 1.0 parsing, then VRM 0.x chain expansion. Both change `FVRMSpringJoint`/`FVRMSpring`, so they need P1.16's version entries.
+3. P1.10, texture colour space. It is independent and can go in parallel.
+4. P1.14 and P1.15, which unblock Phase 2 together with the items above.
 
 ### How the merges went
 
@@ -1025,7 +1037,8 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
   - #104: the header script's exit code.
   - #103: it used a symbol from another unmerged PR.
   - #109: a shadowed local variable in the new test.
-- **Stacked PRs (#107, #108, #109)** were moved onto `main` after their bases merged. With squash merges, the old base branch's final commit has to be merged in before `main` (X-07).
+- **Stacked PRs (#107, #108, #109, #116)** were moved onto `main` after their bases merged. With squash merges, the old base branch's final commit has to be merged in before `main` (X-07).
+- **Draft PRs** can't be merged through the API (405). Mark a PR ready for review before merging it.
 - **#98** (the owner's UE 5.7/5.8 PR, not part of this plan) still needs `main` merged in. #104 and #112 both changed `fab-plugin-build.yml`.
 
 ### Results so far, and what changed because of them
@@ -1038,15 +1051,17 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
 - **New rules:** B.0 rules 10 to 12. New task: P0.5.
-- **Runner:** one unexplained cancellation (X-07). It has not happened again in about 20 runs since.
+- **Runner:** one unexplained cancellation (X-07). It has not happened again since. One Application Control block (error 4551) on #115, cleared by a re-run (X-07).
+- **Spring data moved to parse time:** after P1.11 the parser returns UE axes and centimetres. The pipeline doesn't touch geometry, so there is one place to check.
+- **Ordering slip:** P1.11 went in before P1.16, against the dependency note on P1.16. The new code is correct, but existing assets are not flagged. Lesson: before starting a task, check the "Must land with or before" notes of other tasks as well as the task's own "Depends on" line. P1.16 is now first in the list.
 
 ### Verification still owed
 
-- **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8), and receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
+- **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8, P1.9, P1.11). Check that both face +Y like the mannequin, and that spring colliders sit on the right body parts (`vrm.SpringBones.DrawColliders 1`). Also receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
   - T-02: one skin per mesh in VRoid exports.
-  - T-05: VRM 0.x vs 1.0 facing, which blocks P1.9.
+  - T-05: VRM 0.x vs 1.0 facing. P1.9 relied on three-vrm's `rotateVRM0` rather than an editor import; confirm it with the import above.
 
 ---
 
@@ -1068,7 +1083,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 ## Appendix B: Coordinate conventions (for P1.11)
 
 - **Unity (VMC stream):** left-handed, Y-up, Z-forward, metres. The current source mapping is `UE = (-x, z, y) * 100` and `q = (-qx, qz, qy, qw)`. That is a proper rotation (determinant +1), consistent with a character facing +Y in UE. Keep it, and document it with a test.
-- **glTF (VRM file):** right-handed, Y-up, metres. VRM 1.0 faces +Z. VRM 0.x faces −Z **[Verify]**. The current translator's net mapping is `(x, y, z) → (x, z, y)` (a reflection, as needed for the handedness change). The spring parser's gravity mapping `(x, y, z) → (z, x, y)` disagrees with it (T-13).
+- **glTF (VRM file):** right-handed, Y-up, metres. VRM 1.0 faces +Z. VRM 0.x faces −Z (three-vrm `rotateVRM0`; editor check owed). P1.9 applies a 180° yaw about UE Z to VRM 0.x, so every version faces UE +Y. The current translator's net mapping is `(x, y, z) → (x, z, y)` (a reflection, as needed for the handedness change). The spring parser's old gravity mapping `(x, y, z) → (z, x, y)` disagreed with it (T-13). P1.11 replaced it; `VRMCoordinateConversion.h` is now the only mapping.
 - **Rule for spring geometry:** convert every geometric quantity with the **same** function as the mesh, after rotating node-local vectors by the node's original global rest rotation (because imported bones have identity rest rotation).
 
 ## Appendix C: Finding-to-task index
@@ -1099,5 +1114,5 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | PE-06 to PE-08 | P3.4 | X-03 | P0.2, P0.3, per-task tests |
 | PE-09, PE-10 | P1.18, P3.3, P3.5 | X-04 | P7.1–P7.5b |
 | | | X-05 | #110 (done), B.0 rule 11, P1.13 |
-| | | X-06, X-07 | P0.5 |
+| | | X-06, X-07 | P0.5 (X-07 Application Control: owner, if it recurs) |
 | | | X-08 | B.0 rule 10 |
