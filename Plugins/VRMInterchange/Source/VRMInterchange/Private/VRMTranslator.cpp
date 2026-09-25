@@ -46,7 +46,6 @@ static void ReadAccessorVec3f(const cgltf_accessor& A, TArray<FVector3f>& Out);
 static void ReadAccessorVec2f(const cgltf_accessor& A, TArray<FVector2f>& Out);
 static void ReadIndicesUInt32(const cgltf_accessor& A, TArray<uint32>& Out);
 static FTransform NodeTRS(const cgltf_node* N);
-static void Normalize4(float W[4]);
 
 // New validation helper (centralized checks)
 static bool ValidateCgltfData(const cgltf_data* Data, FString& OutError);
@@ -55,7 +54,7 @@ static bool ValidateCgltfData(const cgltf_data* Data, FString& OutError);
 static bool LoadImagesFromCgltf(const cgltf_data* Data, const FString& Filename, FVRMParsedModel& Out);
 
 // New forward for extracted primitive-merge phase
-static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const cgltf_skin* Skin, const TMap<int32, int32>& NodeToBone, FVRMParsedModel& Out);
+static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone, FVRMParsedModel& Out);
 
 // New forward for extracted morph-target merge phase
 static void ParseMorphTargets(const cgltf_data* Data, FVRMParsedModel& Out);
@@ -66,11 +65,9 @@ static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out);
 // New helper: reset parsed model to a known default state
 static void ResetParsedModel(FVRMParsedModel& Out);
 
-// New helper: build mapping NodeIndex -> BoneIndex from skin/joints
-static TMap<int32,int32> BuildNodeToBoneMap(const cgltf_skin* Skin, const cgltf_data* Data);
-
-// Forward declaration for bone population helper
-static void PopulateBonesFromSkin(const cgltf_skin* Skin, const cgltf_data* Data, FVRMParsedModel& Out);
+// Bone population: every joint of every skin, parents before children, unique names.
+// Fills OutNodeToBone (glTF node index -> bone index).
+static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone);
 
 // Simple RAII wrapper to ensure cgltf_free is always called
 struct FCgltfScoped
@@ -138,8 +135,9 @@ template<typename TWeight>
 static void BindAllToRoot(TArray<TWeight>& Weights);
 
 template<typename TWeight>
-static void ReadJointsWeights(
+static int32 ReadJointsWeights(
     const cgltf_accessor& AJ, const cgltf_accessor& AW,
+    const cgltf_skin& Skin, const cgltf_data& Data,
     const TMap<int32, int32>& NodeToBone,
     TArray<TWeight>& Out);
 
@@ -202,7 +200,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         BoneUids[bi] = BoneUid;
         UInterchangeSceneNode* BoneNode = NewObject<UInterchangeSceneNode>(&NodeContainer);
         const FString ParentUid = (B.Parent == INDEX_NONE) ? RootJointUid : BoneUids[B.Parent];
-        NodeContainer.SetupNode(BoneNode, BoneUid, B.Name.IsEmpty() ? *FString::Printf(TEXT("Bone_%d"), bi) : *B.Name, EInterchangeNodeContainerType::TranslatedScene, ParentUid);
+        NodeContainer.SetupNode(BoneNode, BoneUid, *B.Name, EInterchangeNodeContainerType::TranslatedScene, ParentUid);
         BoneNode->SetCustomLocalTransform(&NodeContainer, B.LocalBind);
         BoneNode->SetCustomBindPoseLocalTransform(&NodeContainer, B.LocalBind);
         BoneNode->AddSpecializedType(UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
@@ -524,7 +522,7 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
         {
             for (const FVRMParsedBone& B : Parsed.Bones)
             {
-                Data.JointNames.Add(B.Name.IsEmpty() ? TEXT("Bone") : B.Name);
+                Data.JointNames.Add(B.Name);
             }
         }
         else
@@ -637,7 +635,7 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
         {
             for (const FVRMParsedBone& B : Parsed.Bones)
             {
-                Data.JointNames.Add(B.Name.IsEmpty() ? TEXT("Bone") : B.Name);
+                Data.JointNames.Add(B.Name);
             }
         }
         else
@@ -807,22 +805,33 @@ static FCgltfScoped ParseCgltfFile(const FString& Filename, FString& OutError)
     return ScopedData;
 }
 
-// Implementation: Build NodeIndex -> BoneIndex map (isolates mapping logic)
-static TMap<int32, int32> BuildNodeToBoneMap(const cgltf_skin* Skin, const cgltf_data* Data)
-{
-    TMap<int32, int32> Map;
-    if (!Skin || !Data) return Map;
-    for (size_t ji = 0; ji < Skin->joints_count; ++ji)
-    {
-        const int32 NodeIndex = int32(Skin->joints[ji] - Data->nodes);
-        Map.Add(NodeIndex, int32(ji));
-    }
-    return Map;
-}
-
-static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const cgltf_skin* Skin, const TMap<int32, int32>& NodeToBone, FVRMParsedModel& Out)
+static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone, FVRMParsedModel& Out)
 {
     if (!Data) return false;
+
+    // JOINTS_n values index into the skin of the node that instantiates the mesh, so find each
+    // mesh's skin through its nodes. (Meshes are still merged once each; placing rigid meshes by
+    // their node transforms is a separate fix.)
+    TMap<const cgltf_mesh*, const cgltf_skin*> MeshSkin;
+    for (size_t ni = 0; ni < Data->nodes_count; ++ni)
+    {
+        const cgltf_node& Node = Data->nodes[ni];
+        if (Node.mesh && Node.skin)
+        {
+            if (const cgltf_skin* const* Existing = MeshSkin.Find(Node.mesh))
+            {
+                if (*Existing != Node.skin)
+                {
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Mesh '%s' is used with more than one skin; using the first."),
+                        Node.mesh->name ? UTF8_TO_TCHAR(Node.mesh->name) : TEXT("?"));
+                }
+            }
+            else
+            {
+                MeshSkin.Add(Node.mesh, Node.skin);
+            }
+        }
+    }
 
     int32 VertexBase = 0;
     for (size_t mi = 0; mi < Data->meshes_count; ++mi)
@@ -831,6 +840,8 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const cgltf_skin* 
         for (size_t pi = 0; pi < Mesh->primitives_count; ++pi)
         {
             const cgltf_primitive* Prim = &Mesh->primitives[pi];
+            const cgltf_skin* const* SkinPtr = MeshSkin.Find(Mesh);
+            const cgltf_skin* Skin = SkinPtr ? *SkinPtr : nullptr;
 
             // POSITION
             TArray<FVector3f> PosLocal; PosLocal.Reset();
@@ -901,12 +912,22 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const cgltf_skin* 
             {
                 const cgltf_attribute* AJ = FindJoints(Prim, 0);
                 const cgltf_attribute* AW = FindWeights(Prim, 0);
-                if (AJ && AW && AJ->data && AW->data)
+                if (AJ && AW && AJ->data && AW->data && int32(AJ->data->count) == VertCount && int32(AW->data->count) == VertCount)
                 {
                     TArray<FVRMParsedMesh::FWeight> Tmp; Tmp.SetNumZeroed(VertCount);
-                    ReadJointsWeights(*AJ->data, *AW->data, NodeToBone, Tmp);
+                    const int32 InvalidInfluences = ReadJointsWeights(*AJ->data, *AW->data, *Skin, *Data, NodeToBone, Tmp);
+                    if (InvalidInfluences > 0)
+                    {
+                        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Mesh %d primitive %d: %d joint influences reference joints outside the skin and were dropped."),
+                            int32(mi), int32(pi), InvalidInfluences);
+                    }
                     WeightsLocal = MoveTemp(Tmp);
                     bHaveJw = true;
+                }
+                if (FindJoints(Prim, 1) || FindWeights(Prim, 1))
+                {
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Mesh %d primitive %d has more than 4 joint influences per vertex (JOINTS_1/WEIGHTS_1); only the first 4 are imported."),
+                        int32(mi), int32(pi));
                 }
             }
             for (int32 v = 0; v < VertCount; ++v)
@@ -946,11 +967,14 @@ static bool MergePrimitivesFromMeshes(const cgltf_data* Data, const cgltf_skin* 
     return true;
 }
 
-// ---- cgltf-based file load (fill this out) ----
+// ---- cgltf-based file load ----
 bool UVRMTranslator::LoadVRM(FVRMParsedModel& Out) const
 {
-    const FString Filename = GetSourceData()->GetFilename();
+    return VRM::LoadVRMFile(GetSourceData()->GetFilename(), Out);
+}
 
+bool VRM::LoadVRMFile(const FString& Filename, FVRMParsedModel& Out)
+{
     // Use centralized reset to set defaults and clear arrays
     ResetParsedModel(Out);
 
@@ -971,49 +995,24 @@ bool UVRMTranslator::LoadVRM(FVRMParsedModel& Out) const
         return false;
     }
 
-    // Assume single skin is used by all mesh nodes in VRM
-    const cgltf_skin* Skin = (Data->skins_count > 0) ? &Data->skins[0] : nullptr;
-
-    // Pre-build NodeIndex->BoneIndex mapping if skin exists (now using extracted helper)
-    TMap<int32, int32> NodeToBone = BuildNodeToBoneMap(Skin, Data);
-
-    // Populate bones via helper (names, parents, UE-space local binds, reference pose fix)
-    PopulateBonesFromSkin(Skin, Data, Out);
-    if (Skin && Out.Bones.Num() == 0)
+    // Bones: the joints of every skin (names, parents, UE-space local binds, reference pose fix).
+    // Also fills Out.NodeToBoneMap for spring bone resolution.
+    TMap<int32, int32> NodeToBone;
+    PopulateBonesFromSkins(Data, Out, NodeToBone);
+    if (Data->skins_count > 0 && Out.Bones.Num() == 0)
     {
         // Preserve previous failure behavior when a skin exists but no joints were produced
         return false;
     }
 
-    // Build node index -> bone name map for spring bone resolution
-    if (Skin && Data->nodes_count > 0)
-    {
-        for (size_t nodeIdx = 0; nodeIdx < Data->nodes_count; ++nodeIdx)
-        {
-            const cgltf_node* Node = &Data->nodes[nodeIdx];
-            if (Node && Node->name)
-            {
-                FString NodeName = UTF8_TO_TCHAR(Node->name);
-                for (size_t jointIdx = 0; jointIdx < Skin->joints_count; ++jointIdx)
-                {
-                    if (Skin->joints[jointIdx] == Node)
-                    {
-                        Out.NodeToBoneMap.Add(static_cast<int32>(nodeIdx), FName(*NodeName));
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     // Merge all primitives from all meshes (extracted)
-    if (!MergePrimitivesFromMeshes(Data, Skin, NodeToBone, Out))
+    if (!MergePrimitivesFromMeshes(Data, NodeToBone, Out))
     {
         UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to merge mesh primitives."));
         return false;
     }
 
-    // Parse morph targets (extracted helper) — must run after primitives merged
+    // Parse morph targets (extracted helper) - must run after primitives merged
     ParseMorphTargets(Data, Out);
 
     // Images: use extracted helper
@@ -1157,11 +1156,6 @@ static FTransform NodeTRS(const cgltf_node* N)
     FTransform Xf; Xf.SetComponents(R, T, S);
     return Xf;
 }
-static void Normalize4(float W[4])
-{
-    const float Sum = FMath::Max(1e-8f, W[0] + W[1] + W[2] + W[3]);
-    W[0] /= Sum; W[1] /= Sum; W[2] /= Sum; W[3] /= Sum;
-}
 
 template<typename TWeight>
 static void BindAllToRoot(TArray<TWeight>& Weights)
@@ -1174,14 +1168,14 @@ static void BindAllToRoot(TArray<TWeight>& Weights)
 }
 
 template<typename TWeight>
-static void ReadJointsWeights(
+static int32 ReadJointsWeights(
     const cgltf_accessor& AJ, const cgltf_accessor& AW,
+    const cgltf_skin& Skin, const cgltf_data& Data,
     const TMap<int32, int32>& NodeToBone,
     TArray<TWeight>& Out)
 {
-    const int32 Count = int32(AJ.count);
-    check(Count == int32(AW.count));
-    check(Count == Out.Num());
+    const int32 Count = FMath::Min3(int32(AJ.count), int32(AW.count), Out.Num());
+    int32 Invalid = 0;
 
     for (int32 i = 0; i < Count; ++i)
     {
@@ -1190,18 +1184,44 @@ static void ReadJointsWeights(
 
         float W[4] = { 0,0,0,0 };
         cgltf_accessor_read_float(&AW, i, W, 4);
-        Normalize4(W);
 
         auto& Dst = Out[i];
         for (int k = 0; k < 4; ++k)
         {
-            int32 Bone = 0;
-            if (const int32* Found = NodeToBone.Find(int32(J[k])))
-                Bone = *Found;
+            // JOINTS_n values index into this skin's joints list, not into the node array.
+            int32 Bone = INDEX_NONE;
+            if (J[k] < Skin.joints_count && Skin.joints[J[k]])
+            {
+                if (const int32* Found = NodeToBone.Find(int32(Skin.joints[J[k]] - Data.nodes)))
+                {
+                    Bone = *Found;
+                }
+            }
+            if (Bone == INDEX_NONE)
+            {
+                if (W[k] > 0.f)
+                {
+                    ++Invalid;
+                }
+                W[k] = 0.f;
+                Bone = 0;
+            }
             Dst.BoneIndex[k] = uint16(Bone);
-            Dst.Weight[k] = W[k];
+        }
+
+        const float Sum = W[0] + W[1] + W[2] + W[3];
+        if (Sum > 1e-8f)
+        {
+            for (int k = 0; k < 4; ++k) { Dst.Weight[k] = W[k] / Sum; }
+        }
+        else
+        {
+            // No usable influence: bind to the first bone.
+            Dst.BoneIndex[0] = 0; Dst.Weight[0] = 1.f;
+            for (int k = 1; k < 4; ++k) { Dst.BoneIndex[k] = 0; Dst.Weight[k] = 0.f; }
         }
     }
+    return Invalid;
 }
 
 static bool DecodeDataUri(const FString& Uri, TArray64<uint8>& OutBytes)
@@ -1498,48 +1518,95 @@ static void ResetParsedModel(FVRMParsedModel& Out)
     Out.Mesh.Morphs.Reset();
 
     Out.Bones.Reset();
+    Out.NodeToBoneMap.Reset();
 }
 
-// Populate bones array from a cgltf_skin: names, parent indices and local binds converted to UE space.
-// Also performs the "reference pose fix" that zeroes rotations and corrects global positions.
-static void PopulateBonesFromSkin(const cgltf_skin* Skin, const cgltf_data* Data, FVRMParsedModel& Out)
+// Populate bones from the joints of every skin: unique names, parent indices and local binds converted
+// to UE space. Also performs the "reference pose fix" that zeroes rotations and corrects global positions.
+static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone)
 {
-    if (!Skin || !Data)
+    Out.Bones.Reset();
+    Out.NodeToBoneMap.Reset();
+    OutNodeToBone.Reset();
+    if (!Data || Data->skins_count == 0)
     {
-        Out.Bones.Reset();
         return;
     }
 
-    // Allocate bones array
-    Out.Bones.Reset();
-    Out.Bones.SetNum(int32(Skin->joints_count));
-
-    // First pass: set names, find parent indices within the skin joints list and convert local TRS -> UE space
-    for (int32 ji = 0; ji < int32(Skin->joints_count); ++ji)
+    // Union of all skins' joints. Files often have one skin per skinned mesh, each listing only
+    // the joints that mesh uses, in its own order.
+    TSet<const cgltf_node*> JointNodes;
+    for (size_t si = 0; si < Data->skins_count; ++si)
     {
-        const cgltf_node* J = Skin->joints[ji];
-        FVRMParsedBone& B = Out.Bones[ji];
-
-        // Name
-        B.Name = (J && J->name) ? FString(UTF8_TO_TCHAR(J->name)) : FString::Printf(TEXT("Joint_%d"), ji);
-
-        // Parent: find the parent node inside the skin->joints array, or INDEX_NONE
-        B.Parent = INDEX_NONE;
-        const cgltf_node* P = J ? J->parent : nullptr;
-        while (P)
+        const cgltf_skin& Skin = Data->skins[si];
+        for (size_t ji = 0; ji < Skin.joints_count; ++ji)
         {
-            bool bFound = false;
-            for (int32 k = 0; k < int32(Skin->joints_count); ++k)
+            if (Skin.joints[ji])
             {
-                if (Skin->joints[k] == P)
-                {
-                    B.Parent = k;
-                    bFound = true;
-                    break;
-                }
+                JointNodes.Add(Skin.joints[ji]);
             }
-            if (bFound) { break; }
-            P = P->parent;
+        }
+    }
+
+    // Order bones by a pre-order walk of the node hierarchy so every parent precedes its children
+    // (the rest-pose pass below relies on that).
+    TArray<const cgltf_node*> Ordered;
+    Ordered.Reserve(JointNodes.Num());
+    TFunction<void(const cgltf_node*)> Visit = [&](const cgltf_node* Node)
+    {
+        if (JointNodes.Contains(Node))
+        {
+            Ordered.Add(Node);
+        }
+        for (size_t ci = 0; ci < Node->children_count; ++ci)
+        {
+            Visit(Node->children[ci]);
+        }
+    };
+    for (size_t ni = 0; ni < Data->nodes_count; ++ni)
+    {
+        if (!Data->nodes[ni].parent)
+        {
+            Visit(&Data->nodes[ni]);
+        }
+    }
+
+    // Unique names. Bone names compare case-insensitively (FName), so duplicates are found that way.
+    // Unnamed joints become Node_<glTF node index>; repeats get _1, _2, ... in bone order.
+    TSet<FName> UsedNames;
+    Out.Bones.SetNum(Ordered.Num());
+    for (int32 bi = 0; bi < Ordered.Num(); ++bi)
+    {
+        const cgltf_node* J = Ordered[bi];
+        const int32 NodeIndex = int32(J - Data->nodes);
+        OutNodeToBone.Add(NodeIndex, bi);
+
+        FVRMParsedBone& B = Out.Bones[bi];
+        B.NodeIndex = NodeIndex;
+
+        const FString BaseName = (J->name && J->name[0]) ? FString(UTF8_TO_TCHAR(J->name)) : FString::Printf(TEXT("Node_%d"), NodeIndex);
+        FString Name = BaseName;
+        for (int32 Suffix = 1; UsedNames.Contains(FName(*Name)); ++Suffix)
+        {
+            Name = FString::Printf(TEXT("%s_%d"), *BaseName, Suffix);
+        }
+        if (Name != BaseName)
+        {
+            UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Joint node %d '%s' renamed to '%s' to keep bone names unique."), NodeIndex, *BaseName, *Name);
+        }
+        UsedNames.Add(FName(*Name));
+        B.Name = Name;
+        Out.NodeToBoneMap.Add(NodeIndex, FName(*Name));
+
+        // Parent: nearest ancestor that is also a joint (already in Out.Bones thanks to the ordering).
+        B.Parent = INDEX_NONE;
+        for (const cgltf_node* P = J->parent; P; P = P->parent)
+        {
+            if (const int32* ParentBone = OutNodeToBone.Find(int32(P - Data->nodes)))
+            {
+                B.Parent = *ParentBone;
+                break;
+            }
         }
 
         // Convert local bind TRS from glTF to UE axes and apply global scale

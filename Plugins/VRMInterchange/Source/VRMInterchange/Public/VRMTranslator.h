@@ -62,8 +62,9 @@ struct FVRMParsedMesh
 
 struct FVRMParsedBone
 {
-    FString Name;
+    FString Name;           // unique among the model's bones
     int32 Parent = INDEX_NONE;
+    int32 NodeIndex = INDEX_NONE; // glTF node this bone was created from
     FTransform LocalBind;
 };
 
@@ -89,11 +90,17 @@ struct FVRMParsedModel
     // Single merged mesh for now
     FVRMParsedMesh Mesh;
 
-    // New: Node index -> Bone name map (populated during LoadVRM)
+    // glTF node index -> bone name, for every joint (populated during LoadVRM)
     TMap<int32, FName> NodeToBoneMap;
 
     float GlobalScale = 100.f;
 };
+
+namespace VRM
+{
+    /** Parses a .vrm file into Out (what UVRMTranslator translates). Exposed for tests. */
+    VRMINTERCHANGE_API bool LoadVRMFile(const FString& Filename, FVRMParsedModel& Out);
+}
 
 #include "VRMTranslator.generated.h"
 
