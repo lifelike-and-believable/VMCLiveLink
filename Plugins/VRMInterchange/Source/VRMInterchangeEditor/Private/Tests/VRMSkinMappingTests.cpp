@@ -46,10 +46,11 @@ namespace VRMSkinMappingTests
 		return W.BoneIndex[Best];
 	}
 
-	static FVector ExpectedPosition(const TSharedPtr<FJsonObject>& Object, float GlobalScale)
+	/** Expected UE position, converted like the importer converts this file (axes, scale and facing). */
+	static FVector ExpectedPosition(const TSharedPtr<FJsonObject>& Object, const FVRMParsedModel& Model)
 	{
 		const TArray<TSharedPtr<FJsonValue>>& P = Object->GetArrayField(TEXT("world_position_gltf"));
-		return VRM::GltfPositionToUE(FVector(P[0]->AsNumber(), P[1]->AsNumber(), P[2]->AsNumber()), GlobalScale);
+		return VRM::GltfPositionToUE(FVector(P[0]->AsNumber(), P[1]->AsNumber(), P[2]->AsNumber()), Model.GlobalScale, Model.Version);
 	}
 
 	/** Component-space rest position of a bone (bones are ordered parents first). */
@@ -102,7 +103,7 @@ namespace VRMSkinMappingTests
 			{
 				continue;
 			}
-			const FVector ExpectedBonePos = ExpectedPosition(Pair.Value->AsObject(), Model.GlobalScale);
+			const FVector ExpectedBonePos = ExpectedPosition(Pair.Value->AsObject(), Model);
 			const FVector ActualBonePos = BoneRestPosition(Model, BoneIndex);
 			Test.TestTrue(FString::Printf(TEXT("%s: joint node %d rest position %s (expected %s)"), Name, Node, *ActualBonePos.ToString(), *ExpectedBonePos.ToString()),
 				ActualBonePos.Equals(ExpectedBonePos, PositionTolerance));
@@ -141,7 +142,7 @@ namespace VRMSkinMappingTests
 			Test.TestEqual(FString::Printf(TEXT("%s: vertex %s#%d bound to the right bone"), Name, *MeshNode, int32(V->GetNumberField(TEXT("vertex")))),
 				ActualBone, ExpectedBone ? ExpectedBone->ToString() : FString(TEXT("<missing bone>")));
 
-			const FVector ExpectedPos = ExpectedPosition(V, Model.GlobalScale);
+			const FVector ExpectedPos = ExpectedPosition(V, Model);
 			const FVector ActualPos = FVector(Model.Mesh.Positions[VertexIndex]);
 			Test.TestTrue(FString::Printf(TEXT("%s: vertex %s#%d rest position %s (expected %s)"), Name, *MeshNode, int32(V->GetNumberField(TEXT("vertex"))), *ActualPos.ToString(), *ExpectedPos.ToString()),
 				ActualPos.Equals(ExpectedPos, PositionTolerance));

@@ -809,6 +809,8 @@ namespace
      *
      * VRM 0.x writes collider offsets with Z negated relative to glTF (UniVRM 0.x); three-vrm's
      * VRM 0.x loader negates it back ("z is opposite in VRM0.0"). Its gravityDir is not negated.
+     * VRM 0.x models face -Z, so everything also gets the 180-degree yaw the translator applies to
+     * the mesh and skeleton (FVRMAxisConvention).
      */
     static void ConvertSpringConfigToUE(const TSharedPtr<FJsonObject>& Root, FVRMSpringConfig& Config)
     {
@@ -816,19 +818,21 @@ namespace
         const float Scale = MetersToCentimeters;
         const TArray<FMatrix> NodeWorld = ComputeNodeWorldMatrices(Root);
         const bool bVRM0 = (Config.Spec == EVRMSpringSpec::VRM0);
+        // Same facing as the translator uses for the mesh and skeleton (VRM 0.x gets a 180-degree yaw).
+        const FVRMAxisConvention Convention = FVRMAxisConvention::ForVersion(bVRM0 ? EVRMVersion::VRM0 : EVRMVersion::VRM1, Scale);
 
         for (FVRMSpringCollider& Collider : Config.Colliders)
         {
             const FMatrix World = NodeWorld.IsValidIndex(Collider.NodeIndex) ? NodeWorld[Collider.NodeIndex] : FMatrix::Identity;
             const FMatrix NormalXf = World.Inverse().GetTransposed();
             const float RadiusScale = Scale * float(FVector(World.M[0][0], World.M[0][1], World.M[0][2]).Size());
-            auto ConvertOffset = [&World, bVRM0, Scale](FVector Offset)
+            auto ConvertOffset = [&World, &Convention, bVRM0](FVector Offset)
             {
                 if (bVRM0)
                 {
                     Offset.Z = -Offset.Z;
                 }
-                return ToUEPosition(FVector(World.TransformVector(Offset)), Scale);
+                return Convention.Position(FVector(World.TransformVector(Offset)));
             };
 
             for (FVRMSpringColliderSphere& Sphere : Collider.Spheres)
@@ -845,7 +849,7 @@ namespace
             for (FVRMSpringColliderPlane& Plane : Collider.Planes)
             {
                 Plane.Offset = ConvertOffset(Plane.Offset);
-                Plane.Normal = ToUEDirection(FVector(NormalXf.TransformVector(Plane.Normal))).GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, 1));
+                Plane.Normal = Convention.Direction(FVector(NormalXf.TransformVector(Plane.Normal))).GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, 1));
             }
         }
 
@@ -856,7 +860,7 @@ namespace
 
         for (FVRMSpring& Spring : Config.Springs)
         {
-            Spring.GravityDir = ToUEDirection(Spring.GravityDir).GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
+            Spring.GravityDir = Convention.Direction(Spring.GravityDir).GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
             Spring.GravityPower *= Scale;
             Spring.HitRadius *= Scale;
         }
