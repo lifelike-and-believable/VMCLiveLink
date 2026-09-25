@@ -41,6 +41,10 @@ public class VRMInterchangeEditor : ModuleRules
 
             "Projects",
 
+            // Editor notifications (pipeline registration prompt)
+            "Slate",
+            "SlateCore",
+
             // Runtime plugin module this editor module depends on
             "VRMInterchange",
             "VRMSpringBonesRuntime",

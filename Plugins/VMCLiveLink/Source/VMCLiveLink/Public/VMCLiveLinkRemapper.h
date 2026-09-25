@@ -17,12 +17,12 @@
 
 
 UENUM(BlueprintType)
-
 enum class ELLRemapPreset : uint8
 {
 	None    UMETA(DisplayName	= "None / Manual"),
 	ARKit   UMETA(DisplayName	= "ARKit (MetaHuman-friendly)"),
-	VMC_VRM UMETA(DisplayName	= "VMC / VRM (VMC protocol-style)"),
+	VMC_VRM UMETA(DisplayName	= "VMC / VRM 0.x expressions (ARKit targets)"),
+	VMC_VRM1 UMETA(DisplayName	= "VMC / VRM 1.0 expressions (ARKit targets)"),
 	VRoid	UMETA(DisplayName	= "VMC / VRoid"),
 	Rokoko  UMETA(DisplayName	= "Rokoko (ARKit names)"),
 	Custom  UMETA(DisplayName	= "Custom (JSON)")
@@ -34,85 +34,30 @@ class FVMCLiveLinkRemapperWorker final : public ILiveLinkSubjectRemapperWorker
 {
 public:
 	// Value shaping toggles (copied from asset on CreateWorker)
-	bool  bEnableMetaHumanCurveNormalizer = true;
+	bool  bEnableMetaHumanCurveNormalizer = false;
 	float JoyToSmileStrength = 1.0f;
 	float BlinkMirrorStrength = 1.0f;
 
-	virtual void RemapStaticData(FLiveLinkStaticDataStruct& InOutStaticData) override
-	{
-		if (!InOutStaticData.IsValid() ||
-			!InOutStaticData.GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>()) return;
-
-		auto& Skel = *InOutStaticData.Cast<FLiveLinkSkeletonStaticData>();
-
-		// Bones (use accessors for safety)
-		TArray<FName> Remapped = Skel.GetBoneNames();
-		for (FName& N : Remapped)
-		{
-			if (const FName* Out = BoneNameMap.Find(N)) N = *Out;
-		}
-		Skel.SetBoneNames(Remapped);
-
-		// Curves live on base static data in 5.6
-		FLiveLinkBaseStaticData& Base = static_cast<FLiveLinkBaseStaticData&>(Skel);
-		for (FName& C : Base.PropertyNames)
-		{
-			if (const FName* Out = CurveNameMap.Find(C)) C = *Out;
-		}
-	}
-
-	virtual void RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData) override
-	{
-		if (!InStatic.IsValid() || !InOutFrameData.IsValid()) return;
-		if (!InStatic.GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>() ||
-			!InOutFrameData.GetStruct()->IsChildOf<FLiveLinkAnimationFrameData>()) return;
-
-		const FLiveLinkBaseStaticData& Base = *InStatic.Cast<FLiveLinkBaseStaticData>();
-		const TArray<FName>& Names = Base.PropertyNames;
-
-
-		auto& Anim = *InOutFrameData.Cast<FLiveLinkAnimationFrameData>();
-		TArray<float>& Values = Anim.PropertyValues;
-
-		if (!bEnableMetaHumanCurveNormalizer) return;
-
-		auto FindIdx = [&](FName Name)->int32 { return Names.IndexOfByKey(Name); };
-		auto Get = [&](FName Name, float& Out)->bool {
-			const int32 I = FindIdx(Name);
-			if (I != INDEX_NONE && Values.IsValidIndex(I)) { Out = Values[I]; return true; }
-			return false;
-			};
-		auto Set = [&](FName Name, float Val)->void {
-			const int32 I = FindIdx(Name);
-			if (I != INDEX_NONE && Values.IsValidIndex(I)) { Values[I] = Val; }
-			};
-
-		// Blink mirroring
-		float BlinkL = 0.f, BlinkR = 0.f;
-		const bool HasL = Get("eyeBlinkLeft", BlinkL);
-		const bool HasR = Get("eyeBlinkRight", BlinkR);
-		if (HasL && !HasR) Set("eyeBlinkRight", FMath::Clamp(BlinkL * BlinkMirrorStrength, 0.f, 1.f));
-		if (HasR && !HasL) Set("eyeBlinkLeft", FMath::Clamp(BlinkR * BlinkMirrorStrength, 0.f, 1.f));
-
-		// Smile spreading
-		float Joy = 0.f;
-		if (Get("mouthSmileLeft", Joy))
-		{
-			const float V = FMath::Clamp(Joy * JoyToSmileStrength, 0.f, 1.f);
-			Set("mouthSmileLeft", V);
-			Set("mouthSmileRight", V);
-		}
-
-		// Funnel→pucker blend
-		float Funnel = 0.f;
-		if (Get("mouthFunnel", Funnel))
-		{
-			Set("mouthPucker", FMath::Clamp(Funnel * 0.5f, 0.f, 1.f));
-		}
-	}
+	virtual void RemapStaticData(FLiveLinkStaticDataStruct& InOutStaticData) override;
+	virtual void RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData) override;
 
 	TMap<FName, FName> BoneNameMap;   // copied from asset on CreateWorker
 	TMap<FName, FName> CurveNameMap;  // copied from asset on CreateWorker
+
+private:
+	/** A curve the normalizer adds because the stream only provides its counterpart. */
+	struct FSynthesizedCurve
+	{
+		int32 SourceIndex = INDEX_NONE; // index of the counterpart in the incoming property values
+		float Scale = 1.0f;
+	};
+
+	// Captured in RemapStaticData, applied in RemapFrameData. Synthesized curves are appended
+	// after the incoming properties, so frames are only extended when their property count
+	// matches the count seen at static time.
+	TArray<FSynthesizedCurve> SynthesizedCurves;
+	int32 IncomingPropertyCount = 0;
+	bool bWarnedDuplicateCurves = false;
 };
 
 // ---------------- Asset ----------------
@@ -201,13 +146,21 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
 	ELLRemapPreset Preset = ELLRemapPreset::None;
 
-	// MetaHuman curve value shaping (optional)
+	/**
+	 * Adds ARKit curves the stream does not provide, derived from their counterparts:
+	 * - eyeBlinkLeft/Right: when only one side is present, the other side is added as a copy (scaled by BlinkMirrorStrength).
+	 * - mouthSmileLeft/Right: when only one side is present, the other side is added as a copy (scaled by JoyToSmileStrength).
+	 * - mouthPucker: when absent and mouthFunnel is present, added as half of mouthFunnel.
+	 * Curves that the stream does provide are never modified.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Normalizer")
-	bool bEnableMetaHumanCurveNormalizer = true;
+	bool bEnableMetaHumanCurveNormalizer = false;
 
+	/** Scale for the smile side the normalizer adds when the stream only sends one side. */
 	UPROPERTY(EditAnywhere, Category = "Normalizer", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float JoyToSmileStrength = 1.0f;
 
+	/** Scale for the blink side the normalizer adds when the stream only sends one side. */
 	UPROPERTY(EditAnywhere, Category = "Normalizer", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float BlinkMirrorStrength = 1.0f;
 
@@ -217,10 +170,13 @@ private:
 	void SyncWorker() const;
 
 	void SeedFromReferenceSkeleton();
-	void SeedCurves_ARKit();
-	void SeedCurves_VMC_VRM();
-	void SeedCurvesAndBones_VRoid();
-	void SeedCurves_Rokoko();
+
+	/** Map entries a preset seeds. None and Custom seed nothing. */
+	static void GetPresetMaps(ELLRemapPreset InPreset, TMap<FName, FName>& OutBones, TMap<FName, FName>& OutCurves);
+
+	/** Removes entries whose key and value both match PresetEntries (entries the user has not edited). */
+	static void RemoveUnchangedEntries(TMap<FName, FName>& InOutMap, const TMap<FName, FName>& PresetEntries);
+
 	void SeedBones_FromHumanoidLike(const TArray<FName>& Incoming);
 
 	ELLRemapPreset GuessPreset(const TArray<FName>& BoneNames, const TArray<FName>& CurveNames) const;

@@ -76,3 +76,6 @@ if ($Violations.Count -gt 0) {
 }
 
 Write-Host "All copyright headers OK."
+# Explicit success code: callers check $LASTEXITCODE, which a script only sets when it exits
+# with a code. Without this it stays $null, and `$null -ne 0` is true in PowerShell.
+exit 0
