@@ -1,0 +1,113 @@
+name: PR Build and Tests
+
+# Compiles both plugins (Editor and Game targets) and runs the plugin automation tests on every
+# pull request, so regressions are caught before merge. Release packaging stays in
+# fab-plugin-build.yml.
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # The runner is self-hosted: never run code from forks on it.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: powershell
+    env:
+      ENGINE_ROOT: 'C:\Program Files\Epic Games\UE_5.6'
+      PROJECT_FILE: 'VMCLiveLinkProject.uproject'
+      HEADER_HOLDER: 'Lifelike & Believable Animation Design, Inc. | Athomas Goldberg'
+      TEST_FILTER: 'VRM.;VMC.'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set PowerShell Execution Policy
+        run: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+
+      - name: Git LFS pull
+        run: |
+          git lfs install
+          git lfs pull
+
+      - name: Verify copyright headers (both plugins)
+        run: |
+          $failed = $false
+          foreach ($pd in @('Plugins/VMCLiveLink', 'Plugins/VRMInterchange')) {
+            Write-Host "Checking $pd"
+            & ./scripts/verify_copyright_headers.ps1 -PluginDir $pd -Holder $env:HEADER_HOLDER
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Build Editor target (Win64 Development)
+        run: |
+          $Project = (Resolve-Path $env:PROJECT_FILE).Path
+          & "$env:ENGINE_ROOT\Engine\Build\BatchFiles\Build.bat" VMCLiveLinkProjectEditor Win64 Development "-Project=$Project" -WaitMutex -NoHotReload
+          if ($LASTEXITCODE -ne 0) { Write-Error "Editor build failed ($LASTEXITCODE)"; exit 1 }
+
+      - name: Build Game target (Win64 Development)
+        run: |
+          $Project = (Resolve-Path $env:PROJECT_FILE).Path
+          & "$env:ENGINE_ROOT\Engine\Build\BatchFiles\Build.bat" VMCLiveLinkProject Win64 Development "-Project=$Project" -WaitMutex
+          if ($LASTEXITCODE -ne 0) { Write-Error "Game build failed ($LASTEXITCODE)"; exit 1 }
+
+      - name: Build Game target (Win64 Shipping)
+        run: |
+          $Project = (Resolve-Path $env:PROJECT_FILE).Path
+          & "$env:ENGINE_ROOT\Engine\Build\BatchFiles\Build.bat" VMCLiveLinkProject Win64 Shipping "-Project=$Project" -WaitMutex
+          if ($LASTEXITCODE -ne 0) { Write-Error "Shipping build failed ($LASTEXITCODE)"; exit 1 }
+
+      - name: Run automation tests
+        run: |
+          $Project = (Resolve-Path $env:PROJECT_FILE).Path
+          $ReportDir = Join-Path (Resolve-Path .).Path 'TestReport'
+          if (Test-Path $ReportDir) { Remove-Item $ReportDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $ReportDir | Out-Null
+
+          $Editor = "$env:ENGINE_ROOT\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
+          & $Editor $Project `
+            "-ExecCmds=Automation RunTests $env:TEST_FILTER;Quit" `
+            "-ReportExportPath=$ReportDir" `
+            -unattended -nullrhi -nosplash -nosound -nopause -stdout -FullStdOutLogOutput
+          Write-Host "Editor exited with code $LASTEXITCODE"
+
+          $Index = Join-Path $ReportDir 'index.json'
+          if (-not (Test-Path $Index)) { Write-Error "No automation report written to $Index"; exit 1 }
+          $Report = Get-Content $Index -Raw -Encoding UTF8 | ConvertFrom-Json
+          $Ran = $Report.succeeded + $Report.succeededWithWarnings + $Report.failed
+          Write-Host "Tests: $($Report.succeeded) passed, $($Report.succeededWithWarnings) passed with warnings, $($Report.failed) failed, $($Report.notRun) not run"
+
+          foreach ($t in $Report.tests) {
+            if ($t.state -eq 'Fail') {
+              Write-Host "FAILED: $($t.fullTestPath)"
+              foreach ($e in $t.entries) {
+                if ($e.event.type -eq 'Error') { Write-Host "    $($e.event.message)" }
+              }
+            }
+          }
+
+          if ($Ran -eq 0) { Write-Error "No tests matched '$env:TEST_FILTER'"; exit 1 }
+          if ($Report.failed -gt 0) { exit 1 }
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-report
+          path: TestReport
+          if-no-files-found: ignore

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 // Minimal module entry point for the editor module.
 #include "VRMInterchangeEditorModule.h" // New header
 #include "CoreMinimal.h"
