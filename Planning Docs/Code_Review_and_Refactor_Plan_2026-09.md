@@ -947,7 +947,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25.* Every PR below is an open **draft**. The review environment has no Unreal Engine, so **none of them has been compiled or run**. The self-hosted runner that builds them was offline, and the queued builds were cancelled. Each PR description lists what to verify in the editor.
+*Last updated 2026-09-25.* Every PR below is an open **draft**. The runner is back online. #104 (the PR build) is green, meaning Editor, Game Development and Shipping all build and all 12 `VRM.`/`VMC.` tests pass. That result covers `main` plus #110. **The other PRs have not been compiled yet**; they get CI once #104 merges and their branches pick it up. Each PR description lists what to verify in the editor.
 
 ### Status by task
 
@@ -960,7 +960,8 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P1.4 Keep user subject settings | #101 | `main` | Draft, not compiled | |
 | P1.6 Non-destructive normalizer and presets | #102 | `main` | Draft, not compiled | Adds `VMC_VRM1` preset |
 | P1.17 No startup edits to config or content | #103 | `main` | Draft, not compiled | Opt-in registration prompt and settings button |
-| P0.1 CI builds PRs and runs tests | #104 | `main` | Draft, not run | `pr-build.yml`; header check covers both plugins |
+| P0.1 CI builds PRs and runs tests | #104 | `main` | Draft, **CI green** | `pr-build.yml`; header check covers both plugins. Includes #110 so that the tests pass |
+| (unplanned) Fix six stale tests on `main` | #110 | `main` | Draft; verified through #104's CI | Settings tests depended on project config; spring-joint tests used a non-spec JSON layout |
 | P0.2 Synthetic VRM fixtures | #105 | `main` | Draft; fixtures checked with cgltf | Seventh fixture (`bind_pose_offset`) added in #109 |
 | P0.3 VMC test sender | #106 | `main` | Draft; self-test passes | `scripts/vmc_sender.py` |
 | P1.1 `Root/Pos` per spec | #107 | #101 | Draft, not compiled | |
@@ -973,7 +974,7 @@ Everything else is **not started**. Next in order: P1.11 (including the SP-08 fi
 
 ### Merge order and known conflicts
 
-1. #99, #100, #101, #102, #105 and #106 are independent and can merge in any order.
+1. Merge #110 and #104 first, so every later PR runs the PR build. #99, #100, #101, #102, #105 and #106 are independent after that.
 2. #103 and #104 touch two of the same files. Whichever merges second needs a conflict resolution.
 3. #104 conflicts with #98 (not part of this plan) in `fab-plugin-build.yml`.
 4. Stacked PRs: #107 needs #101 merged first. #108 needs #100 and #105. #109 needs #108. After a base merges, retarget the stacked PR to `main`.
@@ -981,7 +982,7 @@ Everything else is **not started**. Next in order: P1.11 (including the SP-08 fi
 
 ### Verification still owed
 
-- **Build:** compile every PR in the editor, then Game Development and Shipping builds. Once #104 merges, `pr-build.yml` does this on PRs.
+- **Build:** compile every PR (Editor, Game Development and Shipping). `pr-build.yml` does this once #104 merges. One PR build run (36149565264, first attempt) was cancelled by the runner itself 5 s into the Shipping build, with no user or concurrency cancel. A re-run passed, so if it happens again, look at the runner machine.
 - **Tests:** run `VRM.` and `VMC.` in the automation tests.
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
