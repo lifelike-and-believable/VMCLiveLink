@@ -25,14 +25,22 @@ bool FVRMPipelineValidation::RunTest(const FString& Parameters)
     
     if (Pipeline)
     {
-        // Test default settings integration
-        TestFalse(TEXT("Default bGenerateSpringBoneData"), Pipeline->bGenerateSpringBoneData);
-        TestFalse(TEXT("Default bOverwriteExisting"), Pipeline->bOverwriteExisting);
-        TestFalse(TEXT("Default bGeneratePostProcessAnimBP"), Pipeline->bGeneratePostProcessAnimBP);
-        TestFalse(TEXT("Default bAssignPostProcessABP"), Pipeline->bAssignPostProcessABP);
-        
-        // Test subfolder settings
-        TestEqual(TEXT("Animation subfolder default"), Pipeline->AnimationSubFolder, FString(TEXT("Animation")));
+        // The pipeline copies the project's VRM Interchange settings when it is created, so its
+        // values depend on the project config (this project's DefaultGame.ini enables them).
+        // Check that it follows the settings rather than asserting fixed values.
+        const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>();
+        TestNotNull(TEXT("Settings object exists"), Settings);
+        if (Settings)
+        {
+            TestEqual(TEXT("bGenerateSpringBoneData follows settings"), Pipeline->bGenerateSpringBoneData, Settings->bGenerateSpringBoneData);
+            TestEqual(TEXT("bOverwriteExisting follows settings"), Pipeline->bOverwriteExisting, Settings->bOverwriteExistingSpringAssets);
+            TestEqual(TEXT("bGeneratePostProcessAnimBP follows settings"), Pipeline->bGeneratePostProcessAnimBP, Settings->bGeneratePostProcessAnimBP);
+            TestEqual(TEXT("bAssignPostProcessABP follows settings"), Pipeline->bAssignPostProcessABP, Settings->bAssignPostProcessABP);
+        }
+
+        // Test subfolder settings (the spring pipeline puts its animation assets under SpringBones;
+        // "Animation" is the Live Link pipeline's default)
+        TestEqual(TEXT("Animation subfolder default"), Pipeline->AnimationSubFolder, FString(TEXT("SpringBones")));
         TestEqual(TEXT("Main subfolder default"), Pipeline->SubFolder, FString(TEXT("SpringBones")));
         
         // Test that pipeline doesn't crash with minimal inputs
@@ -40,7 +48,8 @@ bool FVRMPipelineValidation::RunTest(const FString& Parameters)
         TArray<UInterchangeSourceData*> SourceDatas;
         FString ContentBasePath = TEXT("/Game/TestContent");
         
-        // This should return early without error when disabled
+        // With no source data this should return early without error
+        Pipeline->bGenerateSpringBoneData = false;
         Pipeline->ExecutePipeline(NodeContainer, SourceDatas, ContentBasePath);
         
         TestTrue(TEXT("Pipeline executes without error when disabled"), true);
@@ -119,15 +128,14 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
       "colliderGroups": [
         {"name": "HeadGroup", "colliders": [0]}
       ],
-      "joints": [
-        {"node": 2, "hitRadius": 0.02},
-        {"node": 3, "hitRadius": 0.015},
-        {"node": 4, "hitRadius": 0.01}
-      ],
       "springs": [
         {
           "name": "MainHairSpring",
-          "joints": [0, 1, 2],
+          "joints": [
+            {"node": 2, "hitRadius": 0.02},
+            {"node": 3, "hitRadius": 0.015},
+            {"node": 4, "hitRadius": 0.01}
+          ],
           "colliderGroups": [0],
           "center": 0,
           "stiffness": 0.7,

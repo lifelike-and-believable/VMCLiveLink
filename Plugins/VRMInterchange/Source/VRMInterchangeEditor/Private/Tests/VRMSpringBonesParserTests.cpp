@@ -22,9 +22,6 @@ bool FVRMParseVRM1Json::RunTest(const FString& Parameters)
           "colliderGroups": [
             { "name": "HeadCG", "colliders": [ 0 ] }
           ],
-          "joints": [
-            { "node": 2, "hitRadius": 0.01 }
-          ],
           "springs": [
             {
               "name":"Hair",
@@ -34,7 +31,7 @@ bool FVRMParseVRM1Json::RunTest(const FString& Parameters)
               "gravityDir": [0,0,-1],
               "gravityPower": 1.0,
               "hitRadius": 0.03,
-              "joints": [0],
+              "joints": [ { "node": 2, "hitRadius": 0.01 } ],
               "colliderGroups": [0]
             }
           ]
@@ -50,6 +47,10 @@ bool FVRMParseVRM1Json::RunTest(const FString& Parameters)
     TestEqual(TEXT("Colliders"), Cfg.Colliders.Num(), 1);
     TestEqual(TEXT("ColliderGroups"), Cfg.ColliderGroups.Num(), 1);
     TestEqual(TEXT("Joints"), Cfg.Joints.Num(), 1);
+    if (Cfg.Joints.Num() > 0)
+    {
+        TestEqual(TEXT("Joint node"), Cfg.Joints[0].NodeIndex, 2);
+    }
     TestEqual(TEXT("Springs"), Cfg.Springs.Num(), 1);
     TestTrue(TEXT("IsValid()"), Cfg.IsValid());
     return true;
