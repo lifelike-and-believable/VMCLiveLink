@@ -119,10 +119,8 @@ public:
     virtual bool CanImportSourceData(const UInterchangeSourceData* InSourceData) const override;
     virtual bool Translate(UInterchangeBaseNodeContainer& NodeContainer) const override;
 
-    // IInterchangeMeshPayloadInterface (UE 5.6)
-    UE_DEPRECATED(5.6, "Deprecated. Use GetMeshPayloadData(const FInterchangeMeshPayLoadKey&, const UE::Interchange::FAttributeStorage&) instead.")
-    virtual TOptional<UE::Interchange::FMeshPayloadData> GetMeshPayloadData(const FInterchangeMeshPayLoadKey& PayLoadKey, const FTransform& MeshGlobalTransform) const override;
-
+    // IInterchangeMeshPayloadInterface (UE 5.6). Only the attribute-storage overload is
+    // implemented; the FTransform overload is deprecated in 5.6 and the engine no longer calls it.
     virtual TOptional<UE::Interchange::FMeshPayloadData> GetMeshPayloadData(const FInterchangeMeshPayLoadKey& PayLoadKey, const UE::Interchange::FAttributeStorage& PayloadAttributes) const override;
 
     // IInterchangeTexturePayloadInterface (UE 5.6)

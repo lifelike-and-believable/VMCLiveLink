@@ -680,16 +680,6 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
     }
 }
 
-TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
-    const FInterchangeMeshPayLoadKey& PayLoadKey,
-    const FTransform& MeshGlobalTransform) const
-{
-    using namespace UE::Interchange;
-    FAttributeStorage Attributes;
-    Attributes.RegisterAttribute(UE::Interchange::FAttributeKey{ MeshPayload::Attributes::MeshGlobalTransform }, MeshGlobalTransform);
-    return GetMeshPayloadData(PayLoadKey, Attributes);
-}
-
 // ===== Texture Payload Interface (UE 5.6) =====
 TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& /*AlternateTexturePath*/) const
 {
