@@ -126,7 +126,8 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringConfig
     UPROPERTY(EditAnywhere, Category="VRM", meta=(EditFixedSize, TitleProperty="Name"))
     TArray<FVRMSpring> Springs;
 
-    UPROPERTY(VisibleAnywhere, Category="VRM") FString RawJson;
+    // RawJson (the whole top-level JSON) was removed in P3.3: it made every spring data asset
+    // carry a copy of the file's JSON. Assets saved with it load; the value is skipped.
 
     bool IsValid() const
     {

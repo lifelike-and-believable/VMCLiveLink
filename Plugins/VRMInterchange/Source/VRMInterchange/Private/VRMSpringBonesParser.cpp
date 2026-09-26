@@ -924,12 +924,12 @@ namespace
 namespace
 {
     // Spring bones from an already parsed top-level JSON object.
-    bool ParseSpringBonesFromRoot(const TSharedPtr<FJsonObject>& Root, const FString& Json, FVRMSpringConfig& OutConfig, FString& OutError)
+    bool ParseSpringBonesFromRoot(const TSharedPtr<FJsonObject>& Root, FVRMSpringConfig& OutConfig, FString& OutError)
     {
         OutConfig = FVRMSpringConfig();
         OutError.Empty();
-        if (ParseVRM1(Root, OutConfig, OutError)) { ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM1: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
-        FString Err0; FVRMSpringConfig As0; if (ParseVRM0(Root, As0, Err0)) { OutConfig = MoveTemp(As0); ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; OutError.Reset(); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM0: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
+        if (ParseVRM1(Root, OutConfig, OutError)) { ConvertSpringConfigToUE(Root, OutConfig); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM1: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
+        FString Err0; FVRMSpringConfig As0; if (ParseVRM0(Root, As0, Err0)) { OutConfig = MoveTemp(As0); ConvertSpringConfigToUE(Root, OutConfig); OutError.Reset(); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM0: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
         OutError = TEXT("No VRM spring bone data detected."); return false;
     }
 
@@ -975,7 +975,7 @@ namespace VRM
         if (Json.IsEmpty()) { OutError = TEXT("Empty JSON."); return false; }
         const TSharedPtr<FJsonObject> Root = DeserializeJson(Json);
         if (!Root.IsValid()) { OutError = TEXT("Failed to parse JSON."); return false; }
-        return ParseSpringBonesFromRoot(Root, Json, OutConfig, OutError);
+        return ParseSpringBonesFromRoot(Root, OutConfig, OutError);
     }
 
     bool ParseSpringBonesFromJson(const FString& Json, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError)
@@ -995,7 +995,7 @@ namespace VRM
         OutNodeParent.Reset();
         OutNodeChildren.Reset();
         const TSharedPtr<FJsonObject> Root = Document.GetJsonRoot();
-        if (!ParseSpringBonesFromRoot(Root, Document.GetJson(), OutConfig, OutError))
+        if (!ParseSpringBonesFromRoot(Root, OutConfig, OutError))
         {
             return false;
         }

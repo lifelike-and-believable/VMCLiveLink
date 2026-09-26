@@ -2,6 +2,7 @@
 #include "VRMTranslator.h"
 #include "VRMInterchangeLog.h"
 #include "VRMDocument.h"
+#include "InterchangeVRMNode.h"
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "InterchangeSceneNode.h"
@@ -50,10 +51,13 @@ bool UVRMTranslator::CanImportSourceData(const UInterchangeSourceData* InSourceD
 
 bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) const
 {
-    // The file is read and parsed once (P3.3); the model below is built from that document.
+    // The file is read and parsed once (P3.3). The model is built from that document, and the
+    // document's JSON and hash go to the pipelines in a UInterchangeVRMNode.
+    ParsedModel.Reset();
     FString LoadError;
     const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(GetSourceData()->GetFilename(), LoadError);
-    if (!Document.IsValid() || !VRM::BuildParsedModel(*Document, Parsed))
+    const TSharedRef<FVRMParsedModel> Model = MakeShared<FVRMParsedModel>();
+    if (!Document.IsValid() || !VRM::BuildParsedModel(*Document, *Model))
     {
         if (!LoadError.IsEmpty())
         {
@@ -62,6 +66,13 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to read VRM."));
         return false;
     }
+    // Read-only from here on; the payload calls share it, possibly from other threads.
+    ParsedModel = Model;
+    const FVRMParsedModel& Parsed = *Model;
+
+    UInterchangeVRMNode* VRMNode = NewObject<UInterchangeVRMNode>(&NodeContainer);
+    NodeContainer.SetupNode(VRMNode, MakeNodeUid(TEXT("Document")), TEXT("VRM_Document"), EInterchangeNodeContainerType::TranslatedAsset);
+    VRMNode->SetFromDocument(*Document);
 
     // Folder subpaths
     const FString PackageSubPath = FPaths::GetBaseFilename(GetSourceData()->GetFilename());
@@ -101,7 +112,6 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     // Textures: one node (and texture asset) per image and use. Colour space and compression depend
     // on the use (VRM::ETextureUsage), so an image a material uses both as colour and as data gets
     // two textures rather than one with the wrong settings for half its uses.
-    TexturePayloadKeys.Reset();
     const TArray<VRM::ETextureUsage> Usages = VRM::ComputeTextureUsages(Parsed);
     TArray<TMap<VRM::ETextureUsage, FString>> TextureNodeUids; // per image: use -> texture node uid
     TextureNodeUids.SetNum(Parsed.Images.Num());
@@ -117,7 +127,6 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         }
         const TCHAR* UsageSuffix = Usage == VRM::ETextureUsage::Normal ? TEXT("_Normal") : (Usage == VRM::ETextureUsage::Data ? TEXT("_Data") : TEXT(""));
         const FString TextureKey = FString::Printf(TEXT("Tex_%d%s"), ti, UsageSuffix);
-        TexturePayloadKeys.Add(TextureKey);
         UInterchangeTexture2DNode* TexNode = NewObject<UInterchangeTexture2DNode>(&NodeContainer);
         const FString TexUid = MakeNodeUid(*TextureKey);
         TextureNodeUids[ti].Add(Usage, TexUid);
@@ -260,8 +269,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     UInterchangeMeshNode* MeshNode = NewObject<UInterchangeMeshNode>(&NodeContainer);
     NodeContainer.SetupNode(MeshNode, MeshNodeUid, TEXT("VRM_Mesh"), EInterchangeNodeContainerType::TranslatedAsset);
 
-    MeshPayloadKey = TEXT("VRM_Mesh_0");
-    MeshNode->SetPayLoadKey(MeshPayloadKey, EInterchangeMeshPayLoadType::SKELETAL);
+    MeshNode->SetPayLoadKey(TEXT("VRM_Mesh_0"), EInterchangeMeshPayLoadType::SKELETAL);
     MeshNode->SetSkinnedMesh(true);
     MeshNode->SetSkeletonDependencyUid(RootJointUid);
 
@@ -315,6 +323,11 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
     FTransform MeshGlobalTransform = FTransform::Identity;
     PayloadAttributes.GetAttribute(UE::Interchange::FAttributeKey{ MeshPayload::Attributes::MeshGlobalTransform }, MeshGlobalTransform);
 
+    if (!ParsedModel.IsValid())
+    {
+        return {};
+    }
+    const FVRMParsedModel& Parsed = *ParsedModel;
     const auto& PMesh = Parsed.Mesh;
 
     if (PayLoadKey.Type == EInterchangeMeshPayLoadType::MORPHTARGET)
@@ -585,6 +598,11 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
 TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& /*AlternateTexturePath*/) const
 {
     // Keys are "Tex_<image>" (colour), "Tex_<image>_Normal" or "Tex_<image>_Data"; see Translate.
+    if (!ParsedModel.IsValid())
+    {
+        return {};
+    }
+    const FVRMParsedModel& Parsed = *ParsedModel;
     FString Rest;
     if (!PayloadKey.StartsWith(TEXT("Tex_")))
     {

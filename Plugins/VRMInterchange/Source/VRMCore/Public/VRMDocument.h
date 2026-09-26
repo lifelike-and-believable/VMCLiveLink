@@ -43,6 +43,12 @@ public:
 	 */
 	static TSharedPtr<const FVRMDocument> LoadBytes(TArray64<uint8>&& InBytes, const FString& InFilename, FString& OutError);
 
+	/**
+	 * A document from top-level JSON text alone, e.g. what the translator stored for the pipelines
+	 * (UInterchangeVRMNode). It has no geometry, and its hash is the JSON's, not the file's.
+	 */
+	static TSharedPtr<const FVRMDocument> LoadJson(const FString& InJson, const FString& InFilename, FString& OutError);
+
 	~FVRMDocument();
 	FVRMDocument(const FVRMDocument&) = delete;
 	FVRMDocument& operator=(const FVRMDocument&) = delete;
