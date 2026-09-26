@@ -78,6 +78,7 @@ Content/
     ├── YourCharacterName_SkeletalMesh (Skeletal Mesh)
     ├── YourCharacterName_Skeleton (Skeleton asset)
     ├── YourCharacterName_PhysicsAsset (Physics Asset)
+    ├── <Mesh>_Avatar (Avatar description: humanoid bone map, expressions, look-at, licence)
     ├── Materials/ (Generated materials)
     ├── Textures/ (Imported textures)
     ├── SpringBones/

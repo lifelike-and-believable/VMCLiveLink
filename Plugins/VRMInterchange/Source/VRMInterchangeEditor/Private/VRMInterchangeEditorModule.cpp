@@ -11,6 +11,7 @@
 #include "VRMIKRigPostImportPipeline.h"
 #include "VRMLiveLinkPostImportPipeline.h"
 #include "VRMMaterialPostImportPipeline.h"
+#include "VRMAvatarDescriptionPipeline.h"
 #include "VRMImportPipelineRegistration.h"
 #include "VRMInterchangeSettings.h"
 
@@ -24,6 +25,7 @@ void FVRMInterchangeEditorModule::StartupModule()
 	UVRMIKRigPostImportPipeline::StaticClass();
 	UVRMLiveLinkPostImportPipeline::StaticClass();
 	UVRMMaterialPostImportPipeline::StaticClass();
+	UVRMAvatarDescriptionPipeline::StaticClass();
 
 	// The editor module never edits project settings by itself. Registering the VRM import
 	// pipelines is done from Project Settings > Plugins > VRM Interchange, or from the prompt below.
