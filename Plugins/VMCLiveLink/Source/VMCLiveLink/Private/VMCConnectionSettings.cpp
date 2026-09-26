@@ -117,7 +117,6 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 			else if (Key.Equals(TEXT("meters2cm"), ESearchCase::IgnoreCase))   Flag = &Out.bMetersToCm;
 			else if (Key.Equals(TEXT("zeromissing"), ESearchCase::IgnoreCase)) Flag = &Out.bZeroMissingCurves;
 			else if (Key.Equals(TEXT("incomingtranslations"), ESearchCase::IgnoreCase)) Flag = &Out.bPreferIncomingTranslations;
-			else if (Key.Equals(TEXT("refoffsets"), ESearchCase::IgnoreCase))  Flag = &Out.bUseRefOffsets;
 			else if (Key.Equals(TEXT("thread"), ESearchCase::IgnoreCase))      Flag = &Out.bReceiveThread;
 			if (Flag && !ParseBool(Trimmed, *Flag))
 			{
@@ -130,9 +129,9 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 
 FString FVMCConnectionSettings::ToString() const
 {
-	return FString::Printf(TEXT("port=%d;bind=%s;unity2ue=%d;meters2cm=%d;yaw=%s;zeromissing=%d;incomingtranslations=%d;refoffsets=%d;thread=%d;subject=%s"),
+	return FString::Printf(TEXT("port=%d;bind=%s;unity2ue=%d;meters2cm=%d;yaw=%s;zeromissing=%d;incomingtranslations=%d;thread=%d;subject=%s"),
 		Port, *BindAddress, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, *FString::SanitizeFloat(YawOffsetDeg),
-		bZeroMissingCurves ? 1 : 0, bPreferIncomingTranslations ? 1 : 0, bUseRefOffsets ? 1 : 0,
+		bZeroMissingCurves ? 1 : 0, bPreferIncomingTranslations ? 1 : 0,
 		bReceiveThread ? 1 : 0, *SubjectName.ToString());
 }
 
@@ -155,5 +154,5 @@ bool FVMCConnectionSettings::operator==(const FVMCConnectionSettings& Other) con
 	return Port == Other.Port && BindAddress == Other.BindAddress && bUnityToUE == Other.bUnityToUE
 		&& bMetersToCm == Other.bMetersToCm && YawOffsetDeg == Other.YawOffsetDeg && SubjectName == Other.SubjectName
 		&& bZeroMissingCurves == Other.bZeroMissingCurves && bPreferIncomingTranslations == Other.bPreferIncomingTranslations
-		&& bUseRefOffsets == Other.bUseRefOffsets && bReceiveThread == Other.bReceiveThread;
+		&& bReceiveThread == Other.bReceiveThread;
 }

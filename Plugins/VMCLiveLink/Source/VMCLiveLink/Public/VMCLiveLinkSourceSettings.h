@@ -49,10 +49,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VMC|Frame")
 	bool bPreferIncomingTranslations = false;
 
-	/** Use the remapper's reference skeleton for bone translations the sender doesn't provide. */
-	UPROPERTY(EditAnywhere, Category = "VMC|Frame")
-	bool bUseRefOffsets = true;
-
 	/** Receive on a thread of the plugin's own, with each frame timestamped on arrival (lower latency,
 	 *  steadier timing). Off: messages arrive through the OSC plugin on the game thread, one batch per
 	 *  engine frame. The status shows the frame rate and jitter, to compare the two. */

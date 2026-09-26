@@ -12,7 +12,6 @@ FVMCConnectionSettings UVMCLiveLinkSourceSettings::ToConnectionSettings() const
 	Out.YawOffsetDeg = YawOffsetDeg;
 	Out.bZeroMissingCurves = bZeroMissingCurves;
 	Out.bPreferIncomingTranslations = bPreferIncomingTranslations;
-	Out.bUseRefOffsets = bUseRefOffsets;
 	Out.bReceiveThread = bReceiveThread;
 	return Out;
 }
@@ -27,7 +26,6 @@ void UVMCLiveLinkSourceSettings::FromConnectionSettings(const FVMCConnectionSett
 	YawOffsetDeg = In.YawOffsetDeg;
 	bZeroMissingCurves = In.bZeroMissingCurves;
 	bPreferIncomingTranslations = In.bPreferIncomingTranslations;
-	bUseRefOffsets = In.bUseRefOffsets;
 	bReceiveThread = In.bReceiveThread;
 	// Presets recreate the source from the connection string, so keep it in step.
 	ConnectionString = In.ToString();

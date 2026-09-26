@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkRemapper.h"
 #include "VMCLog.h"
+#include "VMCLiveLinkSettings.h"
 
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
@@ -37,15 +38,38 @@ static void GetBoneNames(TSoftObjectPtr<USkeletalMesh> Mesh, TArray<FName>& Out)
 	}
 }
 
-// Qualify the return type to avoid “assumed int / different basic type”.
+USkeletalMesh* UVMCLiveLinkRemapper::ResolveReferenceSkeleton() const
+{
+	if (USkeletalMesh* Mesh = ReferenceSkeleton.LoadSynchronous())
+	{
+		return Mesh;
+	}
+	const UVMCLiveLinkSettings* Project = GetDefault<UVMCLiveLinkSettings>();
+	return Project ? Project->DefaultReferenceSkeleton.LoadSynchronous() : nullptr;
+}
+
 ULiveLinkSubjectRemapper::FWorkerSharedPtr UVMCLiveLinkRemapper::CreateWorker()
 {
-	Worker = MakeShared<FVMCLiveLinkRemapperWorker>();
-	Worker->BoneNameMap = BoneNameMap;     // base class map
-	Worker->CurveNameMap = CurveNameMap;    // our curve map
-	Worker->bEnableMetaHumanCurveNormalizer = bEnableMetaHumanCurveNormalizer;
-	Worker->JoyToSmileStrength = JoyToSmileStrength;
-	Worker->BlinkMirrorStrength = BlinkMirrorStrength;
+	FVMCRemapConfig Config;
+	Config.BoneNameMap = BoneNameMap;     // base class map
+	Config.CurveNameMap = CurveNameMap;
+	Config.bUseRefTranslations = bUseReferenceTranslations;
+	Config.bEnableMetaHumanCurveNormalizer = bEnableMetaHumanCurveNormalizer;
+	Config.JoyToSmileStrength = JoyToSmileStrength;
+	Config.BlinkMirrorStrength = BlinkMirrorStrength;
+	if (bUseReferenceTranslations)
+	{
+		if (const USkeletalMesh* Ref = ResolveReferenceSkeleton())
+		{
+			const FReferenceSkeleton& RefSkel = Ref->GetRefSkeleton();
+			const TArray<FTransform>& RefPose = RefSkel.GetRefBonePose(); // local (parent space)
+			for (int32 i = 0; i < RefSkel.GetNum(); ++i)
+			{
+				Config.RefTranslations.Add(RefSkel.GetBoneName(i), RefPose[i].GetTranslation());
+			}
+		}
+	}
+	Worker = MakeShared<FVMCLiveLinkRemapperWorker>(MoveTemp(Config));
 	return Worker;
 }
 
@@ -53,53 +77,21 @@ void UVMCLiveLinkRemapper::Initialize(const FLiveLinkSubjectKey& InSubjectKey)
 {
 	CachedKey = InSubjectKey;
 
-	// Seed identity maps + guess a preset from current subject static data
-	if (IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
+	// No guessing here: Initialize runs whenever the subject is (re)created, and must leave the
+	// user's maps and preset as they are. Presets are applied by ApplyPreset or
+	// DetectAndSeedFromSubject. The one automatic step is picking a mapping asset for the
+	// reference skeleton, and only while the maps are still empty.
+	if (bAutoDetectMappingFromReference && BoneNameMap.Num() == 0 && CurveNameMap.Num() == 0)
 	{
-		ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
-		if (const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(InSubjectKey))
-		{
-			if (SDS->IsValid() && SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
-			{
-				const auto& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
-				const FLiveLinkBaseStaticData& Base = static_cast<const FLiveLinkBaseStaticData&>(Skel);
-
-				if (BoneNameMap.Num() == 0)  for (const FName& N : Skel.GetBoneNames())     BoneNameMap.Add(N, N);
-				if (CurveNameMap.Num() == 0) for (const FName& N : Base.PropertyNames)      CurveNameMap.Add(N, N);
-
-				// Only guess when the user has not chosen a preset (or applied a mapping asset,
-				// which sets Custom). ApplyPreset removes other presets' entries, so guessing on
-				// every Initialize would undo a deliberate choice.
-				if (Preset == ELLRemapPreset::None)
-				{
-					Preset = GuessPreset(Skel.GetBoneNames(), Base.PropertyNames);
-					ApplyPreset(Preset);
-				}
-			}
-		}
+		SeedFromReferenceSkeleton();
 	}
-
-	SeedFromReferenceSkeleton();
-	SyncWorker();
-	RequestStaticDataRefresh(); // make it take effect now
+	MarkDirty();
 }
 
-void UVMCLiveLinkRemapper::RequestStaticDataRefresh()
+void UVMCLiveLinkRemapper::MarkDirty()
 {
-	bDirty = true; // <-- force the remapper to rebuild mappings now
-	SyncWorker();
-}
-
-
-void UVMCLiveLinkRemapper::SyncWorker() const
-{
-	if (!Worker.IsValid()) return;
-	Worker->BoneNameMap = BoneNameMap;
-	Worker->CurveNameMap = CurveNameMap;
-
-	Worker->bEnableMetaHumanCurveNormalizer = bEnableMetaHumanCurveNormalizer;
-	Worker->JoyToSmileStrength = JoyToSmileStrength;
-	Worker->BlinkMirrorStrength = BlinkMirrorStrength;
+	bDirty = true;
+	++Revision;
 }
 
 void UVMCLiveLinkRemapper::DetectAndSeedFromSubject()
@@ -113,6 +105,9 @@ void UVMCLiveLinkRemapper::DetectAndSeedFromSubject()
 		{
 			const auto& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
 			const FLiveLinkBaseStaticData& Base = static_cast<const FLiveLinkBaseStaticData&>(Skel);
+			// List every incoming name (as itself) so it can be edited, then apply the best preset.
+			for (const FName& N : Skel.GetBoneNames()) if (!BoneNameMap.Contains(N)) BoneNameMap.Add(N, N);
+			for (const FName& N : Base.PropertyNames) if (!CurveNameMap.Contains(N)) CurveNameMap.Add(N, N);
 			Preset = GuessPreset(Skel.GetBoneNames(), Base.PropertyNames);
 			ApplyPreset(Preset);
 		}
@@ -149,8 +144,7 @@ void UVMCLiveLinkRemapper::ApplyPreset(ELLRemapPreset InPreset)
 		}
 	}
 
-	SyncWorker();
-	RequestStaticDataRefresh();
+	MarkDirty();
 }
 
 void UVMCLiveLinkRemapper::LoadCustomCurveMapFromJSON(const FString& JsonText)
@@ -180,8 +174,7 @@ void UVMCLiveLinkRemapper::LoadCustomCurveMapFromJSON(const FString& JsonText)
 			}
 		}
 	}
-	SyncWorker();
-	RequestStaticDataRefresh();
+	MarkDirty();
 }
 
 // -------------- Worker --------------
@@ -193,11 +186,25 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 
 	auto& Skel = *InOutStaticData.Cast<FLiveLinkSkeletonStaticData>();
 
-	// Bones (use accessors for safety)
+	// Bones (use accessors for safety). Before renaming, note each bone's rest translation in the
+	// target skeleton, for RemapFrameData.
 	TArray<FName> Remapped = Skel.GetBoneNames();
-	for (FName& N : Remapped)
+	const TArray<int32>& Parents = Skel.GetBoneParents();
+	RestTranslations.SetNum(Remapped.Num());
+	HasRestTranslation.Init(false, Remapped.Num());
+	static const FName HipsName(TEXT("Hips"));
+	for (int32 i = 0; i < Remapped.Num(); ++i)
 	{
-		if (const FName* Out = BoneNameMap.Find(N)) N = *Out;
+		const bool bCarriesMotion = !Parents.IsValidIndex(i) || Parents[i] == INDEX_NONE || Remapped[i] == HipsName;
+		if (const FName* Out = Config.BoneNameMap.Find(Remapped[i])) Remapped[i] = *Out;
+		if (Config.bUseRefTranslations && !bCarriesMotion)
+		{
+			if (const FVector* Rest = Config.RefTranslations.Find(Remapped[i]))
+			{
+				RestTranslations[i] = *Rest;
+				HasRestTranslation[i] = true;
+			}
+		}
 	}
 	Skel.SetBoneNames(Remapped);
 
@@ -205,7 +212,7 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 	FLiveLinkBaseStaticData& Base = static_cast<FLiveLinkBaseStaticData&>(Skel);
 	for (FName& C : Base.PropertyNames)
 	{
-		if (const FName* Out = CurveNameMap.Find(C)) C = *Out;
+		if (const FName* Out = Config.CurveNameMap.Find(C)) C = *Out;
 	}
 
 	if (!bWarnedDuplicateCurves)
@@ -233,7 +240,7 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 	// never modified.
 	SynthesizedCurves.Reset();
 	IncomingPropertyCount = Base.PropertyNames.Num();
-	if (!bEnableMetaHumanCurveNormalizer)
+	if (!Config.bEnableMetaHumanCurveNormalizer)
 	{
 		return;
 	}
@@ -255,8 +262,8 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 		}
 	};
 
-	AddCounterpart(TEXT("eyeBlinkLeft"), TEXT("eyeBlinkRight"), BlinkMirrorStrength);
-	AddCounterpart(TEXT("mouthSmileLeft"), TEXT("mouthSmileRight"), JoyToSmileStrength);
+	AddCounterpart(TEXT("eyeBlinkLeft"), TEXT("eyeBlinkRight"), Config.BlinkMirrorStrength);
+	AddCounterpart(TEXT("mouthSmileLeft"), TEXT("mouthSmileRight"), Config.JoyToSmileStrength);
 
 	const int32 FunnelIndex = IndexOf(TEXT("mouthFunnel"));
 	if (FunnelIndex != INDEX_NONE && IndexOf(TEXT("mouthPucker")) == INDEX_NONE)
@@ -268,10 +275,25 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 
 void FVMCLiveLinkRemapperWorker::RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData)
 {
-	if (SynthesizedCurves.Num() == 0) return;
 	if (!InOutFrameData.IsValid() || !InOutFrameData.GetStruct()->IsChildOf<FLiveLinkAnimationFrameData>()) return;
+	FLiveLinkAnimationFrameData& Anim = *InOutFrameData.Cast<FLiveLinkAnimationFrameData>();
 
-	TArray<float>& Values = InOutFrameData.Cast<FLiveLinkAnimationFrameData>()->PropertyValues;
+	// Rest translations for bones the stream sent without one (VMC sends most bones as rotation
+	// only). Only for frames built against the static data this worker saw.
+	if (HasRestTranslation.Num() == Anim.Transforms.Num())
+	{
+		for (TConstSetBitIterator<> It(HasRestTranslation); It; ++It)
+		{
+			FTransform& Bone = Anim.Transforms[It.GetIndex()];
+			if (Bone.GetTranslation().IsNearlyZero())
+			{
+				Bone.SetTranslation(RestTranslations[It.GetIndex()]);
+			}
+		}
+	}
+
+	if (SynthesizedCurves.Num() == 0) return;
+	TArray<float>& Values = Anim.PropertyValues;
 
 	// Only extend frames that carry exactly the incoming properties this worker saw at static
 	// time; anything else was built against different static data.
@@ -593,8 +615,7 @@ void UVMCLiveLinkRemapper::ApplyMappingAsset(UVMCLiveLinkMappingAsset* Asset, bo
 	}
 
 	Preset = ELLRemapPreset::Custom;
-	SyncWorker();
-	RequestStaticDataRefresh();
+	MarkDirty();
 }
 
 bool UVMCLiveLinkRemapper::AutoDetectAndApplyMapping()
