@@ -161,7 +161,12 @@ bool FVRMAvatarNamesTest::RunTest(const FString& Parameters)
 	{
 		const EVRMExpressionPreset Preset = EVRMExpressionPreset(i);
 		TestTrue(FString::Printf(TEXT("Preset %s round-trips"), *ExpressionPresetName(Preset)), ExpressionPresetFromName(ExpressionPresetName(Preset), EVRMAvatarVersion::VRM1) == Preset);
+		const FString VRM0Name = ExpressionPresetName(Preset, EVRMAvatarVersion::VRM0);
+		TestTrue(FString::Printf(TEXT("Preset %s round-trips as 0.x %s"), *ExpressionPresetName(Preset), *VRM0Name), ExpressionPresetFromName(VRM0Name, EVRMAvatarVersion::VRM0) == Preset);
 	}
+	TestEqual(TEXT("0.x name of happy"), ExpressionPresetName(EVRMExpressionPreset::Happy, EVRMAvatarVersion::VRM0), FString(TEXT("joy")));
+	TestEqual(TEXT("0.x name of blinkLeft"), ExpressionPresetName(EVRMExpressionPreset::BlinkLeft, EVRMAvatarVersion::VRM0), FString(TEXT("blink_l")));
+	TestEqual(TEXT("0.x name of lookUp"), ExpressionPresetName(EVRMExpressionPreset::LookUp, EVRMAvatarVersion::VRM0), FString(TEXT("lookup")));
 
 	// The licence summary leaves out what the meta doesn't give, with no empty quotes or dangling separators.
 	{

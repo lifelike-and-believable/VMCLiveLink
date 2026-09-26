@@ -192,6 +192,15 @@ The generated blueprints are templates you can extend:
 - Modify the character actor for gameplay logic
 - Adjust Live Link subject selection and bone mapping
 
+### Driving Facial Expressions
+
+VMC senders send expressions (blend shapes) by name, such as `Joy`, `A` or `Blink_L` (VRM 0.x) or `happy`, `aa` or `blinkLeft` (VRM 1.0). The **VRM Expressions** AnimGraph node turns those curves into the avatar's morph target curves:
+
+1. In the AnimBP, add a **VRM Expressions** node after the Live Link pose node.
+2. Set its **Avatar Description** to the character's `<Mesh>_Avatar` asset.
+
+Either version's names drive either version's avatar. The node follows the VRM 1.0 rules: binary expressions snap to 0 or 1, and an expression that overrides blink, look-at or mouth reduces those expressions while it is active. Curves that aren't expressions pass through unchanged. If a VMC remapper renames the expression curves (its curve map), the node sees the new names, so leave expression names unmapped when you use this node. The generated Live Link AnimBP doesn't contain this node yet; add it by hand.
+
 ## Advanced Topics
 
 ### Re-importing VRM Files

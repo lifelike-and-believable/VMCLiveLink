@@ -27,8 +27,11 @@ namespace VRM
 	/** An expression preset from its name in a file of the given version (VRM 0.x joy is happy, a is aa, ...). */
 	VRMCORE_API EVRMExpressionPreset ExpressionPresetFromName(const FString& Name, EVRMAvatarVersion Version);
 
-	/** The VRM 1.0 name of a preset (happy, aa, blinkLeft, ...); empty for Custom. */
-	VRMCORE_API FString ExpressionPresetName(EVRMExpressionPreset Preset);
+	/**
+	 * A preset's name in a file of the given version: happy, aa, blinkLeft, ... in VRM 1.0; joy, a,
+	 * blink_l, ... in VRM 0.x. Empty for Custom.
+	 */
+	VRMCORE_API FString ExpressionPresetName(EVRMExpressionPreset Preset, EVRMAvatarVersion Version = EVRMAvatarVersion::VRM1);
 
 	/** One or two lines about the licence and usage permissions, for the import summary. */
 	VRMCORE_API FString DescribeLicense(const FVRMMeta& Meta);

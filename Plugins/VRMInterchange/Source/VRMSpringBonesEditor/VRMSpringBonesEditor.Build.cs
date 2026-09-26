@@ -15,7 +15,8 @@ public class VRMSpringBonesEditor : ModuleRules
             "BlueprintGraph",
             "AnimGraph",
             "AnimGraphRuntime",
-            "VRMSpringBonesRuntime"
+            "VRMSpringBonesRuntime",
+            "VRMCore" // the VRM Expressions node (P4.2)
         });
 
         PrivateDependencyModuleNames.AddRange(new string[]
