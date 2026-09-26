@@ -241,7 +241,7 @@ def cmd_record(opts):
     print(f"Recorded {count} packets")
 
 
-MAX_PACKET = 65536  # larger than any UDP datagram; a bigger size means a corrupt file
+MAX_PACKET = 65507  # the largest UDP payload over IPv4; a bigger size means a corrupt file
 
 
 def read_recording(path):
