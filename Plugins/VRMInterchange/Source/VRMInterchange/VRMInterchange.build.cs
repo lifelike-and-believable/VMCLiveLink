@@ -1,73 +1,37 @@
 // Copyright (c) 2025 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 using UnrealBuildTool;
-using System.Collections.Generic;
-using System.IO;
 
+// The VRM Interchange translator and the spring bone parser. A runtime module: everything that
+// needs the editor (pipelines, asset creation) is in VRMInterchangeEditor (P3.5, PE-09).
 public class VRMInterchange : ModuleRules
 {
     public VRMInterchange(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        // Public: our public headers expose Interchange Import interfaces
+        // Types in this module's public headers
         PublicDependencyModuleNames.AddRange(new string[]
         {
             "Core",
             "CoreUObject",
             "Engine",
-            // Expose Interchange types in public headers
-            "InterchangeCore",
-            "InterchangeImport",
-            "VRMCore",              // FVRMDocument and FVRMParsedModel, in VRMTranslator.h
-            "VRMSpringBonesRuntime"
+            "InterchangeCore",       // UInterchangeTranslatorBase, UInterchangeBaseNode
+            "InterchangeImport",     // mesh and texture payload interfaces
+            "VRMCore",               // FVRMDocument, FVRMParsedModel
+            "VRMSpringBonesRuntime", // FVRMSpringConfig
         });
 
         PrivateDependencyModuleNames.AddRange(new string[]
         {
-            // Interchange modules your translator uses:
-            "InterchangeCore",
-            "InterchangeImport",
+            "InterchangeEngine",     // UInterchangeManager, to register the translator
             "InterchangeNodes",
             "InterchangeFactoryNodes",
-            // Required for FMeshDescription and attribute APIs
             "MeshDescription",
             "StaticMeshDescription",
             "SkeletalMeshDescription",
-            "AnimationCore",
-            "ImageWrapper",
-            "Json"                     // for FJsonSerializer/FJsonReader/etc.
-            // If you start using FJsonObjectConverter:
-            // "JsonUtilities"
+            "AnimationCore",         // bone weights
+            "ImageWrapper",          // texture payloads
+            "Json",                  // spring bone parser
         });
-
-        if (Target.bBuildEditor)
-        {
-            PrivateDependencyModuleNames.AddRange(new string[]
-            {
-                "Core",
-                "CoreUObject",
-                "Engine",
-                "InterchangeCore",
-                "InterchangeEngine",
-                "InterchangeEditor",
-                "InterchangeNodes",
-                "InterchangeFactoryNodes",
-                "MeshDescription",
-                "StaticMeshDescription",
-                "SkeletalMeshDescription",
-                "AnimationCore",
-                "ImageWrapper",
-                "Slate",
-                "SlateCore",
-                "Projects",
-                "Json", // ensure editor build also links Json
-
-                // <- Editor-only modules required by VRMSpringBonesPostImportPipeline.cpp
-                "AssetRegistry",
-                "AssetTools",
-                // Add "UnrealEd" only if needed (many editor APIs are in UnrealEd)
-                // "UnrealEd",
-            });
-        }
     }
 }

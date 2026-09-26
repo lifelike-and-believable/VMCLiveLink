@@ -7,7 +7,6 @@
 
 #include "VRMSpringBonesPostImportPipeline.h"
 #include "VRMSpringBoneData.h"                // runtime asset
-#include "VRMInterchangeEditorModule.h"       // notifications
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -318,7 +317,6 @@ void UVRMSpringBonesPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Sk
                 // A new effective hash makes running spring nodes pick up the replaced data.
                 ++SpringDataAsset->EditRevision;
             }
-            FVRMInterchangeEditorModule::NotifySpringDataCreated(SpringDataAsset);
             SpringDataAsset->MarkPackageDirty();
         }
     }

@@ -13,7 +13,6 @@
 #include "VRMMaterialPostImportPipeline.h"
 #include "VRMImportPipelineRegistration.h"
 #include "VRMInterchangeSettings.h"
-#include "VRMSpringBoneData.h"
 
 #define LOCTEXT_NAMESPACE "VRMInterchangeEditor"
 
@@ -103,16 +102,5 @@ void FVRMInterchangeEditorModule::OnPostEngineInit()
 	*ItemHolder = FSlateNotificationManager::Get().AddNotification(Info);
 }
 
-#if WITH_EDITOR
-void FVRMInterchangeEditorModule::NotifySpringDataCreated(UVRMSpringBoneData* /*Asset*/)
-{
-	// no-op
-}
-
-void FVRMInterchangeEditorModule::NotifySpringDataSaved(UVRMSpringBoneData* /*Asset*/)
-{
-	// no-op
-}
-#endif
 
 #undef LOCTEXT_NAMESPACE

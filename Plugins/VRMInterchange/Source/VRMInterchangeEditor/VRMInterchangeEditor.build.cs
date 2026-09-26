@@ -29,7 +29,7 @@ public class VRMInterchangeEditor : ModuleRules
             "InterchangeEditor",
             "InterchangeNodes",
             "InterchangeFactoryNodes",
-            "InterchangePipelines",  // Add this line
+            "InterchangePipelines",
             "DeveloperSettings",
             // Asset authoring
             "AssetRegistry",
@@ -60,12 +60,9 @@ public class VRMInterchangeEditor : ModuleRules
             "BlueprintGraph",
         });
 
-        // We share some includes with the runtime module (optional)
-        PrivateIncludePaths.AddRange(new string[]
-        {
-            Path.Combine(ModuleDirectory, "..", "VRMInterchange", "Public"),
-            Path.Combine(ModuleDirectory, "Private")
-        });
+        // The tests in Private/Tests include this module's private headers. VRMInterchange's headers
+        // come from the module dependency above, not from its folder (P3.5, PE-09).
+        PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Private"));
     }
 
 }
