@@ -55,6 +55,9 @@ public class VRMInterchangeEditor : ModuleRules
 
             // For IKRigDefinition asset
             "IKRig",
+
+            // UEdGraphSchema_K2 pin types, for the actor wiring tests
+            "BlueprintGraph",
         });
 
         // We share some includes with the runtime module (optional)

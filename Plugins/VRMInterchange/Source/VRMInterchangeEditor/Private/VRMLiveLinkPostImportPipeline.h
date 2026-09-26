@@ -18,7 +18,8 @@ class UFactory;
  *
  * - Runs once the import's skeletal mesh exists (UVRMPipelineBase).
  * - Duplicates a character Actor Blueprint and an AnimBlueprint from templates.
- * - Wires up the imported SkeletalMesh to the actor and sets the preview mesh on the AnimBP.
+ * - Wires up the imported SkeletalMesh to the actor's Skeletal Mesh component (its construction
+ *   script template, VRMActorBlueprintWiring.h) and sets the preview mesh on the AnimBP.
  * - Does NOT save packages during import; marks packages dirty so Save All/SCC handle persistence.
  */
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, ClassGroup=(Interchange), meta=(DisplayName="VRM Live Link (Post-Import)"))
@@ -59,16 +60,4 @@ public:
 
 protected:
 	virtual void OnSkeletalMeshImported(USkeletalMesh* Mesh, bool bIsAReimport) override;
-
-private:
-	/** Assign a SkeletalMesh to the first SkeletalMeshComponent on the actor blueprint CDO; marks dirty */
-	bool AssignSkeletalMeshToActorBP(UObject* ActorBlueprintObj, USkeletalMesh* SkeletalMesh) const;
-
-	bool AssignSkeletalMeshToActorBPProperty(UObject* ActorBlueprintObj, USkeletalMesh* SkeletalMesh) const;
-
-	/** Assign an AnimBP class to the actor blueprint's SkeletalMeshComponent; marks dirty */
-	bool AssignAnimBPToActorBP(UObject* ActorBlueprintObj, UAnimBlueprint* AnimBP) const;
-
-	/** Set preview mesh on an AnimBP; marks dirty */
-	bool SetPreviewMeshOnAnimBP(UAnimBlueprint* AnimBP, USkeletalMesh* SkeletalMesh) const;
 };
