@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-26):** 30 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 and 2, P3.1 to P3.3, and P7.1), plus two unplanned fixes. `main` builds and passes all 64 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-26):** 31 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 and 2, P3.1 to P3.4, and P7.1), plus two unplanned fixes. `main` builds and passes all 68 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -848,6 +848,21 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   3. Actor Blueprint wiring: modify the **SCS node template** (`USimpleConstructionScript::GetAllNodes()` → `ComponentTemplate`) or the inherited component override (`UInheritableComponentHandler`), then `FBlueprintEditorUtils::MarkBlueprintAsModified` and compile. Replace the property-name lookups with a small interface (`IVRMCharacterSetup`) implemented by the template Blueprints, or a C++ base actor class (`AVRMLiveLinkCharacter`) that exposes `SetVRMCharacterMesh()`.
   4. Material parents: finish P1.17 by setting parents inside the pipeline or translator for this import's MIs only.
 - **Acceptance:** all pipeline tests pass using `ExecutePostImportPipeline`. Overwrite mode replaces existing assets without errors. Asset wiring works with SCS-based templates.
+- **Status (#139, #140, merged):** the tests for steps 1 to 3 pass. Step 4 was already done by P1.17's material pipeline, which uses the same post-import step. Nothing has been checked in the editor yet.
+  - #139 (steps 1 and 2):
+    - `UVRMPipelineBase` gives `OnSkeletalMeshImported` the first `USkeletalMesh` its own import creates.
+    - That removed the `UImportSubsystem` delegates, the `bDeferred*` state and the folder scans (`ResolveImportedMesh`, `MeshBelongsToImport`).
+    - `CreateOrReuseAsset` and `DuplicateTemplateAsset` (`IAssetTools::DuplicateAsset`) make the generated assets.
+    - The spring pipeline checks bone names against the imported mesh's skeleton.
+    - Tests: `VRM.Pipeline.PostImport.SpringData`, `.IKRig`.
+  - #140 (step 3):
+    - `VRMActorBlueprintWiring` sets the mesh on the construction script template, on a child's override of a parent Blueprint's template, or on a native component.
+    - It writes the properties directly rather than calling the component's runtime setters.
+    - Missing variables are reported.
+    - Tests: `VRM.Pipeline.ActorWiring.*`.
+  - **Deviations:**
+    - "Overwrite" updates or reuses the asset that is already there rather than replacing it. Spring data is replaced in place and its `EditRevision` is bumped. IK Rigs, ABPs and actor Blueprints are reused and wired again. What refers to them keeps working, and user edits to templates survive a reimport.
+    - No `IVRMCharacterSetup` interface or C++ base actor. The template Blueprints would have to be re-parented in the editor. Missing variables are reported instead.
 
 ### P3.5 Build files and platforms
 - **Resolves:** PE-09, PE-10, VMC-21
@@ -1038,7 +1053,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 to P3.3 are merged. Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 64 automation tests pass (46 VRM, 18 VMC).
+*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 to P3.4 are merged. Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 68 automation tests pass (50 VRM, 18 VMC).
 
 ### Status by task
 
@@ -1073,14 +1088,15 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P3.1 VMC split, settings, receive thread | #130, #131, #132 | Merged | #132's first build failed to compile (C4458, C4310) |
 | P3.2 Remapping, workers, editor tools | #133, #134 | Merged | `DuplicateAsset` in the retarget factory declined (see P3.2 status) |
 | P3.3 One parse per VRM file (`VRMCore`) | #136, #137 | Merged | #136's first run warned (missing-file read); #137's first build used a translator API UE 5.6 doesn't have, and its next run hit error 4551 (re-run cleared it) |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, this PR | Merged | |
+| P3.4 Pipeline base, post-import step, actor wiring | #139, #140 | Merged | #140's first three runs crashed on a bare test `USkeletalMesh` (no bones or LODs); the tests use `SkeletalCube` |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, this PR | Merged | |
 
-**Not started:** P3.4, P3.5, and Phases 4 to 7.
+**Not started:** P3.5, and Phases 4 to 7.
 
 **Recommended next:**
-1. P3.4: a pipeline base class, and Interchange's own post-import step instead of the import subsystem delegates.
+1. P3.5: build files and platforms (removes the remaining `PrivateIncludePaths` workarounds; decides D-2).
 2. Owner: fix the runner's Application Control block (X-07).
-3. The editor checks below: the spring solver comparison (P2.1), a real VMC sender through both receive paths (P3.1, P3.2), and a VRM import comparison (P3.3).
+3. The editor checks below: the spring solver comparison (P2.1), a real VMC sender through both receive paths (P3.1, P3.2), a VRM import comparison (P3.3), and an import and reimport with all four pipelines (P3.4).
 
 ### How the merges went
 
@@ -1104,6 +1120,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
 - **New rules:** B.0 rules 10 to 13. New task: P0.5.
 - **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit five builds (#115, #121 twice, #123, #137). Re-runs cleared it each time. Nothing has changed on the runner, so expect it again (X-07).
+- **Engine objects in tests need to be real enough for engine code:** a bare `NewObject<USkeletalMesh>` was fine for asset references (P1.15, P3.4a) but crashed the editor three times once a component and a Blueprint compile used it (#140). Load a small engine asset (`/Engine/EngineMeshes/SkeletalCube`) when components or compiles are involved.
 - **Shadowing is an error here:** two first builds failed on C4458 (a local named like a member). Before pushing, check new locals against the class's members, including in static member functions.
 - **Stack PRs that touch the same files, and check squash merges:** #131 and #134 were built on the PR before them; after the base merged, conflicts were only the squash duplicating the base's own changes. Confirm that with `git diff` of the old base branch against `main` for each conflicted file before taking the stacked side (rule 13).
 - **Model the expected numbers before the first CI run:** for P2.1 a short Python model of the solver set the test thresholds, and the one failure was a test measuring a frame the model wasn't checked on. Each CI round trip costs minutes; a local model catches most threshold mistakes first.
@@ -1115,6 +1132,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P3.4):** import a VRM with the spring bone, IK Rig, Live Link and material pipelines. Open `BP_LL_VRM_<name>` and `BP_LL_VRM_To_UE5_<name>`: the mesh and anim Blueprint are set, and a placed actor shows the character. Reimport with and without Overwrite: with it, the same assets are updated; without it, new ones get unique names.
 - **In the editor (P3.3):** import a VRM 0.x and a VRM 1.0 avatar and compare the skeletal mesh, textures, materials and spring data asset with an import made before #136; reimport one. Open a spring data asset saved before #137 (it had `RawJson`) and check it loads.
 - **In the editor (P3.1, P3.2):** receive from `scripts/vmc_sender.py send --fps 60` and from VSeeFace with Receive Thread on and off; record the status's fps and jitter for both, also with the editor in the background (the D-1 comparison). With a reference skeleton on the remapper, the character looks as before. Change the port, rename the subject and reapply a preset while receiving. Japanese blend shape names arrive intact. The Mapping Tools buttons, undo, and save-then-auto-detect on a fresh remapper.
 - **In the editor (P2.1 to P2.3):** compare springs against UniVRM or three-vrm on the same model and motion, and record GIFs; stiffness changed the most. Walking or turning a character should swing hair and skirts without External Velocity. A spring with a `center` should not lag when its center moves. Compile an AnimBlueprint that uses another character's spring data: the compiler lists the missing bones. Check whether edits to the node in the AnimBlueprint editor reach the preview. Record Insights timing for a large model (P2.2).
