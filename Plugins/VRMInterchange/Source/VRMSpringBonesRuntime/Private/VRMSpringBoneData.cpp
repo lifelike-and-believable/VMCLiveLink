@@ -54,6 +54,25 @@ void UVRMSpringBoneData::CopySpringParametersToJoints(FVRMSpringConfig& Config)
     }
 }
 
+void UVRMSpringBoneData::CopySpringParametersToJoints(FVRMSpringConfig& Config)
+{
+    for (const FVRMSpring& Spring : Config.Springs)
+    {
+        for (const int32 JointIndex : Spring.JointIndices)
+        {
+            if (Config.Joints.IsValidIndex(JointIndex))
+            {
+                FVRMSpringJoint& Joint = Config.Joints[JointIndex];
+                Joint.Stiffness = Spring.Stiffness;
+                Joint.Drag = Spring.Drag;
+                Joint.GravityDir = Spring.GravityDir;
+                Joint.GravityPower = Spring.GravityPower;
+                Joint.HitRadius = Spring.HitRadius;
+            }
+        }
+    }
+}
+
 void UVRMSpringBoneData::PostLoad()
 {
     Super::PostLoad();
