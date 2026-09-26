@@ -20,22 +20,23 @@ FText UAnimGraphNode_VRMSpringBones::GetNodeTitle(ENodeTitleType::Type TitleType
     return LOCTEXT("Title", "VRM Spring Bones");
 }
 
-const UVRMSpringBoneData* UAnimGraphNode_VRMSpringBones::GetSpringDataForValidation(bool& bOutFromLinkedPin) const
+const UVRMSpringBoneData* UAnimGraphNode_VRMSpringBones::GetSpringDataForValidation(bool& bOutFromGraph) const
 {
-    bOutFromLinkedPin = false;
+    bOutFromGraph = false;
     if (Node.SpringData)
     {
         return Node.SpringData.Get();
     }
-    // With the pin shown, the asset may be the pin's default, or come from whatever is linked to it.
+    // With the pin shown, the asset is the pin's default, or comes from the graph: a linked pin, or a
+    // binding to a variable (the plugin's template AnimBlueprint binds it to SpringConfig, which the
+    // import pipeline sets). Only the default can be checked here.
     if (const UEdGraphPin* Pin = FindPin(GET_MEMBER_NAME_CHECKED(FAnimNode_VRMSpringBones, SpringData)))
     {
-        if (Pin->LinkedTo.Num() > 0)
+        if (const UVRMSpringBoneData* Default = Cast<UVRMSpringBoneData>(Pin->DefaultObject))
         {
-            bOutFromLinkedPin = true;
-            return nullptr;
+            return Default;
         }
-        return Cast<UVRMSpringBoneData>(Pin->DefaultObject);
+        bOutFromGraph = true;
     }
     return nullptr;
 }
@@ -44,11 +45,11 @@ void UAnimGraphNode_VRMSpringBones::ValidateAnimNodeDuringCompilation(USkeleton*
 {
     Super::ValidateAnimNodeDuringCompilation(ForSkeleton, MessageLog);
 
-    bool bFromLinkedPin = false;
-    const UVRMSpringBoneData* SpringData = GetSpringDataForValidation(bFromLinkedPin);
+    bool bFromGraph = false;
+    const UVRMSpringBoneData* SpringData = GetSpringDataForValidation(bFromGraph);
     if (!SpringData)
     {
-        if (!bFromLinkedPin)
+        if (!bFromGraph)
         {
             MessageLog.Warning(TEXT("@@: no Spring Data asset is set, so nothing is simulated. Assign the spring data asset imported with the character."), this);
         }
