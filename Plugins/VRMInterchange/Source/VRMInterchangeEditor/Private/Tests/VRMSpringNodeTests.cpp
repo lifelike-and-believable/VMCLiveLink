@@ -141,6 +141,9 @@ bool FVRMSpringNodeSwapData::RunTest(const FString& Parameters)
 	TArray<FBoneTransform> Out;
 	Step(Node, Pose, Out);
 
+	// Bones not in the skeleton are reported once per asset.
+	AddExpectedError(TEXT("not in the skeleton"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	// Swap in malformed data (bad joint, spring, collider group and collider indices; unknown bones;
 	// spring chains longer than the joint list) and edit it in place without telling the node.
 	// Nothing may read out of bounds.

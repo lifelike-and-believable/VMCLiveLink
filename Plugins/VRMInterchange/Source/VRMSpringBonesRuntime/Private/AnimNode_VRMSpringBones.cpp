@@ -25,6 +25,8 @@ static TAutoConsoleVariable<int32> CVarVRMSB_DrawSprings(
 	ECVF_Default);
 #endif
 
+DEFINE_LOG_CATEGORY_STATIC(LogVRMSpringBones, Log, All);
+
 #define LOCTEXT_NAMESPACE "AnimNode_VRMSpringBones"
 
 /* ---------------------------------------------------------------------------
@@ -92,6 +94,15 @@ bool FAnimNode_VRMSpringBones::MappingsAreStale() const
 		|| Cfg.Springs.Num() != BuiltForSpringCount;
 }
 
+FVRMSpringSolverSettings FAnimNode_VRMSpringBones::MakeSolverSettings() const
+{
+	FVRMSpringSolverSettings Settings;
+	Settings.SubstepHz = FMath::Clamp(SubstepHz, 10.f, 480.f);
+	Settings.MaxDeltaTime = FMath::Clamp(MaxDeltaTime, 0.f, 1.f);
+	Settings.bWorldSpace = SimulationSpace == EVRMSpringSimulationSpace::World;
+	return Settings;
+}
+
 bool FAnimNode_VRMSpringBones::IsValidToEvaluate(const USkeleton* Skeleton, const FBoneContainer& RequiredBones)
 {
 	return bEnable && SpringData && SpringData->SpringConfig.IsValid();
@@ -115,6 +126,7 @@ void FAnimNode_VRMSpringBones::BuildMappings(const FBoneContainer& BoneContainer
 	TArray<FCompactPoseBoneIndex> NewSolverBones;
 	TMap<int32, int32> PoseToSolver; // compact pose index -> solver bone
 	TArray<bool> BoneValid;          // for each named bone looked up, in order: does this LOD have it
+	TSet<FName> NotInSkeleton;       // named bones the skeleton doesn't have at all (not just this LOD)
 
 	auto SolverBoneFor = [&](FCompactPoseBoneIndex PoseBone) -> int32
 	{
@@ -136,6 +148,10 @@ void FAnimNode_VRMSpringBones::BuildMappings(const FBoneContainer& BoneContainer
 		FBoneReference Ref;
 		Ref.BoneName = Name;
 		Ref.Initialize(BoneContainer);
+		if (!Ref.HasValidSetup())
+		{
+			NotInSkeleton.Add(Name);
+		}
 		// IsValidToEvaluate, not HasValidSetup: a bone this LOD strips still has a skeleton index,
 		// but no compact pose index, so it must not be simulated.
 		const bool bValid = Ref.IsValidToEvaluate(BoneContainer);
@@ -158,9 +174,10 @@ void FAnimNode_VRMSpringBones::BuildMappings(const FBoneContainer& BoneContainer
 			return *Found;
 		}
 		const FVRMSpringCollider& Col = Cfg.Colliders[ColliderIndex];
-		const int32 Bone = NamedBone(Col.BoneName);
+		const FName ColliderBoneName = (Col.BoneName.IsNone() && Col.NodeIndex != INDEX_NONE) ? SpringData->GetBoneNameForNode(Col.NodeIndex) : Col.BoneName;
+		const int32 Bone = NamedBone(ColliderBoneName);
 		int32 Result = INDEX_NONE;
-		if (Col.BoneName.IsNone() || Bone != INDEX_NONE)
+		if (ColliderBoneName.IsNone() || Bone != INDEX_NONE)
 		{
 			FVRMSpringSolverSetup::FCollider& Out = Setup.Colliders.AddDefaulted_GetRef();
 			Out.Bone = Bone;
@@ -254,7 +271,22 @@ void FAnimNode_VRMSpringBones::BuildMappings(const FBoneContainer& BoneContainer
 		&& Cfg.Joints.Num() == BuiltForJointCount && Cfg.Springs.Num() == BuiltForSpringCount;
 	if (!bSameData || BoneValid != BuiltBoneValid || Solver.GetSetup().NumBones != Setup.NumBones)
 	{
-		Solver.Init(Setup);
+		Solver.Init(Setup, MakeSolverSettings());
+	}
+
+	// Joints and colliders on bones this skeleton doesn't have are left out. Say so once per asset:
+	// usually the data belongs to another skeleton, or the bones were renamed.
+	if (NotInSkeleton.Num() > 0 && WarnedMissingBonesFor != SpringData)
+	{
+		WarnedMissingBonesFor = SpringData;
+		TArray<FString> Names;
+		for (const FName& Name : NotInSkeleton)
+		{
+			if (Names.Num() == 5) { Names.Add(TEXT("...")); break; }
+			Names.Add(Name.ToString());
+		}
+		UE_LOG(LogVRMSpringBones, Warning, TEXT("Spring data '%s': %d bone(s) not in the skeleton (%s). Their joints and colliders are ignored."),
+			*SpringData->GetName(), NotInSkeleton.Num(), *FString::Join(Names, TEXT(", ")));
 	}
 	SolverBones = MoveTemp(NewSolverBones);
 	BuiltBoneValid = MoveTemp(BoneValid);
@@ -303,6 +335,7 @@ void FAnimNode_VRMSpringBones::EvaluateInternal(FAnimInstanceProxy* Proxy, FCSPo
 		SolverBonesCS[I] = CSPose.GetComponentSpaceTransform(SolverBones[I]);
 	}
 
+	Solver.SetSettings(MakeSolverSettings());
 	if (bResetRequested)
 	{
 		bResetRequested = false;
@@ -399,7 +432,7 @@ void FAnimNode_VRMSpringBones::DrawDebug(FAnimInstanceProxy* Proxy, const FTrans
 		return;
 	}
 
-	if (CVarVRMSB_DrawColliders.GetValueOnAnyThread() != 0)
+	if (bDrawColliders || CVarVRMSB_DrawColliders.GetValueOnAnyThread() != 0)
 	{
 		const FVRMSpringSolverSetup& Setup = Solver.GetSetup();
 		const TConstArrayView<FTransform> ColliderCS = Solver.ColliderTransforms();
@@ -412,7 +445,8 @@ void FAnimNode_VRMSpringBones::DrawDebug(FAnimInstanceProxy* Proxy, const FTrans
 		}
 	}
 
-	const int32 Mode = CVarVRMSB_DrawSprings.GetValueOnAnyThread();
+	const int32 CVarMode = CVarVRMSB_DrawSprings.GetValueOnAnyThread();
+	const int32 Mode = CVarMode != 0 ? CVarMode : (bDrawSprings ? 1 : 0);
 	if (Mode == 0)
 	{
 		return;

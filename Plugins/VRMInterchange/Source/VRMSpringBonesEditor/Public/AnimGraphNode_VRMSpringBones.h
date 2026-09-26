@@ -21,4 +21,9 @@ public:
     virtual FString GetNodeCategory() const override { return TEXT("VRM"); }
 	virtual const FAnimNode_SkeletalControlBase* GetNode() const override { return &Node; }
     virtual void ValidateAnimNodeDuringCompilation(USkeleton* ForSkeleton, FCompilerResultsLog& MessageLog) override;
+
+private:
+    /** The node's spring data, or its pin's default. Null with bOutFromGraph when the pin is shown with
+     *  no default, so the asset comes from the graph (a link or a binding) and can't be checked here. */
+    const UVRMSpringBoneData* GetSpringDataForValidation(bool& bOutFromGraph) const;
 };

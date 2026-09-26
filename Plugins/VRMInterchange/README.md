@@ -213,6 +213,10 @@ The spring bone solver follows the VRM 1.0 reference (UniVRM, three-vrm):
 - Only rotations are written, so bone lengths never change
 - A collider on a bone the skeleton doesn't have is ignored
 
+The node's **Simulation** settings change this: **Simulation Space** (World, or Component to ignore the character's motion), **Substep Hz** (default 60) and **Max Delta Time** (default 0.1 s). Its **Debug** settings draw that node's colliders and joints, like the console commands below.
+
+Compiling the AnimBlueprint warns when the node has no spring data, when the data needs a reimport, and when the data names bones the skeleton doesn't have (usually spring data from another character). At runtime those joints and colliders are skipped, with one log warning per asset.
+
 The solver itself (`FVRMSpringSolver`) has no anim graph dependencies and is tested on its own.
 
 Debug visualization is available via console commands:

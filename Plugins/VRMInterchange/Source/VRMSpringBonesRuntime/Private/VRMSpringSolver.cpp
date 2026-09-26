@@ -18,12 +18,35 @@ namespace
 	}
 }
 
+namespace
+{
+	FVRMSpringSolverSettings Sanitize(FVRMSpringSolverSettings Settings)
+	{
+		Settings.SubstepHz = FMath::Max(Settings.SubstepHz, 1.f);
+		Settings.MaxDeltaTime = FMath::Max(Settings.MaxDeltaTime, 0.f);
+		Settings.VirtualTailLength = FMath::Max(Settings.VirtualTailLength, 0.f);
+		return Settings;
+	}
+}
+
+void FVRMSpringSolver::SetSettings(const FVRMSpringSolverSettings& InSettings)
+{
+	const FVRMSpringSolverSettings New = Sanitize(InSettings);
+	if (New == Settings)
+	{
+		return;
+	}
+	if (New.bWorldSpace != Settings.bWorldSpace || New.VirtualTailLength != Settings.VirtualTailLength)
+	{
+		bHasState = false; // tails are stored in the old space; bone lengths may change
+	}
+	Settings = New;
+}
+
 void FVRMSpringSolver::Init(const FVRMSpringSolverSetup& InSetup, const FVRMSpringSolverSettings& InSettings)
 {
 	Setup = InSetup;
-	Settings = InSettings;
-	Settings.SubstepHz = FMath::Max(Settings.SubstepHz, 1.f);
-	Settings.MaxDeltaTime = FMath::Max(Settings.MaxDeltaTime, 0.f);
+	Settings = Sanitize(InSettings);
 
 	// Drop anything that points outside the bone or collider lists, so Step never has to check.
 	const int32 NumBones = Setup.NumBones;
@@ -70,8 +93,12 @@ FTransform FVRMSpringSolver::BoneOrIdentity(TConstArrayView<FTransform> BonesCS,
 FTransform FVRMSpringSolver::SimSpaceToComponent(const FVRMSpringSolverSetup::FChain& Chain, TConstArrayView<FTransform> BonesCS, const FTransform& ComponentToWorld) const
 {
 	// Center space: the center bone's frame, so its motion (and the character's) adds no inertia.
-	// Otherwise world space, so the character's motion does.
-	return Chain.CenterBone != INDEX_NONE ? BonesCS[Chain.CenterBone] : ComponentToWorld.Inverse();
+	// Otherwise world space, so the character's motion does, or component space if asked.
+	if (Chain.CenterBone != INDEX_NONE)
+	{
+		return BonesCS[Chain.CenterBone];
+	}
+	return Settings.bWorldSpace ? ComponentToWorld.Inverse() : FTransform::Identity;
 }
 
 void FVRMSpringSolver::Reset(TConstArrayView<FTransform> BonesCS, const FTransform& ComponentToWorld)

@@ -7,6 +7,16 @@
 #include "VRMSpringSolver.h"
 #include "AnimNode_VRMSpringBones.generated.h"
 
+/** Where spring tails are simulated, for springs without a center bone. */
+UENUM()
+enum class EVRMSpringSimulationSpace : uint8
+{
+	/** Moving or turning the character swings the springs (the VRM reference behaviour). */
+	World,
+	/** Only the animation moves the springs; the character's motion adds nothing. */
+	Component,
+};
+
 /**
  * Spring bone anim node (VRM multi-chain). An adapter over FVRMSpringSolver: it maps the spring data
  * to pose bones, feeds the solver the animated pose, and writes back the joint rotations.
@@ -37,6 +47,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spring", meta = (PinShownByDefault))
 	float ExternalVelocityScale = 1.f;
 
+	/** Where tails are simulated. Springs with a center bone always use that bone's space. */
+	UPROPERTY(EditAnywhere, Category = "Spring|Simulation")
+	EVRMSpringSimulationSpace SimulationSpace = EVRMSpringSimulationSpace::World;
+
+	/** Simulation steps per second. The result doesn't depend on the frame rate; higher is smoother and costs more. */
+	UPROPERTY(EditAnywhere, Category = "Spring|Simulation", meta = (ClampMin = "10", ClampMax = "480", UIMin = "30", UIMax = "240", Units = "Hz"))
+	float SubstepHz = 60.f;
+
+	/** Longest frame simulated. A longer frame (a hitch) is simulated as this long, which caps the steps per frame. */
+	UPROPERTY(EditAnywhere, Category = "Spring|Simulation", meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
+	float MaxDeltaTime = 0.1f;
+
+	/** Draw this node's colliders (also vrm.SpringBones.DrawColliders). Not in shipping builds. */
+	UPROPERTY(EditAnywhere, Category = "Spring|Debug")
+	bool bDrawColliders = false;
+
+	/** Draw this node's joints, head to tail (also vrm.SpringBones.DrawSprings). Not in shipping builds. */
+	UPROPERTY(EditAnywhere, Category = "Spring|Debug")
+	bool bDrawSprings = false;
+
 
 	// FAnimNode_Base / SkeletalControl overrides
 	virtual void Initialize_AnyThread(const FAnimationInitializeContext& Context) override;
@@ -65,6 +95,8 @@ private:
 	// True when the mappings no longer describe SpringData (another asset, or the asset was edited)
 	bool MappingsAreStale() const;
 
+	FVRMSpringSolverSettings MakeSolverSettings() const;
+
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	void DrawDebug(FAnimInstanceProxy* Proxy, const FTransform& ComponentTM, float DeltaTime) const;
 #endif
@@ -81,6 +113,7 @@ private:
 	int32   BuiltForJointCount = 0;
 	int32   BuiltForSpringCount = 0;
 	TArray<bool> BuiltBoneValid; // which named bones this LOD has, for spotting LOD changes
+	const UVRMSpringBoneData* WarnedMissingBonesFor = nullptr; // warn once per asset
 
 	// Output of the last evaluation this frame, re-emitted if the node is evaluated again (SR-04)
 	TArray<FBoneTransform> LastOutBoneTransforms;
