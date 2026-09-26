@@ -37,6 +37,13 @@ namespace VRMActorWiringTests
 		return Blueprint;
 	}
 
+	/** The mesh a component (or template) holds, read from its SkeletalMeshAsset property. */
+	UObject* MeshOf(const USkeletalMeshComponent* Component)
+	{
+		const FObjectPropertyBase* Property = Component ? FindFProperty<FObjectPropertyBase>(Component->GetClass(), TEXT("SkeletalMeshAsset")) : nullptr;
+		return Property ? Property->GetObjectPropertyValue_InContainer(Component) : nullptr;
+	}
+
 	USkeletalMesh* MakeMesh(const TCHAR* Name)
 	{
 		return NewObject<USkeletalMesh>(GetTransientPackage(), Name, RF_Transient);
@@ -57,7 +64,7 @@ bool FVRMActorWiringConstructionScript::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The template is found"), VRMPipeline::FindSkeletalMeshComponentTemplate(Blueprint) == Node->ComponentTemplate);
 	TestTrue(TEXT("Wired"), VRMPipeline::SetActorBlueprintMesh(Blueprint, Mesh, nullptr));
 	const USkeletalMeshComponent* Template = Cast<USkeletalMeshComponent>(Node->ComponentTemplate);
-	TestTrue(TEXT("The construction script template has the mesh"), Template && Template->GetSkeletalMeshAsset() == Mesh);
+	TestTrue(TEXT("The construction script template has the mesh"), MeshOf(Template) == Mesh);
 
 	// A child Blueprint overrides the parent's template; the parent keeps its own.
 	UBlueprint* Child = MakeBlueprint(Blueprint->GeneratedClass, TEXT("BP_WiringScriptChild"));
@@ -66,8 +73,8 @@ bool FVRMActorWiringConstructionScript::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Child wired"), VRMPipeline::SetActorBlueprintMesh(Child, ChildMesh, nullptr));
 	const UInheritableComponentHandler* Handler = Child->GetInheritableComponentHandler(false);
 	const USkeletalMeshComponent* Override = Handler ? Cast<USkeletalMeshComponent>(Handler->GetOverridenComponentTemplate(FComponentKey(Node))) : nullptr;
-	TestTrue(TEXT("The child's override has the child's mesh"), Override && Override->GetSkeletalMeshAsset() == ChildMesh);
-	TestTrue(TEXT("The parent keeps its mesh"), Template && Template->GetSkeletalMeshAsset() == Mesh);
+	TestTrue(TEXT("The child's override has the child's mesh"), MeshOf(Override) == ChildMesh);
+	TestTrue(TEXT("The parent keeps its mesh"), MeshOf(Template) == Mesh);
 
 	// Nothing to wire.
 	AddExpectedError(TEXT("has no Skeletal Mesh component"), EAutomationExpectedErrorFlags::Contains, 1);
@@ -88,7 +95,7 @@ bool FVRMActorWiringNative::RunTest(const FString& Parameters)
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	TestTrue(TEXT("Wired"), VRMPipeline::SetActorBlueprintMesh(Blueprint, Mesh, nullptr));
 	const ACharacter* Defaults = Cast<ACharacter>(Blueprint->GeneratedClass->GetDefaultObject());
-	TestTrue(TEXT("The character's mesh is set after compiling"), Defaults && Defaults->GetMesh() && Defaults->GetMesh()->GetSkeletalMeshAsset() == Mesh);
+	TestTrue(TEXT("The character's mesh is set after compiling"), Defaults && MeshOf(Defaults->GetMesh()) == Mesh);
 	return true;
 }
 

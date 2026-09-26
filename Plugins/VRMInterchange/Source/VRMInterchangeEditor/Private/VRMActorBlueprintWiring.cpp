@@ -93,12 +93,35 @@ namespace VRMPipeline
 			return false;
 		}
 
+		// A template is never registered, so its setters (SetSkeletalMeshAsset and friends), which
+		// update render state and animation, don't apply to it: they asserted in the engine. Set the
+		// properties the way the Details panel edits a template. The mesh is held twice (the skinned
+		// asset of USkinnedMeshComponent and SkeletalMeshAsset); both are set so they agree.
 		Template->Modify();
-		Template->SetSkeletalMeshAsset(Mesh);
+		bool bMeshSet = false;
+		for (const TCHAR* PropertyName : { TEXT("SkeletalMeshAsset"), TEXT("SkinnedAsset") })
+		{
+			if (FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(Template->GetClass(), PropertyName))
+			{
+				Property->SetObjectPropertyValue_InContainer(Template, Mesh);
+				bMeshSet = true;
+			}
+		}
+		if (!bMeshSet)
+		{
+			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not set the mesh of '%s' (no SkeletalMeshAsset property)."), *Template->GetPathName());
+			return false;
+		}
 		if (AnimClass)
 		{
-			Template->SetAnimationMode(EAnimationMode::AnimationBlueprint);
-			Template->SetAnimInstanceClass(AnimClass);
+			if (FByteProperty* Mode = FindFProperty<FByteProperty>(Template->GetClass(), TEXT("AnimationMode")))
+			{
+				Mode->SetPropertyValue_InContainer(Template, uint8(EAnimationMode::AnimationBlueprint));
+			}
+			if (FObjectPropertyBase* Class = FindFProperty<FObjectPropertyBase>(Template->GetClass(), TEXT("AnimClass")))
+			{
+				Class->SetObjectPropertyValue_InContainer(Template, AnimClass.Get());
+			}
 		}
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
