@@ -843,8 +843,8 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
     // First pass: discover all target names (if available) and build mapping.
     for (const FVRMMeshInstance& Instance : Instances)
     {
-        const cgltf_mesh* Mesh2 = Instance.Node->mesh;
-        const bool bHaveMeshNames = (Mesh2 && Mesh2->target_names && Mesh2->target_names_count > 0);
+        const cgltf_mesh* Mesh2 = Instance.Node->mesh; // never null: instances are made only for nodes with a mesh
+        const bool bHaveMeshNames = (Mesh2->target_names && Mesh2->target_names_count > 0);
         TArray<FString>& MeshNames = Out.MeshMorphNames.FindOrAdd(int32(Mesh2 - Data->meshes));
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
@@ -894,9 +894,9 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
     int32 VertexBase2 = 0;
     for (const FVRMMeshInstance& Instance : Instances)
     {
-        const cgltf_mesh* Mesh2 = Instance.Node->mesh;
+        const cgltf_mesh* Mesh2 = Instance.Node->mesh; // never null (see the first pass)
         const int32 NodeIndex = int32(Instance.Node - Data->nodes);
-        const bool bHaveMeshNames = (Mesh2 && Mesh2->target_names && Mesh2->target_names_count > 0);
+        const bool bHaveMeshNames = (Mesh2->target_names && Mesh2->target_names_count > 0);
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
         {

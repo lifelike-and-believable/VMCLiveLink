@@ -55,8 +55,13 @@ void UVRMAvatarDescriptionPipeline::ExecutePipeline(UInterchangeBaseNodeContaine
 		const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(GetSourceFilename(), Error);
 		if (Document.IsValid() && VRM::BuildParsedModel(*Document, Model))
 		{
-			bHaveAvatar = VRM::BuildAvatarData(*Document, Model, StagedAvatar);
+			TArray<FString> AvatarWarnings;
+			bHaveAvatar = VRM::BuildAvatarData(*Document, Model, StagedAvatar, &AvatarWarnings);
 			StagedSourceHash = LexToString(Document->GetSourceHash());
+			for (const FString& AvatarWarning : AvatarWarnings)
+			{
+				UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] %s"), *AvatarWarning);
+			}
 		}
 	}
 
@@ -80,8 +85,15 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	Description->Mesh = Mesh;
 	Description->SourceFilename = GetSourceFilename();
 	Description->SourceHash = StagedSourceHash;
-	// The spring pipeline runs first in the stack and names its asset <Mesh>_SpringData.
-	if (UObject* SpringData = FindExistingAsset(GetCharacterFolder() / TEXT("SpringBones"), Mesh->GetName() + TEXT("_SpringData")))
+	// The spring pipeline runs first in the stack and names its asset <Mesh>_SpringData, in its
+	// SubFolder ("SpringBones" by default) or, with SubFolder empty, in the character folder.
+	const FString SpringDataName = Mesh->GetName() + TEXT("_SpringData");
+	UObject* SpringData = FindExistingAsset(GetCharacterFolder() / TEXT("SpringBones"), SpringDataName);
+	if (!SpringData)
+	{
+		SpringData = FindExistingAsset(GetCharacterFolder(), SpringDataName);
+	}
+	if (SpringData)
 	{
 		Description->SpringData = SpringData;
 	}
