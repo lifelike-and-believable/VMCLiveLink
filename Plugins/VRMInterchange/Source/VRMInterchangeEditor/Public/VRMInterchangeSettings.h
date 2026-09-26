@@ -40,12 +40,16 @@ public:
     UPROPERTY(EditAnywhere, config, Category="Live Link", meta=(DisplayName="Generate Live Link Actor Scaffold", ToolTip="Generate a Live Link enabled Character Actor BP + AnimBP scaffold inside <Character>/LiveLink/."))
     bool bGenerateLiveLinkEnabledActor = true;
 
+    // Avatar description ----------------------------------------------------------
+    UPROPERTY(EditAnywhere, config, Category="Avatar Description", meta=(ToolTip="Make a VRM avatar description asset (humanoid map, expressions, licence) next to each imported character."))
+    bool bGenerateAvatarDescription = true;
+
     // Import pipelines -------------------------------------------------------------
     UPROPERTY(EditAnywhere, config, Category="Import Pipelines", meta=(ToolTip="When the VRM import pipelines are not registered in the Interchange project settings, offer to register them when the editor starts."))
     bool bPromptToRegisterImportPipelines = true;
 
     /**
-     * Adds the VRM import pipelines (spring bones, IK Rig, Live Link, materials) to the VRM
+     * Adds the VRM import pipelines (spring bones, IK Rig, Live Link, materials, avatar description) to the VRM
      * translator's pipeline list in Project Settings > Interchange, and saves those settings.
      */
     UFUNCTION(CallInEditor, Category="Import Pipelines", meta=(DisplayName="Register VRM Import Pipelines"))

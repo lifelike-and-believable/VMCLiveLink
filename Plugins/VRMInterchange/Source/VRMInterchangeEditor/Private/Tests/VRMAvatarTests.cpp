@@ -5,6 +5,13 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Interfaces/IPluginManager.h"
+#include "Engine/SkeletalMesh.h"
+#include "InterchangeSourceData.h"
+#include "InterchangeVRMNode.h"
+#include "Nodes/InterchangeBaseNodeContainer.h"
+#include "VRMAvatarDescription.h"
+#include "VRMAvatarDescriptionPipeline.h"
+#include "UObject/Package.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -171,6 +178,90 @@ bool FVRMAvatarNamesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("blink_l"), ExpressionPresetFromName(TEXT("blink_l"), EVRMAvatarVersion::VRM0) == EVRMExpressionPreset::BlinkLeft);
 	TestTrue(TEXT("lookup"), ExpressionPresetFromName(TEXT("lookup"), EVRMAvatarVersion::VRM0) == EVRMExpressionPreset::LookUp);
 	TestTrue(TEXT("unknown is custom"), ExpressionPresetFromName(TEXT("unknown"), EVRMAvatarVersion::VRM0) == EVRMExpressionPreset::Custom);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMAvatarNodeTest, "VRM.Avatar.NodeRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMAvatarNodeTest::RunTest(const FString& Parameters)
+{
+	// The translator passes the avatar to the pipelines on the VRM node, as JSON.
+	using namespace VRMAvatarTests;
+	FVRMParsedModel Model;
+	FVRMAvatarData Avatar;
+	TSharedPtr<FJsonObject> Expected;
+	if (!Load(*this, TEXT("vrm1_minimal"), Model, Avatar, Expected))
+	{
+		return false;
+	}
+	UInterchangeVRMNode* Node = NewObject<UInterchangeVRMNode>();
+	Node->SetAvatarData(Avatar);
+	FVRMAvatarData Back;
+	if (!TestTrue(TEXT("Read back"), Node->GetAvatarData(Back)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Version"), Back.Version == Avatar.Version);
+	TestTrue(TEXT("Humanoid map (enum keys)"), Back.HumanoidToBone.OrderIndependentCompareEqual(Avatar.HumanoidToBone));
+	TestEqual(TEXT("Expressions"), Back.Expressions.Num(), Avatar.Expressions.Num());
+	if (Back.Expressions.Num() > 0 && Avatar.Expressions.Num() > 0)
+	{
+		TestTrue(TEXT("Preset"), Back.Expressions[0].Preset == Avatar.Expressions[0].Preset);
+		TestEqual(TEXT("Morph target"), Back.Expressions[0].MorphBinds.Num() > 0 ? Back.Expressions[0].MorphBinds[0].MorphTarget : FName(), FName(TEXT("Fcl_ALL_Joy")));
+	}
+	TestEqual(TEXT("Meta"), Back.Meta.LicenseUrl, Avatar.Meta.LicenseUrl);
+	TestFalse(TEXT("A node without it has none"), NewObject<UInterchangeVRMNode>()->GetAvatarData(Back));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMAvatarPipelineTest, "VRM.Avatar.Pipeline",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
+{
+	// The pipeline makes <Mesh>_Avatar next to the character once the mesh arrives, and updates it on reimport.
+	using namespace VRMAvatarTests;
+	const FString ContentBase = TEXT("/Game/VRMAvatarTests");
+	UInterchangeSourceData* Source = NewObject<UInterchangeSourceData>();
+	Source->SetFilename(FixturePath(TEXT("vrm1_minimal"), TEXT(".vrm")));
+	UPackage* MeshPackage = CreatePackage(*(ContentBase / TEXT("vrm1_minimal") / TEXT("SK_AvatarTest")));
+	USkeletalMesh* Mesh = NewObject<USkeletalMesh>(MeshPackage, TEXT("SK_AvatarTest"), RF_Transient);
+
+	auto Run = [&](bool bOverwrite, bool bReimport)
+	{
+		UVRMAvatarDescriptionPipeline* Pipeline = NewObject<UVRMAvatarDescriptionPipeline>();
+		Pipeline->bGenerateAvatarDescription = true;
+		Pipeline->bOverwriteExisting = bOverwrite;
+		Pipeline->ExecutePipeline(NewObject<UInterchangeBaseNodeContainer>(), { Source }, ContentBase);
+		TestTrue(TEXT("Waiting for the mesh"), Pipeline->HasPendingPostImportWork());
+		Pipeline->HandleImportedAsset(Mesh, bReimport);
+		return Pipeline->GetLastDescription();
+	};
+
+	UVRMAvatarDescription* Description = Run(true, false);
+	if (!TestNotNull(TEXT("Description made"), Description))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Named after the mesh, next to the character"), Description->GetPathName(),
+		ContentBase / TEXT("vrm1_minimal") / TEXT("SK_AvatarTest_Avatar.SK_AvatarTest_Avatar"));
+	TestTrue(TEXT("Points at the mesh"), Description->Mesh.Get() == Mesh);
+	TestEqual(TEXT("Humanoid bones"), Description->Avatar.HumanoidToBone.Num(), 3);
+	TestTrue(TEXT("Hips"), !Description->GetBone(EVRMHumanBone::Hips).IsNone());
+	TestNotNull(TEXT("Happy expression"), Description->FindExpression(EVRMExpressionPreset::Happy));
+	TestFalse(TEXT("Source hash"), Description->SourceHash.IsEmpty());
+
+	// Reimport with overwrite updates the same asset.
+	Description->Avatar.Expressions.Reset();
+	TestTrue(TEXT("Overwrite keeps the asset"), Run(true, true) == Description);
+	TestEqual(TEXT("... with fresh data"), Description->Avatar.Expressions.Num(), 1);
+
+	// Turned off, nothing is staged.
+	UVRMAvatarDescriptionPipeline* Off = NewObject<UVRMAvatarDescriptionPipeline>();
+	Off->bGenerateAvatarDescription = false;
+	Off->ExecutePipeline(NewObject<UInterchangeBaseNodeContainer>(), { Source }, ContentBase);
+	TestFalse(TEXT("Off: nothing to do"), Off->HasPendingPostImportWork());
 	return true;
 }
 

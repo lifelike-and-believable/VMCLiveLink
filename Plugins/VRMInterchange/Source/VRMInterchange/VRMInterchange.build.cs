@@ -32,6 +32,7 @@ public class VRMInterchange : ModuleRules
             "AnimationCore",         // bone weights
             "ImageWrapper",          // texture payloads
             "Json",                  // spring bone parser
+            "JsonUtilities",         // the avatar description on the VRM node (FJsonObjectConverter)
         });
     }
 }

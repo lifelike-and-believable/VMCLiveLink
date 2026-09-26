@@ -7,10 +7,11 @@
 
 class UInterchangeBaseNodeContainer;
 class FVRMDocument;
+struct FVRMAvatarData;
 
 /**
  * What UVRMTranslator read from a VRM file that the import pipelines need (P3.3): the top-level
- * JSON and the file's hash. The pipelines take these from here instead of opening the file again,
+ * JSON, the file's hash and the avatar description (P4.1). The pipelines take these from here instead of opening the file again,
  * so an import reads the file once. Stored as node attributes, so they survive the node container
  * being copied between translation and the pipelines.
  */
@@ -37,6 +38,12 @@ public:
 	 * no JSON.
 	 */
 	TSharedPtr<const FVRMDocument> MakeDocument(FString& OutError) const;
+
+	/** Records the avatar description the translator read (P4.1), as JSON. */
+	void SetAvatarData(const FVRMAvatarData& Avatar);
+
+	/** The avatar description, if the translator recorded one. */
+	bool GetAvatarData(FVRMAvatarData& OutAvatar) const;
 
 	/** The container's VRM node, if the VRM translator made the container. */
 	static const UInterchangeVRMNode* Find(const UInterchangeBaseNodeContainer& Container);
