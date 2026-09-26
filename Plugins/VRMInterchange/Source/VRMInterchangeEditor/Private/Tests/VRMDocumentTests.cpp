@@ -8,7 +8,6 @@
 #include "InterchangeVRMNode.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "VRMSpringBonesPostImportPipeline.h"
-#include "VRMTranslator.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
@@ -112,23 +111,25 @@ bool FVRMDocumentBadInputTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMDocumentNodeTest, "VRM.Document.TranslatorNode",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMDocumentNodeTest, "VRM.Document.PipelineNode",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FVRMDocumentNodeTest::RunTest(const FString& Parameters)
 {
-	// The translator leaves the document's JSON and hash in a VRM node; the spring pipeline takes
-	// them from there, so an import reads the file once.
+	// The translator leaves the document's JSON and hash in a VRM node (as below, from
+	// UVRMTranslator::Translate); the spring pipeline takes them from there, so an import reads the
+	// file once.
 	const FString Path = VRMDocumentTests::FixturePath(TEXT("vrm1_minimal"));
-	UInterchangeSourceData* Source = NewObject<UInterchangeSourceData>();
-	Source->SetFilename(Path);
-	UVRMTranslator* Translator = NewObject<UVRMTranslator>();
-	Translator->SetSourceData(Source);
-	UInterchangeBaseNodeContainer* Container = NewObject<UInterchangeBaseNodeContainer>();
-	if (!TestTrue(TEXT("Translates"), Translator->Translate(*Container)))
+	FString LoadError;
+	const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(Path, LoadError);
+	if (!TestTrue(FString::Printf(TEXT("vrm1_minimal loads (%s)"), *LoadError), Document.IsValid()))
 	{
 		return false;
 	}
+	UInterchangeBaseNodeContainer* Container = NewObject<UInterchangeBaseNodeContainer>();
+	UInterchangeVRMNode* NewNode = NewObject<UInterchangeVRMNode>(Container);
+	Container->SetupNode(NewNode, TEXT("VRM_vrm1_minimal_Document"), TEXT("VRM_Document"), EInterchangeNodeContainerType::TranslatedAsset);
+	NewNode->SetFromDocument(*Document);
 
 	const UInterchangeVRMNode* Node = UInterchangeVRMNode::Find(*Container);
 	if (!TestNotNull(TEXT("The container has a VRM node"), Node))
