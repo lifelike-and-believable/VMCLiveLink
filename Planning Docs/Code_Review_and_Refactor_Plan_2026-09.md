@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-26):** 23 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.9, P1.11 to P1.18, and P7.1), plus two unplanned fixes. Phase 1 is done except P1.10. `main` builds and passes all 39 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-26):** 30 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 and 2, P3.1 to P3.3, and P7.1), plus two unplanned fixes. `main` builds and passes all 64 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -831,6 +831,14 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - Drop `FVRMSpringConfig::RawJson` (or make it `WITH_EDITORONLY_DATA` and opt-in for debugging).
   - Remove `mutable` translator state. Keep `FVRMDocument` in a `TSharedPtr` owned by the translator between `Translate` and the payload calls, and look payloads up by typed index kept alongside the key.
 - **Acceptance:** Insights or file-read counters show the `.vrm` file is read once per import. Each module contains cgltf at most once. Import output is identical to before the change (compare generated asset properties).
+- **Status (#136, #137, merged):** the file is read once per import, and cgltf is compiled and included only in `VRMCore`. Output is unchanged as far as the existing translator, fixture, coordinate and spring tests show; an editor import comparison is still owed.
+  - #136: `VRMCore` holds `FVRMDocument` and `VRM::BuildParsedModel` (the translator's cgltf code, moved unchanged). The document keeps the bytes, MD5, top-level JSON parsed once, a node table and the version. It gets cgltf geometry only when the buffers load and validate, so the spring parser still works on JSON that cgltf rejects. The spring pipeline's own cgltf copy and its extra file reads are gone. Tests: `VRM.Document.Load`, `.BadInput`.
+  - #137: the translator stores the JSON and hash in a `UInterchangeVRMNode`. The spring pipeline rebuilds a document from the node (`FVRMDocument::LoadJson`, no geometry), and reads the file itself only when the container has no VRM node. `RawJson` is dropped. Test: `VRM.Document.PipelineNode` runs the pipeline with the source file absent.
+  - **Deviations:**
+    - The document carries nodes, JSON and version only. Humanoid, expressions, look-at, first person and meta will be added with the Phase 4 tasks that use them.
+    - The node stores the JSON, not a parsed spring config, so the pipelines parse it again. It is plain attribute data, so it survives the container being copied.
+    - One `mutable` member stays on the translator (a `TSharedPtr<const FVRMParsedModel>`). Interchange translators are `const` but keep their translation for the payload calls; the engine's glTF translator does the same.
+    - The test builds the node itself: UE 5.6 has no public `SetSourceData` on translators, so a test can't call `Translate` directly.
 
 ### P3.4 Pipeline base class and Interchange-native post-import
 - **Resolves:** PE-02, PE-04, PE-06, PE-07, PE-08 · **Depends on:** P3.3
@@ -1030,7 +1038,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 and P3.2 are merged. Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 61 automation tests pass (43 VRM, 18 VMC).
+*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 to P3.3 are merged. Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 64 automation tests pass (46 VRM, 18 VMC).
 
 ### Status by task
 
@@ -1064,14 +1072,15 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P2.3 Node editor quality | #127 | Merged | `CopyNodeDataToPreviewNode` not done. First run warned on the template AnimBlueprint |
 | P3.1 VMC split, settings, receive thread | #130, #131, #132 | Merged | #132's first build failed to compile (C4458, C4310) |
 | P3.2 Remapping, workers, editor tools | #133, #134 | Merged | `DuplicateAsset` in the retarget factory declined (see P3.2 status) |
-| (plan updates) | #114, #117, #121, #124, #128, #129, this PR | Merged | |
+| P3.3 One parse per VRM file (`VRMCore`) | #136, #137 | Merged | #136's first run warned (missing-file read); #137's first build used a translator API UE 5.6 doesn't have, and its next run hit error 4551 (re-run cleared it) |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, this PR | Merged | |
 
-**Not started:** P3.3 to P3.5, and Phases 4 to 7.
+**Not started:** P3.4, P3.5, and Phases 4 to 7.
 
 **Recommended next:**
-1. P3.3: parse each VRM file once into a shared document model (`VRMCore`).
+1. P3.4: a pipeline base class, and Interchange's own post-import step instead of the import subsystem delegates.
 2. Owner: fix the runner's Application Control block (X-07).
-3. The editor checks below: the spring solver comparison (P2.1), and a real VMC sender through both receive paths (P3.1, P3.2).
+3. The editor checks below: the spring solver comparison (P2.1), a real VMC sender through both receive paths (P3.1, P3.2), and a VRM import comparison (P3.3).
 
 ### How the merges went
 
@@ -1094,7 +1103,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
 - **New rules:** B.0 rules 10 to 13. New task: P0.5.
-- **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit four builds (#115, #121 twice, #123). Re-runs cleared it each time. It did not recur on #125 to #127, but nothing has changed on the runner, so expect it again (X-07).
+- **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit five builds (#115, #121 twice, #123, #137). Re-runs cleared it each time. Nothing has changed on the runner, so expect it again (X-07).
 - **Shadowing is an error here:** two first builds failed on C4458 (a local named like a member). Before pushing, check new locals against the class's members, including in static member functions.
 - **Stack PRs that touch the same files, and check squash merges:** #131 and #134 were built on the PR before them; after the base merged, conflicts were only the squash duplicating the base's own changes. Confirm that with `git diff` of the old base branch against `main` for each conflicted file before taking the stacked side (rule 13).
 - **Model the expected numbers before the first CI run:** for P2.1 a short Python model of the solver set the test thresholds, and the one failure was a test measuring a frame the model wasn't checked on. Each CI round trip costs minutes; a local model catches most threshold mistakes first.
@@ -1106,6 +1115,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P3.3):** import a VRM 0.x and a VRM 1.0 avatar and compare the skeletal mesh, textures, materials and spring data asset with an import made before #136; reimport one. Open a spring data asset saved before #137 (it had `RawJson`) and check it loads.
 - **In the editor (P3.1, P3.2):** receive from `scripts/vmc_sender.py send --fps 60` and from VSeeFace with Receive Thread on and off; record the status's fps and jitter for both, also with the editor in the background (the D-1 comparison). With a reference skeleton on the remapper, the character looks as before. Change the port, rename the subject and reapply a preset while receiving. Japanese blend shape names arrive intact. The Mapping Tools buttons, undo, and save-then-auto-detect on a fresh remapper.
 - **In the editor (P2.1 to P2.3):** compare springs against UniVRM or three-vrm on the same model and motion, and record GIFs; stiffness changed the most. Walking or turning a character should swing hair and skirts without External Velocity. A spring with a `center` should not lag when its center moves. Compile an AnimBlueprint that uses another character's spring data: the compiler lists the missing bones. Check whether edits to the node in the AnimBlueprint editor reach the preview. Record Insights timing for a large model (P2.2).
 - **In the editor (P1.10):** a lit sphere with an imported normal map shows correct bumps, and the texture assets have the expected settings.
