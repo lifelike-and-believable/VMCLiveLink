@@ -580,12 +580,18 @@ namespace VRM
 		{
 			Parts.Add(FString::Printf(TEXT("see %s"), *Meta.OtherLicenseUrl));
 		}
-		FString Summary = FString::Join(Parts, TEXT(", "));
+		// "'Name' by Authors. Licence: ..., avatar use: ...", leaving out whatever the file doesn't give.
+		const FString Details = FString::Join(Parts, TEXT(", "));
 		const FString By = FString::Join(Meta.Authors, TEXT(", "));
-		if (!Meta.Name.IsEmpty() || !By.IsEmpty())
+		FString Header = Meta.Name.IsEmpty() ? FString() : FString::Printf(TEXT("'%s'"), *Meta.Name);
+		if (!By.IsEmpty())
 		{
-			Summary = FString::Printf(TEXT("'%s'%s%s. %s"), *Meta.Name, By.IsEmpty() ? TEXT("") : TEXT(" by "), *By, *Summary);
+			Header += Header.IsEmpty() ? FString::Printf(TEXT("By %s"), *By) : FString::Printf(TEXT(" by %s"), *By);
 		}
-		return Summary;
+		if (Header.IsEmpty())
+		{
+			return Details;
+		}
+		return Details.IsEmpty() ? Header : FString::Printf(TEXT("%s. %s"), *Header, *Details);
 	}
 }

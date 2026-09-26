@@ -163,6 +163,23 @@ bool FVRMAvatarNamesTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("Preset %s round-trips"), *ExpressionPresetName(Preset)), ExpressionPresetFromName(ExpressionPresetName(Preset), EVRMAvatarVersion::VRM1) == Preset);
 	}
 
+	// The licence summary leaves out what the meta doesn't give, with no empty quotes or dangling separators.
+	{
+		FVRMMeta Meta;
+		TestEqual(TEXT("Empty meta: empty summary"), DescribeLicense(Meta), FString());
+		Meta.Name = TEXT("Alice");
+		TestEqual(TEXT("Name only"), DescribeLicense(Meta), FString(TEXT("'Alice'")));
+		Meta.Name.Reset();
+		Meta.Authors = { TEXT("Bob") };
+		Meta.LicenseName = TEXT("CC0");
+		TestEqual(TEXT("Authors and licence, no name"), DescribeLicense(Meta), FString(TEXT("By Bob. Licence: CC0")));
+		Meta.Authors.Reset();
+		TestEqual(TEXT("Licence only"), DescribeLicense(Meta), FString(TEXT("Licence: CC0")));
+		Meta.Name = TEXT("Alice");
+		Meta.Authors = { TEXT("Bob") };
+		TestEqual(TEXT("Everything"), DescribeLicense(Meta), FString(TEXT("'Alice' by Bob. Licence: CC0")));
+	}
+
 	// VRM 0.x thumbs shift by one bone.
 	TestTrue(TEXT("0.x thumb proximal is 1.0 metacarpal"), HumanBoneFromName(TEXT("leftThumbProximal"), EVRMAvatarVersion::VRM0) == EVRMHumanBone::LeftThumbMetacarpal);
 	TestTrue(TEXT("0.x thumb intermediate is 1.0 proximal"), HumanBoneFromName(TEXT("rightThumbIntermediate"), EVRMAvatarVersion::VRM0) == EVRMHumanBone::RightThumbProximal);

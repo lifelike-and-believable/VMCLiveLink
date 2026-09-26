@@ -82,9 +82,9 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     {
         VRMNode->SetAvatarData(Avatar);
     }
-    for (const FString& Warning : AvatarWarnings)
+    for (const FString& AvatarWarning : AvatarWarnings)
     {
-        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] %s"), *Warning);
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] %s"), *AvatarWarning);
     }
 
     // Folder subpaths
