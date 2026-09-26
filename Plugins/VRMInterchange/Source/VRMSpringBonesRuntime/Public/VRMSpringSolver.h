@@ -28,7 +28,9 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSetup
 		int32 Bone = INDEX_NONE;
 		/** The bone at the joint's tail (the next joint of the chain), or INDEX_NONE for a virtual tail. */
 		int32 TailBone = INDEX_NONE;
-		/** The joint's skeleton parent, used to aim a virtual tail. May be INDEX_NONE. */
+		/** The joint's skeleton parent, used to aim a virtual tail. May be INDEX_NONE. For a chain's
+		 *  first joint, if the parent is a joint of another chain (a VRM 0.x branch), the joint
+		 *  follows that joint's simulated transform rather than the animated pose. */
 		int32 ParentBone = INDEX_NONE;
 		float Stiffness = 1.f;
 		float Drag = 0.5f;
@@ -155,6 +157,8 @@ private:
 	FVRMSpringSolverSettings Settings;
 	TArray<TArray<FJointState>> States; // per chain, per joint
 	TArray<FTransform> ColliderCS;
+	TArray<FTransform> SimulatedCS;     // per bone: its simulated transform this pass, where BoneSimulated
+	TArray<bool> BoneSimulated;
 	TArray<FTransform> OutJoints;
 	TArray<int32> OutBones;
 	TArray<FVRMSpringSolverJointDebug> Debug;

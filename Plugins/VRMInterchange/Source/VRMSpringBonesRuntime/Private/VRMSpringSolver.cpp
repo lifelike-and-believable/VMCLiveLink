@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMSpringSolver.h"
+#include "Templates/Function.h"
 
 namespace
 {
@@ -70,6 +71,48 @@ void FVRMSpringSolver::Init(const FVRMSpringSolverSetup& InSetup, const FVRMSpri
 		Chain.Colliders.RemoveAll([NumColliders](int32 C) { return C < 0 || C >= NumColliders; });
 	}
 	Setup.Chains.RemoveAll([](const FVRMSpringSolverSetup::FChain& Chain) { return Chain.Joints.Num() == 0; });
+
+	// A chain whose first joint hangs off a joint of another chain (VRM 0.x branches, P1.12) is
+	// simulated after that chain, so its first joint can follow the parent's simulated transform
+	// (Pass). Otherwise the order is kept.
+	{
+		TArray<int32> ChainOfBone;
+		ChainOfBone.Init(INDEX_NONE, NumBones);
+		for (int32 C = 0; C < Setup.Chains.Num(); ++C)
+		{
+			for (const FVRMSpringSolverSetup::FJoint& J : Setup.Chains[C].Joints)
+			{
+				if (ChainOfBone[J.Bone] == INDEX_NONE) ChainOfBone[J.Bone] = C;
+			}
+		}
+		TArray<int32> Order;
+		TArray<uint8> Visited; // 0: not yet, 1: in progress (guards a cycle), 2: placed
+		Visited.Init(0, Setup.Chains.Num());
+		TFunction<void(int32)> Place = [&](int32 C)
+		{
+			if (Visited[C] != 0) return;
+			Visited[C] = 1;
+			const int32 Parent = Setup.Chains[C].Joints[0].ParentBone;
+			const int32 ParentChain = Parent != INDEX_NONE ? ChainOfBone[Parent] : INDEX_NONE;
+			if (ParentChain != INDEX_NONE && ParentChain != C)
+			{
+				Place(ParentChain);
+			}
+			Visited[C] = 2;
+			Order.Add(C);
+		};
+		for (int32 C = 0; C < Setup.Chains.Num(); ++C)
+		{
+			Place(C);
+		}
+		TArray<FVRMSpringSolverSetup::FChain> Ordered;
+		Ordered.Reserve(Order.Num());
+		for (const int32 C : Order)
+		{
+			Ordered.Add(MoveTemp(Setup.Chains[C]));
+		}
+		Setup.Chains = MoveTemp(Ordered);
+	}
 
 	States.Reset();
 	States.SetNum(Setup.Chains.Num());
@@ -194,6 +237,10 @@ void FVRMSpringSolver::Pass(float Dt, TConstArrayView<FTransform> BonesCS, const
 
 	const FVector ExternalCS = ComponentToWorld.InverseTransformVector(ExternalVelocity) * Dt;
 
+	// Joints simulated so far this pass, for chains that hang off another chain's joint.
+	SimulatedCS.SetNum(Setup.NumBones, EAllowShrinking::No);
+	BoneSimulated.Init(false, Setup.NumBones);
+
 	for (int32 C = 0; C < Setup.Chains.Num(); ++C)
 	{
 		const FVRMSpringSolverSetup::FChain& Chain = Setup.Chains[C];
@@ -205,9 +252,19 @@ void FVRMSpringSolver::Pass(float Dt, TConstArrayView<FTransform> BonesCS, const
 			const FVRMSpringSolverSetup::FJoint& J = Chain.Joints[K];
 			FJointState& S = States[C][K];
 
-			// The joint's rest frame: its animated local transform under its parent's simulated transform.
+			// The joint's rest frame: its animated local transform under its parent's simulated
+			// transform. A chain's first joint has no simulated parent unless it hangs off a joint of
+			// an earlier chain (a VRM 0.x branch); otherwise it keeps the animated pose.
 			const FTransform& Input = BonesCS[J.Bone];
-			const FTransform Rest = K == 0 ? Input : Input.GetRelativeTransform(BonesCS[Chain.Joints[K - 1].Bone]) * PrevUpdated;
+			FTransform Rest = Input;
+			if (K > 0)
+			{
+				Rest = Input.GetRelativeTransform(BonesCS[Chain.Joints[K - 1].Bone]) * PrevUpdated;
+			}
+			else if (J.ParentBone != INDEX_NONE && BoneSimulated[J.ParentBone])
+			{
+				Rest = Input.GetRelativeTransform(BonesCS[J.ParentBone]) * SimulatedCS[J.ParentBone];
+			}
 			const FVector Head = Rest.GetLocation();
 			const FQuat RestRot = Rest.GetRotation();
 			const FVector Axis = RestRot.RotateVector(S.BoneAxisLocal);
@@ -236,6 +293,8 @@ void FVRMSpringSolver::Pass(float Dt, TConstArrayView<FTransform> BonesCS, const
 			const FVector Dir = (Tail - Head).GetSafeNormal();
 			const FQuat Rot = Dir.IsNearlyZero() ? RestRot : (FQuat::FindBetweenNormals(Axis, Dir) * RestRot).GetNormalized();
 			PrevUpdated = FTransform(Rot, Head, Rest.GetScale3D());
+			SimulatedCS[J.Bone] = PrevUpdated;
+			BoneSimulated[J.Bone] = true;
 
 			if (bOutput)
 			{
