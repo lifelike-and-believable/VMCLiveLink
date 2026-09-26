@@ -9,10 +9,8 @@
 #include "Roles/LiveLinkAnimationRole.h"
 #include "Roles/LiveLinkAnimationTypes.h"
 #include "Engine/SkeletalMesh.h"
-#include "VMCLiveLinkMappingAsset.h" // new
-#if WITH_EDITOR
+#include "VMCLiveLinkMappingAsset.h"
 #include "UObject/SoftObjectPtr.h"
-#endif
 #include "VMCLiveLinkRemapper.generated.h"
 
 
@@ -88,8 +86,13 @@ private:
 };
 
 // ---------------- Asset ----------------
-UCLASS(MinimalAPI, EditInlineNew, DefaultToInstanced)
-class UVMCLiveLinkRemapper final : public ULiveLinkSubjectRemapper
+/**
+ * Renames VMC bones and curves for a target skeleton (P3.2). Editing tools (apply or save a mapping
+ * asset, auto-detect, seed from the subject) are buttons in its details panel, provided by the
+ * VMCLiveLinkEditor module.
+ */
+UCLASS(EditInlineNew, DefaultToInstanced)
+class VMCLIVELINK_API UVMCLiveLinkRemapper final : public ULiveLinkSubjectRemapper
 {
 	GENERATED_BODY()
 public:
@@ -129,39 +132,35 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
 	TSoftObjectPtr<UVMCLiveLinkMappingAsset> MappingAsset;
 
-	// Auto-apply a mapping when ReferenceSkeleton is set/changed (editor)
-	UPROPERTY(EditAnywhere, Category = "Remapper|Preset", meta=(EditConditionHides))
+	/** While both maps are empty, pick the mapping asset that matches the reference skeleton. */
+	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
 	bool bAutoDetectMappingFromReference = true;
 
-	// Optional: control capturing signature when saving into the assigned asset
+	/** Saving into the mapping asset also records the reference skeleton's signature, so the asset is found for it later. */
 	UPROPERTY(EditAnywhere, Category = "Remapper|Preset", meta=(DisplayName="Capture Signature On Save"))
 	bool bCaptureSignatureOnSave = true;
 
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	void ApplyMappingAsset(UVMCLiveLinkMappingAsset* Asset, bool bAlsoCaptureSignature = false);
 
-	// Scans content for mapping assets and applies the first that matches ReferenceSkeleton
+	/**
+	 * Finds the mapping asset for the reference skeleton and applies it, loading only the assets
+	 * whose signature tag matches (then, failing those, the rest). Blocks while loading; prefer
+	 * StartAutoDetectMapping.
+	 */
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	bool AutoDetectAndApplyMapping();
 
-	// Save the current maps into an asset (optionally capture signature from ReferenceSkeleton)
-	UFUNCTION(CallInEditor, Category="LiveLink|Remapper")
+	/**
+	 * The same, loading asynchronously; the mapping is applied when the loads finish. With
+	 * bOnlyIfMapsEmpty, it isn't applied if the maps were filled in the meantime.
+	 * Returns false if there's nothing to look for (no reference skeleton).
+	 */
+	bool StartAutoDetectMapping(bool bOnlyIfMapsEmpty);
+
+	/** Saves the current maps into an asset (and the reference skeleton's signature, if asked). */
+	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	void SaveCurrentMappingTo(UVMCLiveLinkMappingAsset* Asset, bool bCaptureSignatureFromReference);
-
-#if WITH_EDITOR
-	// UX buttons (no-arg, show as buttons in Details)
-	UFUNCTION(CallInEditor, Category="LiveLink|Remapper", meta=(DisplayName="Apply Selected Mapping Asset"))
-	void ApplySelectedMappingAsset();
-
-	UFUNCTION(CallInEditor, Category="LiveLink|Remapper", meta=(DisplayName="Auto Detect and Apply Mapping"))
-	void AutoDetectAndApplyMappingInEditor();
-
-	UFUNCTION(CallInEditor, Category="LiveLink|Remapper", meta=(DisplayName="Save Current Mapping to Assigned Asset"))
-	void SaveCurrentMappingToAssignedAsset();
-
-	UFUNCTION(CallInEditor, Category="LiveLink|Remapper", meta=(DisplayName="Create New Mapping Asset"))
-	void CreateAndAssignNewMappingAsset();
-#endif
 
 public:
 	// NOTE: BoneNameMap is declared on the base (ULiveLinkSubjectRemapper). Don't redeclare it here.
@@ -216,6 +215,16 @@ private:
 	static void RemoveUnchangedEntries(TMap<FName, FName>& InOutMap, const TMap<FName, FName>& PresetEntries);
 
 	void SeedBones_FromHumanoidLike(const TArray<FName>& Incoming);
+
+	/** Candidate mapping assets for a signature, from the asset registry: tag matches first, then
+	 *  assets whose signatures are too old to have a usable tag. And every mapping asset. */
+	static void FindMappingCandidates(uint32 Signature, TArray<FSoftObjectPath>& OutLikely, TArray<FSoftObjectPath>& OutAll);
+
+	/** The loaded asset to use for Ref: one that matches it, else the best name overlap. */
+	static UVMCLiveLinkMappingAsset* ChooseMapping(USkeletalMesh* Ref, TConstArrayView<FSoftObjectPath> Candidates, bool bAllowHeuristic);
+
+	/** One pass of StartAutoDetectMapping: loads the pass's candidates (unless bLoadsDone), then chooses. */
+	void OnAutoDetectLoaded(TArray<FSoftObjectPath> Likely, TArray<FSoftObjectPath> All, bool bSecondPass, bool bOnlyIfMapsEmpty, bool bLoadsDone);
 
 	ELLRemapPreset GuessPreset(const TArray<FName>& BoneNames, const TArray<FName>& CurveNames) const;
 

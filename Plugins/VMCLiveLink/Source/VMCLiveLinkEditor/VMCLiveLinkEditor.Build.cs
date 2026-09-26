@@ -26,7 +26,9 @@ public class VMCLiveLinkEditor : ModuleRules
 
 			// Editor-only functionality used by the factory UI and asset tooling
 			"UnrealEd",
-            "AssetTools"
+            "AssetTools",
+            "AssetDefinition",   // UAssetDefinition_VMCLiveLinkMappingAsset
+            "PropertyEditor"     // the remapper's details customization
         });
 
         // Editor modules are only valid for editor builds; safe to rely on Target.bBuildEditor here,

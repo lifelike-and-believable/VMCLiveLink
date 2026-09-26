@@ -3,7 +3,9 @@
 #include "Modules/ModuleManager.h"
 #include "IAssetTools.h"
 #include "AssetToolsModule.h"
-#include "AssetTypeActions_VMCLiveLinkMappingAsset.h"
+#include "PropertyEditorModule.h"
+#include "VMCLiveLinkRemapper.h"
+#include "VMCLiveLinkRemapperCustomization.h"
 
 
 #define LOCTEXT_NAMESPACE "FVMCLiveLinkEditorModule"
@@ -24,32 +26,27 @@ public:
 	virtual void StartupModule() override
 	{
 #if WITH_EDITOR
+		// The factories' "New" menu category. The mapping asset itself is described by
+		// UAssetDefinition_VMCLiveLinkMappingAsset, which the editor finds on its own.
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 		GVMCLiveLinkAssetCategory = AssetTools.RegisterAdvancedAssetCategory(TEXT("VMCLiveLink"), LOCTEXT("VMCLiveLinkCategory", "VMC LiveLink"));
 
-		TSharedRef<FAssetTypeActions_Base> Action = MakeShared<FAssetTypeActions_VMCLiveLinkMappingAsset>();
-		AssetTools.RegisterAssetTypeActions(Action);
-		RegisteredActions.Add(Action);
+		// Buttons for the remapper's editing tools in its details panel
+		FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+		PropertyEditor.RegisterCustomClassLayout(UVMCLiveLinkRemapper::StaticClass()->GetFName(),
+			FOnGetDetailCustomizationInstance::CreateStatic(&FVMCLiveLinkRemapperCustomization::MakeInstance));
 #endif
 	}
 
 	virtual void ShutdownModule() override
 	{
 #if WITH_EDITOR
-		if (FModuleManager::Get().IsModuleLoaded("AssetTools"))
+		if (FPropertyEditorModule* PropertyEditor = FModuleManager::GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
 		{
-			IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
-			for (auto& Action : RegisteredActions)
-			{
-				AssetTools.UnregisterAssetTypeActions(Action);
-			}
-			RegisteredActions.Empty();
+			PropertyEditor->UnregisterCustomClassLayout(UVMCLiveLinkRemapper::StaticClass()->GetFName());
 		}
 #endif
 	}
-
-private:
-	TArray<TSharedRef<FAssetTypeActions_Base>> RegisteredActions;
 };
 
 #undef LOCTEXT_NAMESPACE
