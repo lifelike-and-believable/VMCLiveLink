@@ -39,6 +39,17 @@ namespace
 	};
 	static_assert(UE_ARRAY_COUNT(PresetNames) == int32(EVRMExpressionPreset::Neutral), "One name per preset");
 
+	// VRM 0.x blend shape presets whose names differ from VRM 1.0's. The others (angry, blink,
+	// lookup, lookdown, lookleft, lookright, neutral) have the same names; 0.x writes them lowercase.
+	struct FVRM0PresetAlias { const TCHAR* Name; EVRMExpressionPreset Preset; };
+	const FVRM0PresetAlias VRM0PresetAliases[] = {
+		{ TEXT("joy"), EVRMExpressionPreset::Happy }, { TEXT("sorrow"), EVRMExpressionPreset::Sad },
+		{ TEXT("fun"), EVRMExpressionPreset::Relaxed }, { TEXT("a"), EVRMExpressionPreset::Aa },
+		{ TEXT("i"), EVRMExpressionPreset::Ih }, { TEXT("u"), EVRMExpressionPreset::Ou },
+		{ TEXT("e"), EVRMExpressionPreset::Ee }, { TEXT("o"), EVRMExpressionPreset::Oh },
+		{ TEXT("blink_l"), EVRMExpressionPreset::BlinkLeft }, { TEXT("blink_r"), EVRMExpressionPreset::BlinkRight },
+	};
+
 	const FJsonObject* JObject(const FJsonObject* Parent, const TCHAR* Field)
 	{
 		const TSharedPtr<FJsonObject>* Value = nullptr;
@@ -496,23 +507,14 @@ namespace VRM
 	{
 		if (Version == EVRMAvatarVersion::VRM0)
 		{
-			struct FAlias { const TCHAR* VRM0; EVRMExpressionPreset Preset; };
-			static const FAlias Aliases[] = {
-				{ TEXT("joy"), EVRMExpressionPreset::Happy }, { TEXT("sorrow"), EVRMExpressionPreset::Sad },
-				{ TEXT("fun"), EVRMExpressionPreset::Relaxed }, { TEXT("a"), EVRMExpressionPreset::Aa },
-				{ TEXT("i"), EVRMExpressionPreset::Ih }, { TEXT("u"), EVRMExpressionPreset::Ou },
-				{ TEXT("e"), EVRMExpressionPreset::Ee }, { TEXT("o"), EVRMExpressionPreset::Oh },
-				{ TEXT("blink_l"), EVRMExpressionPreset::BlinkLeft }, { TEXT("blink_r"), EVRMExpressionPreset::BlinkRight },
-			};
-			for (const FAlias& Alias : Aliases)
+			for (const FVRM0PresetAlias& Alias : VRM0PresetAliases)
 			{
-				if (Name.Equals(Alias.VRM0, ESearchCase::IgnoreCase))
+				if (Name.Equals(Alias.Name, ESearchCase::IgnoreCase))
 				{
 					return Alias.Preset;
 				}
 			}
-			// angry, blink, lookup, lookdown, lookleft, lookright and neutral have the same names
-			// (0.x writes them lowercase); unknown is a custom expression.
+			// The other presets have the same names in both versions; unknown is a custom expression.
 		}
 		for (int32 i = 0; i < UE_ARRAY_COUNT(PresetNames); ++i)
 		{
@@ -524,8 +526,22 @@ namespace VRM
 		return EVRMExpressionPreset::Custom;
 	}
 
-	FString ExpressionPresetName(EVRMExpressionPreset Preset)
+	FString ExpressionPresetName(EVRMExpressionPreset Preset, EVRMAvatarVersion Version)
 	{
+		if (Version == EVRMAvatarVersion::VRM0)
+		{
+			for (const FVRM0PresetAlias& Alias : VRM0PresetAliases)
+			{
+				if (Alias.Preset == Preset)
+				{
+					return Alias.Name;
+				}
+			}
+			if (Preset != EVRMExpressionPreset::Custom)
+			{
+				return ExpressionPresetName(Preset).ToLower();
+			}
+		}
 		const int32 i = int32(Preset) - 1;
 		return i >= 0 && i < UE_ARRAY_COUNT(PresetNames) ? FString(PresetNames[i]) : FString();
 	}
