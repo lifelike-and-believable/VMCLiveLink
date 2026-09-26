@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-25, evening):** 18 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.9, P1.11, P1.17, P1.18 and P7.1), plus two unplanned fixes. P1.11 merged before P1.16, which the plan said should land first; see [B.10](#b10-implementation-progress). `main` builds and passes all VRM and VMC tests. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-26):** 21 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.9, P1.11 to P1.13, P1.16 to P1.18, and P7.1), plus two unplanned fixes. `main` builds and passes all 32 VRM and VMC tests. Next: P1.14, the last prerequisite for Phase 2. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -475,6 +475,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **Tag named `main`:** the remote had a tag called `main` as well as the branch, so `git fetch origin main` fetched the tag, not the branch. (Deleted by the owner on 2026-09-25.)
 - **VMC tests never ran:** the filter `VRM.;VMC.` was passed to `Automation RunTests`, where `;` ends the command. Only `VRM.` tests ran, and nothing reported it. Fixed by using `VRM.+VMC.` and failing when any prefix matches no tests.
 - **Retargeting and squash merges:** retargeting a PR did not start a build (fixed in P0.5). Because PRs are squash-merged, a stacked PR must first merge its old base branch's final commit, then `main`. Merging `main` directly shows every file of the base PR as a conflict.
+- **Silent bad auto-merge:** merging `main` (with #119 squashed in) into #120's branch, which already had #119's commits, auto-merged `VRMSpringBoneData.cpp` without a conflict but with `CopySpringParametersToJoints` defined twice. Only a diff against `main` caught it before the push (B.0 rule 13).
 
 ### X-08 (P2) Parallel PRs used symbols from each other
 - #103 was branched from `main` but used `LogVRMInterchange`, which only #100 declares. It failed to compile in the PR build. The fix ported #100's two-line declaration into #103.
@@ -498,6 +499,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 10. **Build against your own base.** Don't use a type, function or log category that only exists in another unmerged PR. Either stack on that PR (and say so) or port the minimal change unchanged, so the identical edits merge cleanly (X-08).
 11. **Tests don't depend on project config.** Tests that read `UDeveloperSettings` or other config must compare against the loaded settings, or set the values they need and restore them. Never assert on values that `Config/*.ini` can change (X-05).
 12. **CI must go green.** A PR is ready only when `PR Build and Tests` passes on its latest commit. Scripts called from CI must `exit 0` explicitly: PowerShell leaves `$LASTEXITCODE` unset after a script that doesn't exit, and `$null -ne 0` is true.
+13. **Check a merge before pushing it.** After merging `main` into a branch (especially one stacked on a squash-merged PR), run `git diff origin/main HEAD --stat` and confirm it shows only this PR's change. Git can auto-merge two identical additions with different surrounding lines into a duplicate, with no conflict reported (X-07).
 
 Task format below: **Resolves** (finding IDs) · **Depends on** · **Files** · **Steps** · **Acceptance**.
 
@@ -653,6 +655,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
 - **Resolves:** SP-02 · **Depends on:** P1.7 (bone list includes all descendants)
 - **Steps:** parse the node hierarchy (parent and children) in the parser, or take it from the translator, once P3.3 lands. For each VRM 0.x `boneGroup` root, add joints depth-first for every descendant. Branches become separate chains (one `FVRMSpring` per root-to-leaf path, sharing parameters), matching UniVRM. Delete the stub overload and `BuildResolvedChildren`, or make them actually work.
 - **Acceptance:** `vrm0_minimal.vrm` produces a 3-joint chain from a single listed root. Every joint resolves to a bone.
+- **Status (#120, merged):** done, with one change to the branch rule. "One spring per root-to-leaf path" would put the joints above a branch point in several springs, and the solver would simulate them more than once. Instead a chain follows the first child to a leaf, and every other child starts a chain of its own with the group's settings. No joint is in two chains; the branch point's tail is its first child, as in three-vrm. Mesh nodes end a chain, and a listed root inside an earlier root's subtree is not added again. The hierarchy overload now returns the node maps, so `BuildResolvedChildren` works (the runtime does not use its output yet). Covered by `VRM.SpringBones.Parse.VRM0Chains` and `VRM.Fixtures.SpringChains`.
 
 ### P1.13 Spec-correct VRM 1.0 parsing (per-joint parameters, extended colliders)
 - **Resolves:** SP-03, SP-04, SP-05, SP-06 (link error), SP-08 · **Depends on:** P0.2
@@ -665,6 +668,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   6. Make `ReadVec3` accept the VRM 0.x `{x,y,z}` object form as well as arrays (SP-08). **Done in #115 (P1.11).**
 - **Note (2026-09-25):** #110 moved the existing tests to the spec layout. When the top-level `joints` handling is removed here, add a test showing that a numeric `springs[].joints` entry is rejected or warned about, rather than silently appended (X-05).
 - **Acceptance:** spec fixtures parse with correct per-joint values and extended colliders. The old non-spec tests either move to "lenient" tests or are deleted.
+- **Status (#119, merged):** all steps done. The solver reads each joint's parameters. The spring-level fields show the first joint's values and, when edited, apply to every joint of the spring. Non-spec layouts sit behind the console variable `vrm.SpringBones.LenientSchema` (default on, decision D-6); each use is logged at `Log`, not `Verbose`, so files that depend on them show up. The non-spec top-level `joints` array is no longer read, and a numeric `springs[].joints` entry is warned about and skipped. Covered by the `VRM.SpringBones.Parse.VRM1*` tests and `VRM.Fixtures.SpringJointParameters`.
 
 ### P1.14 Anim node robustness
 - **Resolves:** SR-04, SR-05 · **Can land before Phase 2**
@@ -687,6 +691,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
 ### P1.16 Versioned data assets
 - **Resolves:** SP-07 · **Must land with or before** P1.11, P1.12 and P1.13 merge
 - **Note (2026-09-25):** P1.11 merged first, so the `ConvertedColliderAxes` entry now covers assets that already exist. Any asset without the new version was imported before #115 and needs a reimport. Do P1.16 next, before P1.12 or P1.13 change the data again.
+- **Status (#118, merged; entries added by #119 and #120):** `FVRMSpringDataCustomVersion` has `ConvertedColliderAxes`, `PerJointParameters` (upgraded on load by copying each spring's values to its joints) and `ExpandedVRM0Chains` (VRM 0.x assets with springs are flagged). `bNeedsReimport` is saved with the asset, so re-saving an old asset doesn't clear it. The flag is logged on load and reported when an AnimBlueprint that uses the asset compiles. **Not done:** the one-click "Reimport from source" action. Spring data is generated by the skeletal mesh import, so there is no separate reimport to trigger; the warning names the file instead.
 - **Steps:** add `FVRMSpringDataCustomVersion` with entries such as `ConvertedColliderAxes`, `PerJointParameters` and `ExpandedVRM0Chains`. In `UVRMSpringBoneData::Serialize`/`PostLoad`, upgrade older assets where possible (for example, copy spring-level parameters into joints). Where an upgrade isn't possible (axes can't be fixed without the source file), set a `bNeedsReimport` flag, log a clear warning with a one-click "Reimport from source" action (the source path is stored in `SourceFilename`), and mark the asset in the AnimGraph node's compile validation.
 - **Acceptance:** a test loads a struct serialized with the old version and checks that the upgrade result or warning is produced.
 
@@ -997,7 +1002,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-25, evening.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all automation tests pass, including the new `VRM.Coordinates.*` and `VRM.SpringBones.Coordinates` tests.
+*Last updated 2026-09-26.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 32 automation tests pass.
 
 ### Status by task
 
@@ -1020,15 +1025,18 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P7.1 README corrections and this plan | #99, #111 | Merged | |
 | (unplanned) Six stale tests | #110 | Merged | X-05 |
 | (unplanned) Test filter so VMC tests run | #113 | Merged | X-07. The first run with it: 19/19 tests (15 VRM, 4 VMC) |
-| (plan updates) | #114 | Merged | |
+| P1.16 Versioned spring data | #118 | Merged | One-click reimport action not done (see P1.16 status) |
+| P1.13 Spec VRM 1.0 spring parsing | #119 | Merged | Lenient schema is a console variable, on by default |
+| P1.12 Expand VRM 0.x chains | #120 | Merged | One chain per branch rather than per root-to-leaf path (see P1.12 status). The `main` merge needed a manual fix (rule 13) |
+| (plan updates) | #114, #117 | Merged | |
 
-**Not started:** P1.10, P1.12 to P1.16, and Phases 2 to 7.
+**Not started:** P1.10, P1.14, P1.15, and Phases 2 to 7.
 
 **Recommended next:**
-1. P1.16, versioned spring data. It is overdue: P1.11 already changed the meaning of saved spring data, and P1.12 and P1.13 will change it again.
-2. P1.13, then P1.12: spec-correct VRM 1.0 parsing, then VRM 0.x chain expansion. Both change `FVRMSpringJoint`/`FVRMSpring`, so they need P1.16's version entries.
-3. P1.10, texture colour space. It is independent and can go in parallel.
-4. P1.14 and P1.15, which unblock Phase 2 together with the items above.
+1. P1.14, anim node robustness. It is the last prerequisite for Phase 2, and most of it can be tested in CI.
+2. P1.15, pipeline toggles and target resolution.
+3. P1.10, texture colour space. Its acceptance is visual, so it needs an editor check.
+4. Phase 2 (the spring solver rework) once P1.14 is in.
 
 ### How the merges went
 
@@ -1050,14 +1058,15 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
   - the VMC tests never ran (X-07).
 
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
-- **New rules:** B.0 rules 10 to 12. New task: P0.5.
+- **New rules:** B.0 rules 10 to 13. New task: P0.5.
 - **Runner:** one unexplained cancellation (X-07). It has not happened again since. One Application Control block (error 4551) on #115, cleared by a re-run (X-07).
 - **Spring data moved to parse time:** after P1.11 the parser returns UE axes and centimetres. The pipeline doesn't touch geometry, so there is one place to check.
-- **Ordering slip:** P1.11 went in before P1.16, against the dependency note on P1.16. The new code is correct, but existing assets are not flagged. Lesson: before starting a task, check the "Must land with or before" notes of other tasks as well as the task's own "Depends on" line. P1.16 is now first in the list.
+- **Ordering slip:** P1.11 went in before P1.16, against the dependency note on P1.16. The new code is correct, but existing assets are not flagged. Lesson: before starting a task, check the "Must land with or before" notes of other tasks as well as the task's own "Depends on" line. P1.16 landed next (#118) and now flags those assets.
+- **Stacking to avoid conflicts:** P1.12 touched the same parser as P1.13, so it was branched from P1.13's PR and moved onto `main` after that merged. That worked, but the merge produced a duplicate function without reporting a conflict (X-07). B.0 rule 13 now requires a diff against `main` before pushing a merged branch.
 
 ### Verification still owed
 
-- **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8, P1.9, P1.11). Check that both face +Y like the mannequin, and that spring colliders sit on the right body parts (`vrm.SpringBones.DrawColliders 1`). Also receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
+- **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8, P1.9, P1.11 to P1.13). Check that both face +Y like the mannequin, and that spring colliders sit on the right body parts (`vrm.SpringBones.DrawColliders 1`). On VRM 0.x, whole hair strands should move, not only their root bone (P1.12). On VRM 1.0, the tip joints of a chain should move more freely than the roots when the file gives them lower stiffness (P1.13). Open a spring data asset imported before #115: it should show **Needs Reimport** and warn when its AnimBlueprint compiles (P1.16). Also receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
   - T-02: one skin per mesh in VRoid exports.
@@ -1116,3 +1125,4 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | | | X-05 | #110 (done), B.0 rule 11, P1.13 |
 | | | X-06, X-07 | P0.5 (X-07 Application Control: owner, if it recurs) |
 | | | X-08 | B.0 rule 10 |
+| | | X-07 (silent bad merge) | B.0 rule 13 |
