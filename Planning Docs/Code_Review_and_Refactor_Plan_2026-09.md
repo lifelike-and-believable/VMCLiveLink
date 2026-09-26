@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-26):** 21 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.9, P1.11 to P1.13, P1.16 to P1.18, and P7.1), plus two unplanned fixes. `main` builds and passes all 32 VRM and VMC tests. Next: P1.14, the last prerequisite for Phase 2. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-26):** 23 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, P1.1 to P1.9, P1.11 to P1.18, and P7.1), plus two unplanned fixes. Phase 1 is done except P1.10. `main` builds and passes all 39 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -470,7 +470,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **Stacked PRs get no CI:** `pr-build.yml` only triggers for PRs that target `main`, so stacked PRs are never built until they are retargeted.
 - **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
 - **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
-- **Application Control block:** on #115 the test step failed to load a freshly built plugin DLL with Windows error 4551 ("An Application Control policy has blocked this file"), from Smart App Control or WDAC on the runner. A re-run of the job passed. If it recurs, the owner should add an exclusion for the runner's work folder (`C:\actions-runner\_work`) or turn off Smart App Control on that machine.
+- **Application Control block (recurring, owner action needed):** Windows on the runner intermittently blocks files the build has just created, with error 4551 ("An Application Control policy has blocked this file", Smart App Control or WDAC). It hit #115 (a plugin DLL), #121 twice (the project DLL, then UnrealBuildTool's compiled `*ModuleRules.dll`, so nothing built) and #123 (`VRMSpringBonesEditor.dll`). Each time a re-run passed or the next push was clean. Nothing in the repository can fix it. The owner should add an exclusion for the runner's work folder (`C:\actions-runner\_work`) or turn off Smart App Control on EIGHTYGEE-DT. Until then, a 4551 failure gets one PR comment and one re-run.
 - **Superseded runs:** retargeting a PR, or pushing right after it, starts a new run and cancels the older one (job-level concurrency). The PR then shows cancelled runs next to the real one. Judge a PR by its newest `build-and-test` run on the head commit.
 - **Tag named `main`:** the remote had a tag called `main` as well as the branch, so `git fetch origin main` fetched the tag, not the branch. (Deleted by the owner on 2026-09-25.)
 - **VMC tests never ran:** the filter `VRM.;VMC.` was passed to `Automation RunTests`, where `;` ends the command. Only `VRM.` tests ran, and nothing reported it. Fixed by using `VRM.+VMC.` and failing when any prefix matches no tests.
@@ -679,6 +679,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   4. Implement `ResetDynamics(ETeleportType)`, which reinitializes tails from the current pose, and handle `InitialState` properly.
   5. When a bone becomes valid after an LOD change, initialize its state before simulating it.
 - **Acceptance:** tests swap `SpringData` at runtime with no crash (fuzz with random joint indices), evaluate twice per frame with the same pose output both times, and show a teleport does not stretch chains.
+- **Status (#122, merged):** all steps done. The per-frame work is split out (`BeginFrame`, `RebuildForBones`, `EvaluateInternal`) so tests run the node on a skeleton built in code, without an AnimBlueprint (`VRM.SpringBones.Node.*`). The LOD test found a crash that was on `main`: `FBoneReference::HasValidSetup()` only checks the skeleton, so a bone a lower LOD strips passed with compact index -1 and was read out of bounds. The node now uses `IsValidToEvaluate(BoneContainer)`. Tests that build poses must hold an `FMemMark`.
 
 ### P1.15 Pipeline toggles and target resolution
 - **Resolves:** PE-01, PE-02 (interim)
@@ -687,6 +688,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
   2. Remove the parent-folder fallback. Match the created object exactly: `InCreatedObject`'s package must be under `ContentBasePath/<BaseName>/` with a `/` boundary check, and prefer the object passed to the callback over a folder scan.
   3. (The full fix is P3.4, which moves to `ExecutePostImportPipeline`.)
 - **Acceptance:** importing two characters `Alice` and `Alice2` into sibling folders creates each character's assets bound to its own mesh. Unticking "Generate Spring Bone Data" in the dialog prevents generation even when the project setting is on.
+- **Status (#123, merged):** done in all three pipelines. Settings seed defaults only (`PostInitProperties`); `ExecutePipeline` reads instance flags. `VRMPipelineTargets.h` decides which mesh is this import's: the mesh's recorded source file must be this one (same full path or same file name), or with none recorded the mesh must be inside `<ContentBasePath>/<file name>`. The parent-folder fallback is gone. `UAssetImportData` stores the source path relative to the package and resolves it on read; in the test it came back under the engine folder, so a full-path comparison alone would reject every mesh. Covered by `VRM.Pipeline.Targets.*` and `VRM.Pipeline.Toggles`; the real two-character import is still an editor check.
 
 ### P1.16 Versioned data assets
 - **Resolves:** SP-07 · **Must land with or before** P1.11, P1.12 and P1.13 merge
@@ -1002,7 +1004,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26.* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 32 automation tests pass.
+*Last updated 2026-09-26 (later).* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 39 automation tests pass.
 
 ### Status by task
 
@@ -1028,15 +1030,16 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P1.16 Versioned spring data | #118 | Merged | One-click reimport action not done (see P1.16 status) |
 | P1.13 Spec VRM 1.0 spring parsing | #119 | Merged | Lenient schema is a console variable, on by default |
 | P1.12 Expand VRM 0.x chains | #120 | Merged | One chain per branch rather than per root-to-leaf path (see P1.12 status). The `main` merge needed a manual fix (rule 13) |
-| (plan updates) | #114, #117 | Merged | |
+| P1.14 Anim node robustness | #122 | Merged | Its new LOD test found an out-of-bounds read on `main` (see P1.14 status) |
+| P1.15 Pipeline toggles and targets | #123 | Merged | Source-file match accepts the file name, because the stored path doesn't round-trip (see P1.15 status) |
+| (plan updates) | #114, #117, #121 | Merged | |
 
-**Not started:** P1.10, P1.14, P1.15, and Phases 2 to 7.
+**Not started:** P1.10, and Phases 2 to 7.
 
 **Recommended next:**
-1. P1.14, anim node robustness. It is the last prerequisite for Phase 2, and most of it can be tested in CI.
-2. P1.15, pipeline toggles and target resolution.
-3. P1.10, texture colour space. Its acceptance is visual, so it needs an editor check.
-4. Phase 2 (the spring solver rework) once P1.14 is in.
+1. P1.10, texture colour space, the last Phase 1 task. CI can check the texture settings; the lit-sphere acceptance needs an editor check.
+2. Phase 2, the spring solver rework, starting with P2.1 (a pure solver core with tests). Every prerequisite is merged.
+3. Owner: fix the runner's Application Control block (X-07).
 
 ### How the merges went
 
@@ -1059,13 +1062,15 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
 - **New rules:** B.0 rules 10 to 13. New task: P0.5.
-- **Runner:** one unexplained cancellation (X-07). It has not happened again since. One Application Control block (error 4551) on #115, cleared by a re-run (X-07).
+- **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit four builds (#115, #121 twice, #123). Re-runs cleared it each time, but it is not going away on its own (X-07).
+- **Tests that exercise real engine behaviour pay off:** the P1.14 node tests found an LOD crash already on `main`, and the P1.15 test showed that `UAssetImportData` doesn't round-trip a source path, which would have made the new matching reject every mesh. Both came from running code in the editor rather than from reading it. Where a task's acceptance can be run in a test (even with a skeleton or mesh built in code), do that rather than leave it to an editor check.
 - **Spring data moved to parse time:** after P1.11 the parser returns UE axes and centimetres. The pipeline doesn't touch geometry, so there is one place to check.
 - **Ordering slip:** P1.11 went in before P1.16, against the dependency note on P1.16. The new code is correct, but existing assets are not flagged. Lesson: before starting a task, check the "Must land with or before" notes of other tasks as well as the task's own "Depends on" line. P1.16 landed next (#118) and now flags those assets.
 - **Stacking to avoid conflicts:** P1.12 touched the same parser as P1.13, so it was branched from P1.13's PR and moved onto `main` after that merged. That worked, but the merge produced a duplicate function without reporting a conflict (X-07). B.0 rule 13 now requires a diff against `main` before pushing a merged branch.
 
 ### Verification still owed
 
+- **In the editor (P1.14, P1.15):** in PIE, swap spring data on a running character, teleport it and change LODs: no crash, no stretched chains. Import `Alice.vrm` and `Alice2.vrm` into the same folder: each character's spring data, IK Rig and Live Link assets bind to its own mesh. Untick "Generate Spring Bone Data" with the project setting on: no spring data.
 - **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8, P1.9, P1.11 to P1.13). Check that both face +Y like the mannequin, and that spring colliders sit on the right body parts (`vrm.SpringBones.DrawColliders 1`). On VRM 0.x, whole hair strands should move, not only their root bone (P1.12). On VRM 1.0, the tip joints of a chain should move more freely than the roots when the file gives them lower stiffness (P1.13). Open a spring data asset imported before #115: it should show **Needs Reimport** and warn when its AnimBlueprint compiles (P1.16). Also receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
 - **[Verify] items not yet confirmed:**
   - VMC-01: the `Root/Pos` layout, checked against a real sender.
