@@ -845,6 +845,7 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
     {
         const cgltf_mesh* Mesh2 = Instance.Node->mesh;
         const bool bHaveMeshNames = (Mesh2 && Mesh2->target_names && Mesh2->target_names_count > 0);
+        TArray<FString>& MeshNames = Out.MeshMorphNames.FindOrAdd(int32(Mesh2 - Data->meshes));
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
         {
@@ -861,6 +862,12 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
                 {
                     TargetName = FString::Printf(TEXT("morph_%d"), int32(ti));
                 }
+
+                if (MeshNames.Num() <= int32(ti))
+                {
+                    MeshNames.SetNum(int32(ti) + 1);
+                }
+                MeshNames[ti] = TargetName;
 
                 if (!NameToIndex.Contains(TargetName))
                 {
@@ -985,6 +992,7 @@ static void ResetParsedModel(FVRMParsedModel& Out)
 
     Out.Bones.Reset();
     Out.NodeToBoneMap.Reset();
+    Out.MeshMorphNames.Reset();
 }
 
 // Populate bones from the joints of every skin: unique names, parent indices and local binds converted

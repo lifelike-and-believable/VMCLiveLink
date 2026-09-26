@@ -74,6 +74,10 @@ struct FVRMParsedModel
     // glTF node index -> bone name, for every joint (populated during LoadVRM)
     TMap<int32, FName> NodeToBoneMap;
 
+    // glTF mesh index -> the imported morph target name of each of its targets, by target index
+    // (what expression binds resolve against, VRM::BuildAvatarData).
+    TMap<int32, TArray<FString>> MeshMorphNames;
+
     float GlobalScale = 100.f;
 
     // VRM version, from the file's top-level extensions. Decides the facing (see VRMCoordinateConversion.h).

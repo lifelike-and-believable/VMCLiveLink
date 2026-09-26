@@ -13,6 +13,7 @@ public class VRMCore : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[]
         {
             "Core",
+            "CoreUObject", // the avatar description's USTRUCTs and UENUMs (VRMAvatarTypes.h)
             "Json", // FVRMDocument exposes the parsed top-level JSON
         });
 
