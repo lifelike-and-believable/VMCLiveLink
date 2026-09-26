@@ -11,6 +11,22 @@ struct FOSCMessage;
  */
 namespace VMCProtocol
 {
+	/** The VMC messages this plugin knows (https://protocol.vmc.info/english). */
+	enum class EAddress : uint8
+	{
+		RootPos,     // /VMC/Ext/Root/Pos
+		BonePos,     // /VMC/Ext/Bone/Pos
+		BlendVal,    // /VMC/Ext/Blend/Val
+		BlendApply,  // /VMC/Ext/Blend/Apply
+		Time,        // /VMC/Ext/T
+		Available,   // /VMC/Ext/OK
+		DevicePos,   // /VMC/Ext/Hmd/Pos, Con/Pos, Tra/Pos and their /Local variants
+		Other,       // anything else (camera, keys, MIDI, settings, non-VMC)
+	};
+
+	/** Which VMC message an OSC address is. Case-sensitive, as OSC addresses are. */
+	EAddress ClassifyAddress(FStringView Address);
+
 	/** One OSC argument, reduced to the types VMC uses. */
 	struct FArg
 	{

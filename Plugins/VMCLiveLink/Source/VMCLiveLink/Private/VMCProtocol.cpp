@@ -6,6 +6,31 @@
 
 namespace VMCProtocol
 {
+	EAddress ClassifyAddress(FStringView Address)
+	{
+		static const FStringView Prefix = TEXTVIEW("/VMC/Ext/");
+		if (!Address.StartsWith(Prefix, ESearchCase::CaseSensitive))
+		{
+			return EAddress::Other;
+		}
+		const FStringView Rest = Address.RightChop(Prefix.Len());
+		auto Is = [&Rest](FStringView Name) { return Rest.Equals(Name, ESearchCase::CaseSensitive); };
+
+		// Most frequent first: a frame is ~55 Bone/Pos, a few dozen Blend/Val, one of the rest.
+		if (Is(TEXTVIEW("Bone/Pos")))    return EAddress::BonePos;
+		if (Is(TEXTVIEW("Blend/Val")))   return EAddress::BlendVal;
+		if (Is(TEXTVIEW("Blend/Apply"))) return EAddress::BlendApply;
+		if (Is(TEXTVIEW("Root/Pos")))    return EAddress::RootPos;
+		if (Is(TEXTVIEW("T")))           return EAddress::Time;
+		if (Is(TEXTVIEW("OK")))          return EAddress::Available;
+		for (const FStringView Device : { TEXTVIEW("Hmd/Pos"), TEXTVIEW("Con/Pos"), TEXTVIEW("Tra/Pos"),
+			TEXTVIEW("Hmd/Pos/Local"), TEXTVIEW("Con/Pos/Local"), TEXTVIEW("Tra/Pos/Local") })
+		{
+			if (Is(Device)) return EAddress::DevicePos;
+		}
+		return EAddress::Other;
+	}
+
 	void ReadArgs(const FOSCMessage& Message, FArgs& OutArgs)
 	{
 		OutArgs.Reset();
