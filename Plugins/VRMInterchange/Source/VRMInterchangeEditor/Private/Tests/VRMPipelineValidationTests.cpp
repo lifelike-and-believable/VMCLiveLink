@@ -185,7 +185,7 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
             // The spring's joints are glTF nodes 2, 3 and 4, in order (node indices, not array indices).
             for (int32 i = 0; i < Spring.JointIndices.Num(); ++i)
             {
-                if (Config.Joints.IsValidIndex(Spring.JointIndices[i]))
+                if (TestTrue(*FString::Printf(TEXT("Spring joint %d index is valid"), i), Config.Joints.IsValidIndex(Spring.JointIndices[i])))
                 {
                     TestEqual(*FString::Printf(TEXT("Spring joint %d is node %d"), i, 2 + i), Config.Joints[Spring.JointIndices[i]].NodeIndex, 2 + i);
                 }
