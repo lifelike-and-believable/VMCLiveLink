@@ -74,10 +74,9 @@ public:
     virtual TOptional<UE::Interchange::FImportImage> GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& AlternateTexturePath) const override;
 
 private:
-    // cache payloads after load
-    mutable FVRMParsedModel Parsed;
-    mutable TArray<FString> TexturePayloadKeys;
-    mutable FString MeshPayloadKey;
+    // The model Translate built, shared read-only with the payload calls that follow it. Interchange
+    // translators are const but keep their translation for the payload calls, hence mutable.
+    mutable TSharedPtr<const FVRMParsedModel> ParsedModel;
 
     FString MakeNodeUid(const TCHAR* Suffix) const;
 };

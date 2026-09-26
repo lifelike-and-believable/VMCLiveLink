@@ -156,6 +156,23 @@ TSharedPtr<const FVRMDocument> FVRMDocument::LoadBytes(TArray64<uint8>&& InBytes
 	return Document;
 }
 
+TSharedPtr<const FVRMDocument> FVRMDocument::LoadJson(const FString& InJson, const FString& InFilename, FString& OutError)
+{
+	OutError.Reset();
+	TSharedPtr<FJsonObject> Root;
+	if (InJson.IsEmpty() || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(InJson), Root) || !Root.IsValid())
+	{
+		OutError = FString::Printf(TEXT("The glTF JSON of '%s' could not be parsed."), *InFilename);
+		return nullptr;
+	}
+	const FTCHARToUTF8 Utf8(*InJson);
+	TArray64<uint8> JsonBytes;
+	JsonBytes.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+	TSharedRef<FVRMDocument> Document = MakeShareable(new FVRMDocument(MoveTemp(JsonBytes), InFilename, FString(InJson), Root.ToSharedRef()));
+	Document->GeometryError = FString::Printf(TEXT("The document of '%s' was made from its JSON alone and has no geometry."), *InFilename);
+	return Document;
+}
+
 FVRMDocument::FVRMDocument(TArray64<uint8>&& InBytes, const FString& InFilename, FString&& InJson, const TSharedRef<FJsonObject>& InRoot)
 	: Bytes(MoveTemp(InBytes))
 	, Filename(InFilename)

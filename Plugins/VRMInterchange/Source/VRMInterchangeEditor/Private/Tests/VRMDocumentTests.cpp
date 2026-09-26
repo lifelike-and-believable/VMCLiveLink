@@ -4,6 +4,10 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Interfaces/IPluginManager.h"
+#include "InterchangeSourceData.h"
+#include "InterchangeVRMNode.h"
+#include "Nodes/InterchangeBaseNodeContainer.h"
+#include "VRMSpringBonesPostImportPipeline.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
@@ -104,6 +108,64 @@ bool FVRMDocumentBadInputTest::RunTest(const FString& Parameters)
 		AddExpectedError(TEXT("cgltf"), EAutomationExpectedErrorFlags::Contains, 1);
 		TestFalse(TEXT("No model"), VRM::BuildParsedModel(*NoGeometry, Model));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMDocumentNodeTest, "VRM.Document.PipelineNode",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMDocumentNodeTest::RunTest(const FString& Parameters)
+{
+	// The translator leaves the document's JSON and hash in a VRM node (as below, from
+	// UVRMTranslator::Translate); the spring pipeline takes them from there, so an import reads the
+	// file once.
+	const FString Path = VRMDocumentTests::FixturePath(TEXT("vrm1_minimal"));
+	FString LoadError;
+	const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(Path, LoadError);
+	if (!TestTrue(FString::Printf(TEXT("vrm1_minimal loads (%s)"), *LoadError), Document.IsValid()))
+	{
+		return false;
+	}
+	UInterchangeBaseNodeContainer* Container = NewObject<UInterchangeBaseNodeContainer>();
+	UInterchangeVRMNode* NewNode = NewObject<UInterchangeVRMNode>(Container);
+	Container->SetupNode(NewNode, TEXT("VRM_vrm1_minimal_Document"), TEXT("VRM_Document"), EInterchangeNodeContainerType::TranslatedAsset);
+	NewNode->SetFromDocument(*Document);
+
+	const UInterchangeVRMNode* Node = UInterchangeVRMNode::Find(*Container);
+	if (!TestNotNull(TEXT("The container has a VRM node"), Node))
+	{
+		return false;
+	}
+	FString Hash;
+	TestTrue(TEXT("Hash stored"), Node->GetSourceHash(Hash));
+	TestEqual(TEXT("... and it is the file's"), Hash, LexToString(FMD5Hash::HashFile(*Path)));
+
+	FString Error;
+	const TSharedPtr<const FVRMDocument> FromNode = Node->MakeDocument(Error);
+	if (!TestTrue(FString::Printf(TEXT("Document from the node (%s)"), *Error), FromNode.IsValid()))
+	{
+		return false;
+	}
+	TestFalse(TEXT("It has no geometry"), FromNode->HasGeometry());
+	TestTrue(TEXT("VRM 1.0"), FromNode->GetVersion() == VRM::Coord::EVRMVersion::VRM1);
+	FVRMSpringConfig FromNodeConfig, FromFileConfig;
+	TMap<int32, FName> NodeMap;
+	TMap<int32, int32> NodeParent;
+	TMap<int32, FVRMNodeChildren> NodeChildren;
+	TestTrue(TEXT("Springs from the node"), VRM::ParseSpringBonesFromDocument(*FromNode, FromNodeConfig, NodeMap, NodeParent, NodeChildren, Error));
+	TestTrue(TEXT("Springs from the file"), VRM::ParseSpringBonesFromFile(Path, FromFileConfig, Error));
+	TestEqual(TEXT("Same joints"), FromNodeConfig.Joints.Num(), FromFileConfig.Joints.Num());
+	TestEqual(TEXT("Same springs"), FromNodeConfig.Springs.Num(), FromFileConfig.Springs.Num());
+
+	// The pipeline gets its spring data from the node: it doesn't need the file, which here isn't
+	// where the source data says.
+	UInterchangeSourceData* Moved = NewObject<UInterchangeSourceData>();
+	Moved->SetFilename(FPaths::Combine(FPaths::GetPath(Path), TEXT("moved_away"), TEXT("vrm1_minimal.vrm")));
+	UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+	Pipeline->bGenerateSpringBoneData = true;
+	Pipeline->bGeneratePostProcessAnimBP = false;
+	Pipeline->ExecutePipeline(Container, { Moved }, TEXT("/Game/VRMDocumentTests"));
+	TestTrue(TEXT("Spring data staged without reading the file"), Pipeline->HasPendingPostImportWork());
 	return true;
 }
 

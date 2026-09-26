@@ -19,6 +19,7 @@
 #include "UObject/Package.h"
 #include "Misc/SecureHash.h"
 #include "VRMDocument.h"
+#include "InterchangeVRMNode.h"
 #include "VRMSpringBonesParser.h"
 #include "VRMSpringBonesValidation.h"
 #include "VRMInterchangeLog.h"
@@ -92,15 +93,26 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
     const FString PackagePath = VRMPipeline::MakeCharacterBasePath(Filename, ContentBasePath);
     const FString SkeletonSearchRoot = PackagePath;
 
-    // The file is read once here, for its hash and its spring data (P3.3).
+    // The translator read the file and left its JSON and hash in a VRM node (P3.3), so the file is
+    // not opened again. A container the VRM translator didn't make has no such node; then the
+    // file is read here, once.
     FString LoadError;
-    const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(Filename, LoadError);
     FString SourceHash;
-    if (Document.IsValid())
+    TSharedPtr<const FVRMDocument> Document;
+    if (const UInterchangeVRMNode* VRMNode = UInterchangeVRMNode::Find(*BaseNodeContainer))
     {
-        SourceHash = LexToString(Document->GetSourceHash());
+        Document = VRMNode->MakeDocument(LoadError);
+        VRMNode->GetSourceHash(SourceHash);
     }
     else
+    {
+        Document = FVRMDocument::LoadFile(Filename, LoadError);
+        if (Document.IsValid())
+        {
+            SourceHash = LexToString(Document->GetSourceHash());
+        }
+    }
+    if (!Document.IsValid())
     {
         UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: %s"), *LoadError);
     }
