@@ -15,11 +15,5 @@ public class VRMSpringBonesRuntime : ModuleRules
             "AnimGraphRuntime",
             "AnimationCore"
         });
-
-        PrivateDependencyModuleNames.AddRange(new string[]
-        {
-            "Engine",
-            "CoreUObject"
-        });
     }
 }

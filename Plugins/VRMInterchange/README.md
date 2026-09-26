@@ -50,6 +50,7 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 ### Requirements
 
 - **Unreal Engine**: 5.6 or later
+- **Platform**: Windows (Win64) only, for now. The modules are limited to Win64 because that is the only platform the plugin is built and tested on (the CI runner is Windows). Nothing in the code is known to be Windows-specific; Mac and Linux can be added once they are built and tested.
 - **Dependencies**: 
   - Interchange (built-in)
   - InterchangeEditor (built-in)

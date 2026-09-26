@@ -62,10 +62,10 @@ jobs:
           }
           if ($failed) { exit 1 }
 
-      - name: Build Editor target (Win64 Development)
+      - name: "Build Editor target (Win64 Development, non-unity: every file must include what it uses)"
         run: |
           $Project = (Resolve-Path $env:PROJECT_FILE).Path
-          & "$env:ENGINE_ROOT\Engine\Build\BatchFiles\Build.bat" VMCLiveLinkProjectEditor Win64 Development "-Project=$Project" -WaitMutex -NoHotReload
+          & "$env:ENGINE_ROOT\Engine\Build\BatchFiles\Build.bat" VMCLiveLinkProjectEditor Win64 Development "-Project=$Project" -WaitMutex -NoHotReload -DisableUnity
           if ($LASTEXITCODE -ne 0) { Write-Error "Editor build failed ($LASTEXITCODE)"; exit 1 }
 
       - name: Build Game target (Win64 Development)

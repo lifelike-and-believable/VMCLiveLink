@@ -1021,7 +1021,7 @@ Each item can be done alongside the phase that changes the behaviour it describe
 | ID | Decision | Recommendation |
 |---|---|---|
 | D-1 | VMCLiveLink threading: game-thread dispatch (simple) or receive-thread assembly (lower latency, frame-rate independent) | **Decided 2026-09-26: receive thread, in two steps** (see P3.1). The main gain is per-frame arrival timestamps, so Live Link can smooth jitter; latency improves by at most about one game frame, more when the editor is throttled. |
-| D-2 | Supported platforms and engine versions (5.6 only, or 5.5 to 5.7) | Editor: Win64, Mac, Linux. Runtime: all desktop. Support the current and previous engine version and add a CI matrix. |
+| D-2 | Supported platforms and engine versions (5.6 only, or 5.5 to 5.7) | **Decided 2026-09-26: Win64 only for now** (P3.5). It is the only platform built and tested (the CI runner is Windows); the READMEs say so. Revisit when Mac or Linux can be built and tested. Engine versions stay 5.6. |
 | D-3 | Keep the "identity bone rotation" reference pose, or preserve source bind rotations | Keep identity for now (it matches VMC local rotations and the VRM 1.0 normalized pose), but make it explicit and documented, and apply it consistently to spring data (P1.11). Revisit if non-VRM glTF support becomes a goal. |
 | D-4 | Dependency direction between the plugins for avatar-driven mapping (P4.4) | VRMInterchange's `VRMCore` stays independent. VMCLiveLink takes an **optional** plugin dependency, or a tiny third "VMC-VRM Bridge" plugin holds the integration. |
 | D-5 | Apply VMC v2.1 root scale and offset | Parse always. Apply scale to root translation behind a setting (default on) because senders use it for avatar height calibration. |

@@ -5,8 +5,6 @@
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
 
-class UVRMSpringBoneData;
-
 class VRMINTERCHANGEEDITOR_API FVRMInterchangeEditorModule : public IModuleInterface
 {
 public:
@@ -19,10 +17,4 @@ private:
 
 	FDelegateHandle PostEngineInitHandle;
 
-public:
-
-#if WITH_EDITOR
-	static void NotifySpringDataCreated(UVRMSpringBoneData* Asset);
-	static void NotifySpringDataSaved(UVRMSpringBoneData* Asset);
-#endif
 };
