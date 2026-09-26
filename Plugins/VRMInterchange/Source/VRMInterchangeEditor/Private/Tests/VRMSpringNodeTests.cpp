@@ -12,6 +12,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "ReferenceSkeleton.h"
 #include "Math/RandomStream.h"
+#include "Misc/MemStack.h"
 
 namespace VRMSpringNodeTests
 {
@@ -37,7 +38,8 @@ namespace VRMSpringNodeTests
 		}
 	};
 
-	/** A pose of the rig with only the listed bones required, as an LOD would. */
+	/** A pose of the rig with only the listed bones required, as an LOD would. Poses allocate from the
+	 *  thread's FMemStack, so a test must hold an FMemMark for as long as its poses live. */
 	struct FPose
 	{
 		FBoneContainer Bones;
@@ -105,6 +107,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringNodeEvaluateTwice, "VRM.SpringBones.N
 bool FVRMSpringNodeEvaluateTwice::RunTest(const FString& Parameters)
 {
 	using namespace VRMSpringNodeTests;
+	FMemMark Mark(FMemStack::Get()); // poses allocate from the mem stack, as inside an anim graph evaluation
 	FRig Rig;
 	FPose Pose(Rig, { 0, 1, 2, 3 });
 	FAnimNode_VRMSpringBones Node;
@@ -128,6 +131,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringNodeSwapData, "VRM.SpringBones.Node.S
 bool FVRMSpringNodeSwapData::RunTest(const FString& Parameters)
 {
 	using namespace VRMSpringNodeTests;
+	FMemMark Mark(FMemStack::Get()); // poses allocate from the mem stack, as inside an anim graph evaluation
 	FRig Rig;
 	FPose Pose(Rig, { 0, 1, 2, 3 });
 	FAnimNode_VRMSpringBones Node;
@@ -195,6 +199,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringNodeReset, "VRM.SpringBones.Node.Rese
 bool FVRMSpringNodeReset::RunTest(const FString& Parameters)
 {
 	using namespace VRMSpringNodeTests;
+	FMemMark Mark(FMemStack::Get()); // poses allocate from the mem stack, as inside an anim graph evaluation
 	FRig Rig;
 	FPose Pose(Rig, { 0, 1, 2, 3 });
 	UVRMSpringBoneData* Data = MakeHair();
@@ -238,6 +243,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringNodeLOD, "VRM.SpringBones.Node.LODCha
 bool FVRMSpringNodeLOD::RunTest(const FString& Parameters)
 {
 	using namespace VRMSpringNodeTests;
+	FMemMark Mark(FMemStack::Get()); // poses allocate from the mem stack, as inside an anim graph evaluation
 	FRig Rig;
 	FPose Full(Rig, { 0, 1, 2, 3 });
 	FPose Reduced(Rig, { 0, 1, 2 }); // Hair3 dropped, as a lower LOD might
