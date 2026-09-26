@@ -64,7 +64,11 @@ namespace VRMPipeline
 			{
 				if (UInheritableComponentHandler* Handler = Blueprint->GetInheritableComponentHandler(true))
 				{
-					return Cast<USkeletalMeshComponent>(Handler->CreateOverridenComponentTemplate(FComponentKey(Node)));
+					// If no override can be made, keep looking (another parent, then the native component).
+					if (USkeletalMeshComponent* Override = Cast<USkeletalMeshComponent>(Handler->CreateOverridenComponentTemplate(FComponentKey(Node))))
+					{
+						return Override;
+					}
 				}
 			}
 		}
@@ -98,35 +102,39 @@ namespace VRMPipeline
 		// matter: they are written straight to the properties (the *_InContainer writers would call
 		// the same setters). The mesh is held twice (the skinned asset of USkinnedMeshComponent and
 		// SkeletalMeshAsset); both are set so they agree.
-		Template->Modify();
-		bool bMeshSet = false;
-		for (const TCHAR* PropertyName : { TEXT("SkeletalMeshAsset"), TEXT("SkinnedAsset") })
+		// Both must be found, or the component would be left holding two different meshes.
+		FObjectPropertyBase* MeshProperty = FindFProperty<FObjectPropertyBase>(Template->GetClass(), TEXT("SkeletalMeshAsset"));
+		FObjectPropertyBase* SkinnedProperty = FindFProperty<FObjectPropertyBase>(Template->GetClass(), TEXT("SkinnedAsset"));
+		if (!MeshProperty || !SkinnedProperty)
 		{
-			if (FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(Template->GetClass(), PropertyName))
-			{
-				Property->SetObjectPropertyValue(Property->ContainerPtrToValuePtr<void>(Template), Mesh);
-				bMeshSet = true;
-			}
-		}
-		if (!bMeshSet)
-		{
-			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not set the mesh of '%s' (no SkeletalMeshAsset property)."), *Template->GetPathName());
+			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not set the mesh of '%s' (no %s property)."),
+				*Template->GetPathName(), !MeshProperty ? TEXT("SkeletalMeshAsset") : TEXT("SkinnedAsset"));
 			return false;
 		}
+		Template->Modify();
+		MeshProperty->SetObjectPropertyValue(MeshProperty->ContainerPtrToValuePtr<void>(Template), Mesh);
+		SkinnedProperty->SetObjectPropertyValue(SkinnedProperty->ContainerPtrToValuePtr<void>(Template), Mesh);
+		bool bAnimSet = true;
 		if (AnimClass)
 		{
-			if (FByteProperty* Mode = FindFProperty<FByteProperty>(Template->GetClass(), TEXT("AnimationMode")))
+			FByteProperty* Mode = FindFProperty<FByteProperty>(Template->GetClass(), TEXT("AnimationMode"));
+			FObjectPropertyBase* Class = FindFProperty<FObjectPropertyBase>(Template->GetClass(), TEXT("AnimClass"));
+			if (Mode && Class)
 			{
 				Mode->SetPropertyValue(Mode->ContainerPtrToValuePtr<void>(Template), uint8(EAnimationMode::AnimationBlueprint));
-			}
-			if (FObjectPropertyBase* Class = FindFProperty<FObjectPropertyBase>(Template->GetClass(), TEXT("AnimClass")))
-			{
 				Class->SetObjectPropertyValue(Class->ContainerPtrToValuePtr<void>(Template), AnimClass.Get());
+			}
+			else
+			{
+				// The mesh is still applied (compiled below); the caller learns the anim class wasn't.
+				UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not set the anim class of '%s' (no %s property)."),
+					*Template->GetPathName(), !Mode ? TEXT("AnimationMode") : TEXT("AnimClass"));
+				bAnimSet = false;
 			}
 		}
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
-		return true;
+		return bAnimSet;
 	}
 
 	bool SetBlueprintObjectVariable(UBlueprint* Blueprint, FName VariableName, UObject* Value)

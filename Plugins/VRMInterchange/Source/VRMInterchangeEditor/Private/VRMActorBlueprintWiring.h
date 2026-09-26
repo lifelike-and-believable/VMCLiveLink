@@ -28,7 +28,8 @@ namespace VRMPipeline
 	/**
 	 * Sets that component's mesh and, if AnimClass is set, its anim Blueprint, then marks the
 	 * Blueprint modified and compiles it. False, with a warning, if the Blueprint has no skeletal
-	 * mesh component.
+	 * mesh component or its mesh can't be set, or if the anim class can't be set (the mesh is
+	 * still applied then).
 	 */
 	bool SetActorBlueprintMesh(UBlueprint* Blueprint, USkeletalMesh* Mesh, TSubclassOf<UAnimInstance> AnimClass);
 

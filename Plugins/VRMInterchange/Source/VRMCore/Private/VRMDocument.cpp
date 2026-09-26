@@ -209,6 +209,10 @@ void FVRMDocument::LoadGeometry()
 	cgltf_result Result = cgltf_parse(&Options, Bytes.GetData(), cgltf_size(Bytes.Num()), &Data);
 	if (Result != cgltf_result_success || !Data)
 	{
+		if (Data)
+		{
+			cgltf_free(Data); // cgltf frees its own partial parse, but don't rely on it
+		}
 		GeometryError = FString::Printf(TEXT("cgltf_parse failed (cgltf error %d): %s"), int32(Result), *Filename);
 		return;
 	}

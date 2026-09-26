@@ -8,7 +8,7 @@
 #include "AnimNode_VRMSpringBones.generated.h"
 
 /** Where spring tails are simulated, for springs without a center bone. */
-UENUM()
+UENUM(BlueprintType)
 enum class EVRMSpringSimulationSpace : uint8
 {
 	/** Moving or turning the character swings the springs (the VRM reference behaviour). */

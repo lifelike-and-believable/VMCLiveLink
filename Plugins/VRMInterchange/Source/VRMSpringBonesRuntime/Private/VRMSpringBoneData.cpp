@@ -71,7 +71,7 @@ void UVRMSpringBoneData::PostLoad()
     if (bNeedsReimport)
     {
         UE_LOG(LogVRMSpringData, Warning,
-            TEXT("%s holds spring data from an older VRMInterchange version that a fresh import would produce differently (collider axes, or VRM 0.x chains without their descendant bones). Reimport '%s' to update it."),
+            TEXT("%s holds spring data from an older VRMInterchange version that a fresh import would produce differently (collider and gravity axes, or VRM 0.x chains without their descendant bones). Reimport '%s' to update it."),
             *GetPathName(), SourceFilename.IsEmpty() ? TEXT("the source VRM file") : *SourceFilename);
     }
 }
@@ -126,10 +126,8 @@ void UVRMSpringBoneData::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
         {
             Spring.Stiffness = FMath::Clamp(Spring.Stiffness, 0.f, 1.f);
             Spring.Drag = FMath::Clamp(Spring.Drag, 0.f, 1.f);
-            if (!Spring.GravityDir.IsNearlyZero())
-            {
-                Spring.GravityDir = Spring.GravityDir.GetSafeNormal();
-            }
+            // A zero direction falls back to down, as on import (VRMSpringBonesParser.cpp).
+            Spring.GravityDir = Spring.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
             Spring.GravityPower = FMath::Max(0.f, Spring.GravityPower);
             Spring.HitRadius = FMath::Max(0.f, Spring.HitRadius);
         }
@@ -138,10 +136,7 @@ void UVRMSpringBoneData::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
         {
             Joint.Stiffness = FMath::Clamp(Joint.Stiffness, 0.f, 1.f);
             Joint.Drag = FMath::Clamp(Joint.Drag, 0.f, 1.f);
-            if (!Joint.GravityDir.IsNearlyZero())
-            {
-                Joint.GravityDir = Joint.GravityDir.GetSafeNormal();
-            }
+            Joint.GravityDir = Joint.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
             Joint.GravityPower = FMath::Max(0.f, Joint.GravityPower);
             Joint.HitRadius = FMath::Max(0.f, Joint.HitRadius);
         }

@@ -279,8 +279,10 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
             {
                 if (A->data) { ReadAccessorVec2f(*A->data, UVLocal); }
             }
-            if (UVLocal.Num() == 0)
+            if (UVLocal.Num() < PosLocal.Num())
             {
+                // Missing UVs are zero. (cgltf_validate rejects a primitive whose attribute counts
+                // differ, so a short array isn't expected; this keeps the per-vertex read in bounds.)
                 UVLocal.SetNumZeroed(PosLocal.Num());
             }
 
@@ -379,7 +381,8 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
                 }
                 else
                 {
-                    Out.Mesh.Normals.Add(FVector3f(0, 0, 1));
+                    // No normal: glTF up (+Y), converted like a real normal so it follows the node.
+                    Out.Mesh.Normals.Add(Convention.Direction(TransformNormal(NormalXf, FVector3f(0, 1, 0))));
                 }
 
                 Out.Mesh.UV0.Add(UVLocal[v]);
@@ -718,7 +721,8 @@ static bool LoadImagesFromCgltf(const cgltf_data* Data, const FString& Filename,
             {
                 const cgltf_buffer_view* View = Img->buffer_view;
                 const cgltf_buffer* Buffer = View->buffer;
-                if (Buffer && Buffer->data && View->offset + View->size <= Buffer->size)
+                // Written so a huge offset or size can't wrap around and pass the check.
+                if (Buffer && Buffer->data && View->offset <= Buffer->size && View->size <= Buffer->size - View->offset)
                 {
                     const uint8* Ptr = (const uint8*)Buffer->data + View->offset;
                     const size_t Size = View->size;

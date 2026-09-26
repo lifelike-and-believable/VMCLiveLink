@@ -252,6 +252,9 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
 
     // Name base color textures after their material (suffix _DIFFUSE)
 #if WITH_EDITORONLY_DATA
+    // A texture used several ways (ORM and AO from one image, or one image in several materials)
+    // keeps the first name it gets, so the name doesn't depend on which use came last.
+    TSet<FString> NamedTextureFactories;
     auto SetTexName = [&](int32 ImageIndex, VRM::ETextureUsage Usage, const FString& Base, const TCHAR* Suffix)
     {
         if (!TextureNodeUids.IsValidIndex(ImageIndex)) return;
@@ -259,6 +262,9 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         if (!FoundUid) return;
         const FString TexUid = *FoundUid;
         const FString TexFactoryUid = UInterchangeTexture2DFactoryNode::GetTextureFactoryNodeUidFromTextureNodeUid(TexUid);
+        bool bAlreadyNamed = false;
+        NamedTextureFactories.Add(TexFactoryUid, &bAlreadyNamed);
+        if (bAlreadyNamed) return;
         if (UInterchangeTexture2DFactoryNode* TexFactory = Cast<UInterchangeTexture2DFactoryNode>(NodeContainer.GetFactoryNode(TexFactoryUid)))
         {
             TexFactory->SetDisplayLabel(Base + Suffix);

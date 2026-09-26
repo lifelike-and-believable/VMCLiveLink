@@ -80,8 +80,10 @@ void FVRMInterchangeEditorModule::OnPostEngineInit()
 		LOCTEXT("RegisterPipelinesTip", "Add the VRM import pipelines to the Interchange project settings and save them."),
 		FSimpleDelegate::CreateLambda([Close]()
 		{
-			VRMImportPipelineRegistration::Apply();
-			Close(SNotificationItem::CS_Success);
+			// Apply() is false when it changed nothing: fine if another path registered the
+			// pipelines since the prompt appeared, a failure if they still aren't registered.
+			const bool bRegistered = VRMImportPipelineRegistration::Apply() || VRMImportPipelineRegistration::IsUpToDate();
+			Close(bRegistered ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
 		}),
 		SNotificationItem::CS_None));
 	Info.ButtonDetails.Add(FNotificationButtonInfo(

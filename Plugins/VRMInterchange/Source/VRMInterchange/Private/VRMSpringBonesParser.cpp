@@ -877,7 +877,9 @@ namespace
         {
             const FMatrix World = NodeWorld.IsValidIndex(Collider.NodeIndex) ? NodeWorld[Collider.NodeIndex] : FMatrix::Identity;
             const FMatrix NormalXf = World.Inverse().GetTransposed();
-            const float RadiusScale = Scale * float(FVector(World.M[0][0], World.M[0][1], World.M[0][2]).Size());
+            // A sphere can't follow non-uniform scale; the largest axis keeps it covering the shape.
+            // Uniform scale (the usual case) gives the same radius as any one axis.
+            const float RadiusScale = Scale * float(World.GetMaximumAxisScale());
             auto ConvertOffset = [&World, &Convention, bVRM0](FVector Offset)
             {
                 if (bVRM0)
@@ -981,11 +983,17 @@ namespace VRM
     bool ParseSpringBonesFromJson(const FString& Json, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError)
     {
         OutNodeMap.Reset();
-        if (!ParseSpringBonesFromJson(Json, OutConfig, OutError))
+        OutConfig = FVRMSpringConfig();
+        OutError.Empty();
+        if (Json.IsEmpty()) { OutError = TEXT("Empty JSON."); return false; }
+        // Parsed once for both the springs and the node names.
+        const TSharedPtr<FJsonObject> Root = DeserializeJson(Json);
+        if (!Root.IsValid()) { OutError = TEXT("Failed to parse JSON."); return false; }
+        if (!ParseSpringBonesFromRoot(Root, OutConfig, OutError))
         {
             return false;
         }
-        ReadNodeNames(DeserializeJson(Json), OutNodeMap);
+        ReadNodeNames(Root, OutNodeMap);
         return true;
     }
 

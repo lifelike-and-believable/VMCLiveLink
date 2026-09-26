@@ -2,6 +2,7 @@
 #include "AnimGraphNode_VRMSpringBones.h"
 #include "Animation/AnimBlueprint.h"
 #include "Animation/Skeleton.h"
+#include "EdGraph/EdGraphPin.h"
 
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/CompilerResultsLog.h"
@@ -27,16 +28,18 @@ const UVRMSpringBoneData* UAnimGraphNode_VRMSpringBones::GetSpringDataForValidat
     {
         return Node.SpringData.Get();
     }
-    // With the pin shown, the asset is the pin's default, or comes from the graph: a linked pin, or a
-    // binding to a variable (the plugin's template AnimBlueprint binds it to SpringConfig, which the
-    // import pipeline sets). Only the default can be checked here.
-    if (const UEdGraphPin* Pin = FindPin(GET_MEMBER_NAME_CHECKED(FAnimNode_VRMSpringBones, SpringData)))
+    // With the pin shown, the asset comes from the graph (a linked pin, or a binding to a variable:
+    // the plugin's template AnimBlueprint binds it to SpringConfig, which the import pipeline sets)
+    // or is the pin's default. Only the default can be checked here; a pin with none of these is unset.
+    const FName PinName = GET_MEMBER_NAME_CHECKED(FAnimNode_VRMSpringBones, SpringData);
+    if (const UEdGraphPin* Pin = FindPin(PinName))
     {
-        if (const UVRMSpringBoneData* Default = Cast<UVRMSpringBoneData>(Pin->DefaultObject))
+        if (Pin->LinkedTo.Num() > 0 || HasBinding(PinName))
         {
-            return Default;
+            bOutFromGraph = true;
+            return nullptr;
         }
-        bOutFromGraph = true;
+        return Cast<UVRMSpringBoneData>(Pin->DefaultObject);
     }
     return nullptr;
 }
@@ -61,14 +64,14 @@ void UAnimGraphNode_VRMSpringBones::ValidateAnimNodeDuringCompilation(USkeleton*
     if (SpringData->bNeedsReimport)
     {
         const FString Message = FString::Printf(
-            TEXT("@@: spring data '%s' is from an older VRMInterchange version and won't match a fresh import. Reimport '%s' to update it."),
+            TEXT("@@: spring data '%s' is from an older VRMInterchange version (collider and gravity axes, or VRM 0.x chains without their descendant bones) and won't match a fresh import. Reimport '%s' to update it."),
             *SpringData->GetName(),
             SpringData->SourceFilename.IsEmpty() ? TEXT("the source VRM file") : *SpringData->SourceFilename);
         MessageLog.Warning(*Message, this);
     }
 
     const FVRMSpringConfig& Cfg = SpringData->SpringConfig;
-    if (!Cfg.IsValid())
+    if (Cfg.Springs.Num() == 0)
     {
         MessageLog.Warning(*FString::Printf(TEXT("@@: spring data '%s' has no springs. Reimport the VRM file with Generate Spring Bone Data on."), *SpringData->GetName()), this);
         return;

@@ -96,8 +96,8 @@ public:
 	/** Takes the chains and colliders. Rest data is captured by the next Reset. */
 	void Init(const FVRMSpringSolverSetup& InSetup, const FVRMSpringSolverSettings& InSettings = FVRMSpringSolverSettings());
 
-	/** Changes the settings without restarting, except that a change of space restarts the tails
-	 *  from the next pose. */
+	/** Changes the settings without restarting, except that a change of space or of virtual tail
+	 *  length restarts the tails from the next pose. */
 	void SetSettings(const FVRMSpringSolverSettings& InSettings);
 	const FVRMSpringSolverSettings& GetSettings() const { return Settings; }
 
