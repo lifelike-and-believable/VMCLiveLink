@@ -29,9 +29,35 @@ bool UVRMSpringBoneData::RequiresReimport(int32 DataVersion, const FVRMSpringCon
     return bHasGeometry && DataVersion < FVRMSpringDataCustomVersion::ConvertedColliderAxes;
 }
 
+void UVRMSpringBoneData::CopySpringParametersToJoints(FVRMSpringConfig& Config)
+{
+    for (const FVRMSpring& Spring : Config.Springs)
+    {
+        for (const int32 JointIndex : Spring.JointIndices)
+        {
+            if (Config.Joints.IsValidIndex(JointIndex))
+            {
+                FVRMSpringJoint& Joint = Config.Joints[JointIndex];
+                Joint.Stiffness = Spring.Stiffness;
+                Joint.Drag = Spring.Drag;
+                Joint.GravityDir = Spring.GravityDir;
+                Joint.GravityPower = Spring.GravityPower;
+                Joint.HitRadius = Spring.HitRadius;
+            }
+        }
+    }
+}
+
 void UVRMSpringBoneData::PostLoad()
 {
     Super::PostLoad();
+
+    // Before PerJointParameters the solver read the spring's parameters, so giving every joint its
+    // spring's values keeps the asset behaving as it did.
+    if (LoadedDataVersion < FVRMSpringDataCustomVersion::PerJointParameters)
+    {
+        CopySpringParametersToJoints(SpringConfig);
+    }
 
     // Once set, the flag stays until a reimport replaces the asset: saving an old asset stamps
     // the latest version on it without changing its data.
@@ -102,6 +128,18 @@ void UVRMSpringBoneData::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
             Spring.HitRadius = FMath::Max(0.f, Spring.HitRadius);
         }
 
+        for (FVRMSpringJoint& Joint : SpringConfig.Joints)
+        {
+            Joint.Stiffness = FMath::Clamp(Joint.Stiffness, 0.f, 1.f);
+            Joint.Drag = FMath::Clamp(Joint.Drag, 0.f, 1.f);
+            if (!Joint.GravityDir.IsNearlyZero())
+            {
+                Joint.GravityDir = Joint.GravityDir.GetSafeNormal();
+            }
+            Joint.GravityPower = FMath::Max(0.f, Joint.GravityPower);
+            Joint.HitRadius = FMath::Max(0.f, Joint.HitRadius);
+        }
+
         // Sanitize Colliders
         for (FVRMSpringCollider& Col : SpringConfig.Colliders)
         {
@@ -126,6 +164,50 @@ void UVRMSpringBoneData::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
             }
         }
     }
+}
+
+void UVRMSpringBoneData::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
+{
+    Super::PostEditChangeChainProperty(PropertyChangedEvent); // also routes to PostEditChangeProperty (clamping)
+
+    // A spring's Stiffness/Drag/GravityDir/GravityPower/HitRadius are "apply to all joints" helpers:
+    // the solver reads each joint's own values. Find which spring field the edit was in, if any.
+    static const TSet<FName> SpringFields = { TEXT("Stiffness"), TEXT("Drag"), TEXT("GravityDir"), TEXT("GravityPower"), TEXT("HitRadius") };
+    FName SpringField = NAME_None;
+    for (FEditPropertyChain::TDoubleLinkedListNode* Node = PropertyChangedEvent.PropertyChain.GetHead(); Node; Node = Node->GetNextNode())
+    {
+        const FProperty* Prop = Node->GetValue();
+        if (Prop && Prop->GetOwnerStruct() == FVRMSpring::StaticStruct() && SpringFields.Contains(Prop->GetFName()))
+        {
+            SpringField = Prop->GetFName();
+            break;
+        }
+    }
+    if (SpringField.IsNone())
+    {
+        return;
+    }
+
+    const int32 EditedSpring = PropertyChangedEvent.GetArrayIndex(TEXT("Springs"));
+    for (int32 SpringIndex = 0; SpringIndex < SpringConfig.Springs.Num(); ++SpringIndex)
+    {
+        if (EditedSpring != INDEX_NONE && SpringIndex != EditedSpring)
+        {
+            continue;
+        }
+        const FVRMSpring& Spring = SpringConfig.Springs[SpringIndex];
+        for (const int32 JointIndex : Spring.JointIndices)
+        {
+            if (!SpringConfig.Joints.IsValidIndex(JointIndex)) continue;
+            FVRMSpringJoint& Joint = SpringConfig.Joints[JointIndex];
+            if (SpringField == TEXT("Stiffness"))         { Joint.Stiffness = Spring.Stiffness; }
+            else if (SpringField == TEXT("Drag"))         { Joint.Drag = Spring.Drag; }
+            else if (SpringField == TEXT("GravityDir"))   { Joint.GravityDir = Spring.GravityDir; }
+            else if (SpringField == TEXT("GravityPower")) { Joint.GravityPower = Spring.GravityPower; }
+            else if (SpringField == TEXT("HitRadius"))    { Joint.HitRadius = Spring.HitRadius; }
+        }
+    }
+    ++EditRevision;
 }
 
 // Called once after ParseSpringBonesFromJson(... OutNodeParent, OutNodeChildren ...)

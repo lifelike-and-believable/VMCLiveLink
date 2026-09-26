@@ -79,4 +79,68 @@ bool FVRMFixturesSpringSpecDetected::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMFixturesSpringJointParameters, "VRM.Fixtures.SpringJointParameters",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMFixturesSpringJointParameters::RunTest(const FString& Parameters)
+{
+	// Each joint's parameters must match the sidecar's springs.joint_params (glTF units), keyed by
+	// node. vrm1_minimal sets different values on every joint of its chain; vrm0_minimal gives
+	// every joint its bone group's values.
+	const FString Dir = VRMFixtures::GetFixtureDir();
+	const float Tolerance = 1.0e-3f;
+	const TCHAR* const SpringFixtures[] = { TEXT("vrm1_minimal"), TEXT("vrm0_minimal") };
+	for (const TCHAR* Name : SpringFixtures)
+	{
+		FVRMSpringConfig Config;
+		FString Error;
+		FString ExpectedText;
+		TSharedPtr<FJsonObject> Expected;
+		if (!TestTrue(FString::Printf(TEXT("%s parses"), Name), VRM::ParseSpringBonesFromFile(FPaths::Combine(Dir, FString(Name) + TEXT(".vrm")), Config, Error))
+			|| !TestTrue(FString::Printf(TEXT("%s sidecar loads"), Name),
+				FFileHelper::LoadFileToString(ExpectedText, *FPaths::Combine(Dir, FString(Name) + TEXT(".expected.json")))
+				&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ExpectedText), Expected) && Expected.IsValid()))
+		{
+			continue;
+		}
+
+		const TSharedPtr<FJsonObject>* Springs = nullptr;
+		const TSharedPtr<FJsonObject>* JointParams = nullptr;
+		if (!TestTrue(TEXT("Sidecar has springs.joint_params"), Expected->TryGetObjectField(TEXT("springs"), Springs) && Springs
+			&& (*Springs)->TryGetObjectField(TEXT("joint_params"), JointParams) && JointParams))
+		{
+			continue;
+		}
+
+		TestTrue(FString::Printf(TEXT("%s has joints"), Name), Config.Joints.Num() > 0);
+		for (const FVRMSpringJoint& Joint : Config.Joints)
+		{
+			const TSharedPtr<FJsonObject>* Want = nullptr;
+			if (!TestTrue(FString::Printf(TEXT("%s joint node %d is in the sidecar"), Name, Joint.NodeIndex),
+				(*JointParams)->TryGetObjectField(FString::FromInt(Joint.NodeIndex), Want) && Want))
+			{
+				continue;
+			}
+			const FString What = FString::Printf(TEXT("%s node %d"), Name, Joint.NodeIndex);
+			TestEqual(*(What + TEXT(" stiffness")), Joint.Stiffness, float((*Want)->GetNumberField(TEXT("stiffness"))), Tolerance);
+			TestEqual(*(What + TEXT(" drag")), Joint.Drag, float((*Want)->GetNumberField(TEXT("drag"))), Tolerance);
+			TestEqual(*(What + TEXT(" gravity power (UE units)")), Joint.GravityPower, float((*Want)->GetNumberField(TEXT("gravity_power")) * 100.0), Tolerance);
+			TestEqual(*(What + TEXT(" hit radius (cm)")), Joint.HitRadius, float((*Want)->GetNumberField(TEXT("hit_radius_m")) * 100.0), Tolerance);
+			TestTrue(*(What + TEXT(" gravity down")), Joint.GravityDir.Equals(FVector(0, 0, -1), Tolerance));
+		}
+	}
+
+	// vrm1_minimal: the spine collider's extended shape (inside sphere, 0.3 m) replaces its base sphere.
+	FVRMSpringConfig Config1;
+	FString Error;
+	if (VRM::ParseSpringBonesFromFile(FPaths::Combine(Dir, TEXT("vrm1_minimal.vrm")), Config1, Error)
+		&& TestEqual(TEXT("vrm1_minimal colliders"), Config1.Colliders.Num(), 2)
+		&& TestEqual(TEXT("Extended collider has one sphere"), Config1.Colliders[1].Spheres.Num(), 1))
+	{
+		TestEqual(TEXT("Extended collider radius (cm)"), Config1.Colliders[1].Spheres[0].Radius, 30.f, Tolerance);
+		TestTrue(TEXT("Extended collider is inside"), Config1.Colliders[1].Spheres[0].bInside);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

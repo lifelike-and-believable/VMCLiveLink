@@ -120,9 +120,7 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
       "colliders": [
         {
           "node": 1,
-          "shapes": [
-            {"sphere": {"offset": [0, 0, 0], "radius": 0.12}}
-          ]
+          "shape": {"sphere": {"offset": [0, 0, 0], "radius": 0.12}}
         }
       ],
       "colliderGroups": [
@@ -132,17 +130,12 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
         {
           "name": "MainHairSpring",
           "joints": [
-            {"node": 2, "hitRadius": 0.02},
-            {"node": 3, "hitRadius": 0.015},
+            {"node": 2, "hitRadius": 0.02, "stiffness": 0.7, "dragForce": 0.3, "gravityDir": [0, -1, 0], "gravityPower": 0.15},
+            {"node": 3, "hitRadius": 0.015, "stiffness": 0.7, "dragForce": 0.3, "gravityDir": [0, -1, 0], "gravityPower": 0.15},
             {"node": 4, "hitRadius": 0.01}
           ],
           "colliderGroups": [0],
-          "center": 0,
-          "stiffness": 0.7,
-          "drag": 0.3,
-          "gravityDir": [0, -1, 0],
-          "gravityPower": 0.15,
-          "hitRadius": 0.025
+          "center": 0
         }
       ]
     }
@@ -181,9 +174,14 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
             TestEqual(TEXT("Spring has correct name"), Spring.Name, FString(TEXT("MainHairSpring")));
             TestEqual(TEXT("Spring has 3 joints"), Spring.JointIndices.Num(), 3);
             TestEqual(TEXT("Spring references collider group"), Spring.ColliderGroupIndices.Num(), 1);
-            TestTrue(TEXT("Spring stiffness in valid range"), Spring.Stiffness >= 0.0f && Spring.Stiffness <= 1.0f);
-            TestTrue(TEXT("Spring drag in valid range"), Spring.Drag >= 0.0f && Spring.Drag <= 1.0f);
-            TestTrue(TEXT("Spring gravity power reasonable (UE units)"), Spring.GravityPower >= 0.0f && Spring.GravityPower <= 100.0f);
+            for (const int32 JointIndex : Spring.JointIndices)
+            {
+                if (!TestTrue(TEXT("Joint index valid"), Config.Joints.IsValidIndex(JointIndex))) continue;
+                const FVRMSpringJoint& Joint = Config.Joints[JointIndex];
+                TestTrue(TEXT("Joint stiffness in valid range"), Joint.Stiffness >= 0.0f && Joint.Stiffness <= 1.0f);
+                TestTrue(TEXT("Joint drag in valid range"), Joint.Drag >= 0.0f && Joint.Drag <= 1.0f);
+                TestTrue(TEXT("Joint gravity power reasonable (UE units)"), Joint.GravityPower >= 0.0f && Joint.GravityPower <= 100.0f);
+            }
         }
         
         AddInfo(FString::Printf(TEXT("Successfully parsed VRM with %d springs, %d colliders, %d joints"), 

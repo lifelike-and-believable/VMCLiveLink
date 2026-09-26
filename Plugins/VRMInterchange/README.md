@@ -143,12 +143,14 @@ If you prefer manual control:
 ### Spring Bone Parameters
 
 The `VRMSpringBoneData` asset contains:
-- **Spring Config**: Per-spring stiffness, damping, gravity, and drag force
+- **Joints**: stiffness, drag, gravity direction and power, and hit radius for every joint. The solver reads these. VRM 1.0 files set them per joint; VRM 0.x files set them per bone group, and every joint of the group gets a copy.
+- **Springs**: the chains of joints, with their collider groups and center. A spring's stiffness, drag, gravity and hit radius fields are editing helpers: changing one applies it to every joint of that spring.
 - **Node Hierarchy**: Bone parent-child relationships
-- **Colliders**: Sphere and capsule collision volumes
-- **Joint Settings**: Per-joint radius and hit radius
+- **Colliders**: Sphere, capsule and plane collision volumes. For VRM 1.0 colliders with the `VRMC_springBone_extended_collider` extension, the extended shape (including inside colliders and planes) replaces the base shape.
 
 Edit these values in the Data Asset to fine-tune spring behavior.
+
+Some VRM 1.0 files use layouts from before the spec was final: a collider `shapes` array, parameters on the spring instead of the joints, `drag` instead of `dragForce`. These are still read for now, and each use is logged. Set `vrm.SpringBones.LenientSchema 0` to ignore them and import only what the spec defines.
 
 ## Using IK Rigs
 

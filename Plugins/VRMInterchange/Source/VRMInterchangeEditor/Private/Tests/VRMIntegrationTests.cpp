@@ -36,14 +36,12 @@ bool FVRMIntegrationTestVRM10::RunTest(const FString& Parameters)
       "colliders": [
         {
           "node": 1,
-          "shapes": [
-            {
-              "sphere": {
-                "offset": [0, 0, 0],
-                "radius": 0.15
-              }
+          "shape": {
+            "sphere": {
+              "offset": [0, 0, 0],
+              "radius": 0.15
             }
-          ]
+          }
         }
       ],
       "colliderGroups": [
@@ -56,16 +54,11 @@ bool FVRMIntegrationTestVRM10::RunTest(const FString& Parameters)
         {
           "name": "HairSpring",
           "joints": [
-            {"node": 2, "hitRadius": 0.02},
-            {"node": 3, "hitRadius": 0.015}
+            {"node": 2, "hitRadius": 0.02, "stiffness": 0.8, "dragForce": 0.2, "gravityDir": [0, -1, 0], "gravityPower": 0.1},
+            {"node": 3, "hitRadius": 0.015, "stiffness": 0.8, "dragForce": 0.2, "gravityDir": [0, -1, 0], "gravityPower": 0.1}
           ],
           "colliderGroups": [0],
-          "center": 0,
-          "stiffness": 0.8,
-          "drag": 0.2,
-          "gravityDir": [0, -1, 0],
-          "gravityPower": 0.1,
-          "hitRadius": 0.02
+          "center": 0
         }
       ]
     }
@@ -100,8 +93,13 @@ bool FVRMIntegrationTestVRM10::RunTest(const FString& Parameters)
                 TestEqual(TEXT("Second joint node"), Config.Joints[Spring.JointIndices[1]].NodeIndex, 3);
             }
             TestEqual(TEXT("Spring collider group count"), Spring.ColliderGroupIndices.Num(), 1);
-            TestEqual(TEXT("Spring stiffness"), Spring.Stiffness, 0.8f);
-            TestEqual(TEXT("Spring drag"), Spring.Drag, 0.2f);
+            for (const int32 JointIndex : Spring.JointIndices)
+            {
+                if (!Config.Joints.IsValidIndex(JointIndex)) continue;
+                TestEqual(TEXT("Joint stiffness"), Config.Joints[JointIndex].Stiffness, 0.8f);
+                TestEqual(TEXT("Joint drag"), Config.Joints[JointIndex].Drag, 0.2f);
+                TestEqual(TEXT("Joint gravity power (UE units)"), Config.Joints[JointIndex].GravityPower, 10.0f);
+            }
         }
         
         // Validate collider configuration
@@ -201,6 +199,18 @@ bool FVRMIntegrationTestVRM0x::RunTest(const FString& Parameters)
             TestEqual(TEXT("Spring drag"), Spring.Drag, 0.2f);
             TestEqual(TEXT("Spring gravity power (UE units)"), Spring.GravityPower, 10.0f); // 0.1, scaled like a length
             TestEqual(TEXT("Spring hit radius (cm)"), Spring.HitRadius, 2.0f);
+
+            // VRM 0.x parameters belong to the bone group; every joint gets them.
+            TestEqual(TEXT("Both bones became joints"), Spring.JointIndices.Num(), 2);
+            for (const int32 JointIndex : Spring.JointIndices)
+            {
+                if (!TestTrue(TEXT("Joint index valid"), Config.Joints.IsValidIndex(JointIndex))) continue;
+                const FVRMSpringJoint& Joint = Config.Joints[JointIndex];
+                TestEqual(TEXT("Joint stiffness from group"), Joint.Stiffness, 0.8f);
+                TestEqual(TEXT("Joint drag from group"), Joint.Drag, 0.2f);
+                TestEqual(TEXT("Joint gravity power from group (UE units)"), Joint.GravityPower, 10.0f);
+                TestEqual(TEXT("Joint hit radius from group (cm)"), Joint.HitRadius, 2.0f);
+            }
         }
         
         TestTrue(TEXT("Config is valid"), Config.IsValid());

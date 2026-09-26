@@ -15,7 +15,6 @@ namespace VRM
     // New overloads that also produce a node index -> bone name map (glTF node names)
     VRMINTERCHANGE_API bool ParseSpringBonesFromJson(const FString& Json, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError);
     VRMINTERCHANGE_API bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError);
-    // Add a richer overload that also returns Parent/Children graph
-    VRMINTERCHANGE_API bool ParseSpringBonesFromJson(const FString& Json,FVRMSpringConfig& OutConfig,TMap<int32, FName>& OutNodeMap,TMap<int32, int32>& OutNodeParent,TMap<int32, TArray<int32>>& OutNodeChildren,FString& OutError);
+    // Also returns the node parent/children graph (currently left empty; see P1.12)
     VRMINTERCHANGE_API bool ParseSpringBonesFromFile(const FString& Filename,FVRMSpringConfig& OutConfig,TMap<int32, FName>& OutNodeMap,TMap<int32, int32>& OutNodeParent,TMap<int32, FVRMNodeChildren>& OutNodeChildren,FString& OutError);
 }

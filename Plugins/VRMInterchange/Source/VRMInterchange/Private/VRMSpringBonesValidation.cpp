@@ -43,24 +43,24 @@ namespace VRM
                 Result.AddWarning(FString::Printf(TEXT("Spring '%s' has no joints"), *Spring.Name));
             }
             
-            // Validate parameter ranges
-            if (Spring.Stiffness < 0.0f || Spring.Stiffness > 1.0f)
-            {
-                Result.AddWarning(FString::Printf(TEXT("Spring '%s' stiffness (%.3f) outside normal range [0,1]"), *Spring.Name, Spring.Stiffness));
-            }
-            
-            if (Spring.Drag < 0.0f || Spring.Drag > 1.0f)
-            {
-                Result.AddWarning(FString::Printf(TEXT("Spring '%s' drag (%.3f) outside normal range [0,1]"), *Spring.Name, Spring.Drag));
-            }
-            
-            // Check joint references
+            // Check joint references and each joint's parameters (they are per joint, VRM 1.0)
             for (int32 JointIdx : Spring.JointIndices)
             {
                 if (JointIdx < 0 || JointIdx >= Config.Joints.Num())
                 {
                     Result.AddError(FString::Printf(TEXT("Spring '%s' references invalid joint index %d (max: %d)"), 
                         *Spring.Name, JointIdx, Config.Joints.Num() - 1));
+                    continue;
+                }
+
+                const FVRMSpringJoint& Joint = Config.Joints[JointIdx];
+                if (Joint.Stiffness < 0.0f || Joint.Stiffness > 1.0f)
+                {
+                    Result.AddWarning(FString::Printf(TEXT("Spring '%s' joint %d stiffness (%.3f) outside normal range [0,1]"), *Spring.Name, JointIdx, Joint.Stiffness));
+                }
+                if (Joint.Drag < 0.0f || Joint.Drag > 1.0f)
+                {
+                    Result.AddWarning(FString::Printf(TEXT("Spring '%s' joint %d drag (%.3f) outside normal range [0,1]"), *Spring.Name, JointIdx, Joint.Drag));
                 }
             }
             
@@ -95,10 +95,10 @@ namespace VRM
         {
             const FVRMSpringCollider& Collider = Config.Colliders[ColliderIdx];
             
-            bool bHasShape = (Collider.Spheres.Num() > 0) || (Collider.Capsules.Num() > 0);
+            bool bHasShape = (Collider.Spheres.Num() > 0) || (Collider.Capsules.Num() > 0) || (Collider.Planes.Num() > 0);
             if (!bHasShape)
             {
-                Result.AddWarning(FString::Printf(TEXT("Collider %d has no shapes (spheres or capsules)"), ColliderIdx));
+                Result.AddWarning(FString::Printf(TEXT("Collider %d has no shapes (spheres, capsules or planes)"), ColliderIdx));
             }
             
             // Validate sphere shapes
