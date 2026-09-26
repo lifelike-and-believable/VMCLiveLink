@@ -50,6 +50,7 @@ public class VRMInterchangeEditor : ModuleRules
             "VRMSpringBonesRuntime",
             "AnimGraphRuntime", // spring anim node base class, used by the node tests
             "ImageWrapper",     // texture tests build PNGs in memory
+            "InterchangeImport", // FImportImage, which the texture tests inspect
 
             // For IKRigDefinition asset
             "IKRig",
