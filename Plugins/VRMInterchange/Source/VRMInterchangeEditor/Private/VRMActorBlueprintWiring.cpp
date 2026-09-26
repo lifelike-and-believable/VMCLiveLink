@@ -94,16 +94,17 @@ namespace VRMPipeline
 		}
 
 		// A template is never registered, so its setters (SetSkeletalMeshAsset and friends), which
-		// update render state and animation, don't apply to it: they asserted in the engine. Set the
-		// properties the way the Details panel edits a template. The mesh is held twice (the skinned
-		// asset of USkinnedMeshComponent and SkeletalMeshAsset); both are set so they agree.
+		// update render state and animation, don't apply to it: they asserted in the engine. The
+		// values are written straight to the properties (the *_InContainer writers would call the
+		// same setters). The mesh is held twice (the skinned asset of USkinnedMeshComponent and
+		// SkeletalMeshAsset); both are set so they agree.
 		Template->Modify();
 		bool bMeshSet = false;
 		for (const TCHAR* PropertyName : { TEXT("SkeletalMeshAsset"), TEXT("SkinnedAsset") })
 		{
 			if (FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(Template->GetClass(), PropertyName))
 			{
-				Property->SetObjectPropertyValue_InContainer(Template, Mesh);
+				Property->SetObjectPropertyValue(Property->ContainerPtrToValuePtr<void>(Template), Mesh);
 				bMeshSet = true;
 			}
 		}
@@ -116,11 +117,11 @@ namespace VRMPipeline
 		{
 			if (FByteProperty* Mode = FindFProperty<FByteProperty>(Template->GetClass(), TEXT("AnimationMode")))
 			{
-				Mode->SetPropertyValue_InContainer(Template, uint8(EAnimationMode::AnimationBlueprint));
+				Mode->SetPropertyValue(Mode->ContainerPtrToValuePtr<void>(Template), uint8(EAnimationMode::AnimationBlueprint));
 			}
 			if (FObjectPropertyBase* Class = FindFProperty<FObjectPropertyBase>(Template->GetClass(), TEXT("AnimClass")))
 			{
-				Class->SetObjectPropertyValue_InContainer(Template, AnimClass.Get());
+				Class->SetObjectPropertyValue(Class->ContainerPtrToValuePtr<void>(Template), AnimClass.Get());
 			}
 		}
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);

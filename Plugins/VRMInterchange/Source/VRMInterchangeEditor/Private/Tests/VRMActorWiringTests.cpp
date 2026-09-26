@@ -41,7 +41,7 @@ namespace VRMActorWiringTests
 	UObject* MeshOf(const USkeletalMeshComponent* Component)
 	{
 		const FObjectPropertyBase* Property = Component ? FindFProperty<FObjectPropertyBase>(Component->GetClass(), TEXT("SkeletalMeshAsset")) : nullptr;
-		return Property ? Property->GetObjectPropertyValue_InContainer(Component) : nullptr;
+		return Property ? Property->GetObjectPropertyValue(Property->ContainerPtrToValuePtr<void>(Component)) : nullptr;
 	}
 
 	USkeletalMesh* MakeMesh(const TCHAR* Name)
