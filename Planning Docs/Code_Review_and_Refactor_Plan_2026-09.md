@@ -468,9 +468,9 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **One runner:** there is one self-hosted Windows runner (EIGHTYGEE-DT). Each PR build takes 3 to 5 minutes and they queue serially, so seven PRs take about 35 minutes.
 - **Spurious cancellation:** one run (36149565264, attempt 1) was cancelled by the runner itself 5 s into the Shipping build. There was no user, timeout or concurrency cancel, and the re-run passed. The likely cause is a console Ctrl+C on the runner machine.
 - **Stacked PRs get no CI:** `pr-build.yml` only triggers for PRs that target `main`, so stacked PRs are never built until they are retargeted.
-- **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
+- **Deprecated Node (fixed in #112):** the workflows used `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20. They now use `actions/checkout@v5` and `actions/upload-artifact@v6`.
 - **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
-- **Application Control block (recurring, owner action needed):** Windows on the runner intermittently blocks files the build has just created, with error 4551 ("An Application Control policy has blocked this file", Smart App Control or WDAC). It hit #115 (a plugin DLL), #121 twice (the project DLL, then UnrealBuildTool's compiled `*ModuleRules.dll`, so nothing built) and #123 (`VRMSpringBonesEditor.dll`). Each time a re-run passed or the next push was clean. Nothing in the repository can fix it. The owner should add an exclusion for the runner's work folder (`C:\actions-runner\_work`) or turn off Smart App Control on EIGHTYGEE-DT. Until then, a 4551 failure gets one PR comment and one re-run.
+- **Application Control block (recurring, owner action needed):** Windows on the runner intermittently blocks files the build has just created, with error 4551 ("An Application Control policy has blocked this file", Smart App Control or WDAC). It hit #115 (a plugin DLL), #121 twice (the project DLL, then UnrealBuildTool's compiled `*ModuleRules.dll`, so nothing built) and #123 (`VRMSpringBonesEditor.dll`). Each time a re-run passed or the next push was clean. Nothing in the repository can fix it. The owner should add an exclusion for the runner's work folder (`C:\actions-runner\_work`) or an explicit WDAC allow rule for it. Turning off Smart App Control lowers the machine's protection as a whole, so keep it as a last resort for a dedicated CI machine. Until then, a 4551 failure gets one PR comment and one re-run.
 - **Superseded runs:** retargeting a PR, or pushing right after it, starts a new run and cancels the older one (job-level concurrency). The PR then shows cancelled runs next to the real one. Judge a PR by its newest `build-and-test` run on the head commit.
 - **Tag named `main`:** the remote had a tag called `main` as well as the branch, so `git fetch origin main` fetched the tag, not the branch. (Deleted by the owner on 2026-09-25.)
 - **VMC tests never ran:** the filter `VRM.;VMC.` was passed to `Automation RunTests`, where `;` ends the command. Only `VRM.` tests ran, and nothing reported it. Fixed by using `VRM.+VMC.` and failing when any prefix matches no tests.
@@ -797,7 +797,7 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
 - **Status (#130, #131, #132, merged):**
   - **Step 1** (#130, #131): `FVMCFrameAssembler` holds the skeleton, pose and curves in arrays indexed like the static data. `VMCProtocol::ClassifyAddress` names every address. The source runs on the game thread only, with `DataGuard` gone. `FVMCConnectionSettings` is the one connection-string codec (validated, round-trip tested, old strings read the same). `UVMCLiveLinkSourceSettings` puts the settings in the Live Link panel, and edits apply to the running source.
   - **Step 2** (#132): the **Receive Thread** setting (default on). `FVMCUdpReceiver` reads the socket on its own thread; `VMCOscParser` (our own OSC 1.0 parser, since the plugin's isn't public) parses in place, with strings as views and names decoded as UTF-8. Frames carry `WorldTime` (arrival) and, with `/VMC/Ext/T`, `SceneTime` (fixed 60 fps rate). UObject work stays on the game thread, which publishes an immutable snapshot. The status shows fps, jitter and path.
-  - **Golden frames:** there are no real captures (P0.3 step 2 is still open), so two synthetic captures from `vmc_sender.py write` are committed and replayed through the parser and assembler against values computed by the generator. The before/after check is `VMC.FrameAssembler.MatchesLegacy`, which keeps the old name-keyed frame building as a reference.
+  - **Golden frames:** there are no real captures (P0.3 step 2 is still open), so two synthetic captures from `scripts/vmc_sender.py write` are committed and replayed through the parser and assembler against values computed by the generator. The before/after check is `VMC.FrameAssembler.MatchesLegacy`, which keeps the old name-keyed frame building as a reference.
   - **Not done:** the counting-allocator test (parsing doesn't allocate; building the Live Link frame does, and must); the sender allowlist and timeout (moved to P6.1); the latency and jitter comparison between the two paths (needs the editor and a sender).
   - The first step 2 build failed on shadowed locals (C4458) and a char cast (C4310).
 
@@ -812,7 +812,7 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   6. Move `MatchesMesh` out of `WITH_EDITOR`, or drop `BlueprintCallable`.
   7. Migrate `FAssetTypeActions_VMCLiveLinkMappingAsset` to `UAssetDefinition_VMCLiveLinkMappingAsset`. Replace `StaticDuplicateObject` in the retarget actor factory with `IAssetTools::DuplicateAsset`.
 - **Acceptance:** a Game (non-editor) target builds without `UnrealEd`. Re-initializing a subject leaves user maps and preset untouched. A test checks that a worker created before an edit keeps the old maps (snapshot semantics).
-- **Status (#133, #134, merged):** all three acceptance items hold (`VMC.Remapper.WorkerSnapshot`, `.InitializeKeepsSettings`; CI's Game builds pass with `UnrealEd` and `AssetTools` gone from the runtime module).
+- **Status (#133, #134, merged):** all three acceptance items hold (`VMC.Remapper.WorkerSnapshot`, `VMC.Remapper.InitializeKeepsSettings`; CI's Game builds pass with `UnrealEd` and `AssetTools` gone from the runtime module).
   - Step 1: the source publishes VMC names; the worker renames and adds rest translations (root and Hips never). The source's `refoffsets` setting from P3.1 moved to the remapper as **Use Reference Translations**. The reference skeleton falls back to the project's `DefaultReferenceSkeleton`, which was never read. To keep edits taking effect at once, the remapper has a revision counter the source watches, and republishes static data when it changes.
   - Step 3: `Initialize` keeps maps and preset. Auto-detect runs automatically only while the maps are empty, finds candidates by registry tag and loads them asynchronously; the button and Blueprint call stay synchronous.
   - Step 4: a details customization in `VMCLiveLinkEditor` with a Mapping Tools row (Apply Preset, Seed From Subject, Apply / Auto-Detect / Save to / Create Mapping Asset), each undoable.
@@ -835,7 +835,7 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - #136: `VRMCore` holds `FVRMDocument` and `VRM::BuildParsedModel` (the translator's cgltf code, moved unchanged). The document keeps the bytes, MD5, top-level JSON parsed once, a node table and the version. It gets cgltf geometry only when the buffers load and validate, so the spring parser still works on JSON that cgltf rejects. The spring pipeline's own cgltf copy and its extra file reads are gone. Tests: `VRM.Document.Load`, `.BadInput`.
   - #137: the translator stores the JSON and hash in a `UInterchangeVRMNode`. The spring pipeline rebuilds a document from the node (`FVRMDocument::LoadJson`, no geometry), and reads the file itself only when the container has no VRM node. `RawJson` is dropped. Test: `VRM.Document.PipelineNode` runs the pipeline with the source file absent.
   - **Deviations:**
-    - The document carries nodes, JSON and version only. Humanoid, expressions, look-at, first person and meta will be added with the Phase 4 tasks that use them.
+    - The document carries nodes, JSON and version only. Humanoid, expressions, look-at, first-person and meta will be added with the Phase 4 tasks that use them.
     - The node stores the JSON, not a parsed spring config, so the pipelines parse it again. It is plain attribute data, so it survives the container being copied.
     - One `mutable` member stays on the translator (a `TSharedPtr<const FVRMParsedModel>`). Interchange translators are `const` but keep their translation for the payload calls; the engine's glTF translator does the same.
     - The test builds the node itself: UE 5.6 has no public `SetSourceData` on translators, so a test can't call `Translate` directly.
@@ -1071,7 +1071,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 to P3.4 are merged. Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 68 automation tests pass (50 VRM, 18 VMC).
+*Last updated 2026-09-26 (evening).* Phases 1 to 3 are complete, and P4.1 and P4.2 are merged. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 75 automation tests pass (57 VRM, 18 VMC).
 
 ### Status by task
 
@@ -1123,7 +1123,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 ### How the merges went
 
 - Each PR was merged (squash) once its PR build was green and it merged cleanly into the current `main`. When `main` had changed files the PR also touched, the PR was rebuilt on top of `main` first.
-- **Three PRs needed fixes their first build exposed:**
+- **Three PRs needed fixes that their first build exposed:**
   - #104: the header script's exit code.
   - #103: it used a symbol from another unmerged PR.
   - #109: a shadowed local variable in the new test.

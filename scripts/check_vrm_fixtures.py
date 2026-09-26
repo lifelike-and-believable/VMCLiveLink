@@ -56,7 +56,8 @@ def main():
                 failures.append(f"{name}: {run.stderr.strip()}")
                 continue
             actual = json.loads(run.stdout)
-            expected = json.load(open(os.path.join(fixtures, base + ".expected.json"), encoding="utf-8"))
+            with open(os.path.join(fixtures, base + ".expected.json"), encoding="utf-8") as f:
+                expected = json.load(f)
 
             for info in expected["bones"].values():
                 got = actual["joints"].get(str(info["node"]))

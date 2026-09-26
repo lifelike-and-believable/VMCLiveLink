@@ -85,12 +85,14 @@ int main(int argc, char** argv)
 	if (cgltf_load_buffers(&options, data, argv[1]) != cgltf_result_success)
 	{
 		fprintf(stderr, "load_buffers failed\n");
+		cgltf_free(data);
 		return 1;
 	}
 	cgltf_result v = cgltf_validate(data);
 	if (v != cgltf_result_success)
 	{
 		fprintf(stderr, "validate failed: %d\n", (int)v);
+		cgltf_free(data);
 		return 1;
 	}
 
