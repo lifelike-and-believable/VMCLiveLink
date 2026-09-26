@@ -286,20 +286,22 @@ void FAnimNode_VRMSpringBones::SimulateSpringsOnce(const FComponentSpacePoseCont
 		if (SpringChainRng.Num <= 0) continue;
 		const FVRMSpring& Spring = SpringCfg.Springs[SpringIdx];
 
-		const float Stiffness      = Spring.Stiffness;
-		const float Drag           = FMath::Clamp(Spring.Drag, 0.f, 1.f);
-		const float GravityPower   = Spring.GravityPower; // already in cm/s^2 scale
 		const bool  bHasColliders  = Spring.ColliderGroupIndices.Num() > 0;
-		const FVector GravityDir   = Spring.GravityDir;
-		const float DefaultHitRadius = FMath::Max(0.f, Spring.HitRadius); // already in cm
-		const FVector ExternalVel	= (ComponentTM.InverseTransformVector(ExternalVelocity) * ExternalVelocityScale) * DeltaTime * (1.f - Drag);
-		const FVector Gravity = GravityDir * GravityPower * DeltaTime;
+		const FVector ExternalVelCS = ComponentTM.InverseTransformVector(ExternalVelocity) * ExternalVelocityScale;
 
 		for (int32 ChainPos = 0; ChainPos < SpringChainRng.Num; ++ChainPos)
 		{
 			const bool bIsSpringRoot = (ChainPos == 0);
 			const int32 JointIndex = Spring.JointIndices[ChainPos];
-			if (!JointBoneRefs.IsValidIndex(JointIndex)) continue;
+			if (!JointBoneRefs.IsValidIndex(JointIndex) || !SpringCfg.Joints.IsValidIndex(JointIndex)) continue;
+
+			// Parameters are per joint (VRM 1.0); VRM 0.x joints carry their bone group's values.
+			const FVRMSpringJoint& Joint = SpringCfg.Joints[JointIndex];
+			const float Stiffness        = Joint.Stiffness;
+			const float Drag             = FMath::Clamp(Joint.Drag, 0.f, 1.f);
+			const float DefaultHitRadius = FMath::Max(0.f, Joint.HitRadius); // cm
+			const FVector ExternalVel    = ExternalVelCS * DeltaTime * (1.f - Drag);
+			const FVector Gravity        = Joint.GravityDir * Joint.GravityPower * DeltaTime; // cm scale
 
 			const FBoneReference& JointBoneRef = JointBoneRefs[JointIndex];
 			if (!JointBoneRef.HasValidSetup()) continue;

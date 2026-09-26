@@ -123,4 +123,44 @@ bool FVRMSpringDataVersionResave::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringDataVersionPerJoint, "VRM.SpringBones.DataVersion.PerJointParameters",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMSpringDataVersionPerJoint::RunTest(const FString& Parameters)
+{
+	using namespace VRMSpringDataVersionTests;
+
+	// Before PerJointParameters the solver read the spring's parameters. Loading such data must give
+	// every joint its spring's values, so the asset behaves as it did.
+	UVRMSpringBoneData* Data = NewObject<UVRMSpringBoneData>();
+	FVRMSpring Spring;
+	Spring.Stiffness = 0.3f;
+	Spring.Drag = 0.7f;
+	Spring.GravityDir = FVector(1, 0, 0);
+	Spring.GravityPower = 20.f;
+	Spring.HitRadius = 4.f;
+	Spring.JointIndices = { 0, 1 };
+	Data->SpringConfig.Springs.Add(Spring);
+	Data->SpringConfig.Joints.AddDefaulted(2);
+	const TArray<uint8> Bytes = Save(Data);
+
+	const UVRMSpringBoneData* Old = Load(Bytes, FVRMSpringDataCustomVersion::ConvertedColliderAxes);
+	TestFalse(TEXT("Axes were already converted, so no reimport"), Old->bNeedsReimport);
+	for (const FVRMSpringJoint& Joint : Old->SpringConfig.Joints)
+	{
+		TestEqual(TEXT("Joint gets spring stiffness"), Joint.Stiffness, 0.3f);
+		TestEqual(TEXT("Joint gets spring drag"), Joint.Drag, 0.7f);
+		TestEqual(TEXT("Joint gets spring gravity dir"), Joint.GravityDir, FVector(1, 0, 0));
+		TestEqual(TEXT("Joint gets spring gravity power"), Joint.GravityPower, 20.f);
+		TestEqual(TEXT("Joint gets spring hit radius"), Joint.HitRadius, 4.f);
+	}
+
+	const UVRMSpringBoneData* Current = Load(Bytes, FVRMSpringDataCustomVersion::LatestVersion);
+	for (const FVRMSpringJoint& Joint : Current->SpringConfig.Joints)
+	{
+		TestEqual(TEXT("Current data keeps its own joint stiffness"), Joint.Stiffness, 1.f);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

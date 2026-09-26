@@ -55,8 +55,12 @@ public:
     /** True when data saved at DataVersion has to be reimported to match the current plugin. */
     static bool RequiresReimport(int32 DataVersion, const FVRMSpringConfig& Config);
 
+    /** Upgrade for data saved before PerJointParameters: copies each spring's parameters to its joints. */
+    static void CopySpringParametersToJoints(FVRMSpringConfig& Config);
+
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+    virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
     void BuildResolvedChildren();
 #endif
 

@@ -22,6 +22,10 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringDataCustomVersion
 		// file, so it needs a reimport.
 		ConvertedColliderAxes,
 
+		// Stiffness, drag, gravity and hit radius are per joint (VRM 1.0 spec, P1.13). Older data
+		// had them per spring; PostLoad copies each spring's values to its joints.
+		PerJointParameters,
+
 		// -----<new versions go above this line>-----
 		VersionPlusOne,
 		LatestVersion = VersionPlusOne - 1

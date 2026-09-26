@@ -75,7 +75,14 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringJoint
 
     UPROPERTY(VisibleAnywhere, Category="VRM") int32 NodeIndex = INDEX_NONE;
     UPROPERTY(VisibleAnywhere, Category="VRM") FName BoneName;
-    UPROPERTY(VisibleAnywhere, Category="VRM") float HitRadius = 0.f;
+
+    // Simulation parameters. VRM 1.0 sets them per joint; VRM 0.x copies its bone group's values
+    // to every joint. Defaults are the VRM 1.0 spec defaults. Lengths and gravity are in UE units.
+    UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0")) float HitRadius = 0.f;
+    UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0", ClampMax="1.0")) float Stiffness = 1.f;
+    UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0", ClampMax="1.0")) float Drag = 0.5f;
+    UPROPERTY(EditAnywhere, Category="VRM|Joint") FVector GravityDir = FVector(0, 0, -1);
+    UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0")) float GravityPower = 0.f;
 };
 
 USTRUCT(BlueprintType)
@@ -89,6 +96,9 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpring
     UPROPERTY(VisibleAnywhere, Category="VRM") int32 CenterNodeIndex = INDEX_NONE;
     UPROPERTY(VisibleAnywhere, Category="VRM") FName CenterBoneName;
 
+    // Editing helpers: the solver reads each joint's own parameters (FVRMSpringJoint). Changing one of
+    // these in the editor applies it to every joint of the spring. After import they hold the first
+    // joint's values (VRM 1.0) or the bone group's values (VRM 0.x).
     UPROPERTY(EditAnywhere, Category="VRM|Spring", meta=(ClampMin="0.0", ClampMax="1.0")) float Stiffness = 0.f;
     UPROPERTY(EditAnywhere, Category="VRM|Spring", meta=(ClampMin="0.0", ClampMax="1.0")) float Drag = 0.f;
     UPROPERTY(EditAnywhere, Category="VRM|Spring") FVector GravityDir = FVector(0, 0, -1);
@@ -110,7 +120,8 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringConfig
     UPROPERTY(EditAnywhere, Category="VRM|Colliders", meta=(TitleProperty="Name"))
     TArray<FVRMSpringColliderGroup> ColliderGroups;
 
-    UPROPERTY(VisibleAnywhere, Category="VRM") TArray<FVRMSpringJoint> Joints;
+    // Editable so per-joint parameters can be tuned; the joint list itself is fixed by the import.
+    UPROPERTY(EditAnywhere, Category="VRM", meta=(EditFixedSize, TitleProperty="BoneName")) TArray<FVRMSpringJoint> Joints;
 
     UPROPERTY(EditAnywhere, Category="VRM", meta=(EditFixedSize, TitleProperty="Name"))
     TArray<FVRMSpring> Springs;
