@@ -192,7 +192,9 @@ void FAnimNode_VRMSpringBones::BuildMappings(const FBoneContainer& BoneContainer
 	BoneValid.SetNum(JointBoneRefs.Num());
 	for (int32 J = 0; J < JointBoneRefs.Num(); ++J)
 	{
-		BoneValid[J] = JointBoneRefs[J].HasValidSetup();
+		// IsValidToEvaluate, not HasValidSetup: a bone this LOD strips still has a skeleton index,
+		// but no compact pose index, so it must not be simulated.
+		BoneValid[J] = JointBoneRefs[J].IsValidToEvaluate(BoneContainer);
 	}
 	const bool bSameData = SpringData == BuiltForData && SpringData->EditRevision == BuiltForEditRevision && SpringData->SourceHash == BuiltForSourceHash;
 	if (!bSameData || BoneValid != BuiltBoneValid || JointStates.Num() != JointBoneRefs.Num())
@@ -231,7 +233,7 @@ void FAnimNode_VRMSpringBones::EnsureStatesInitialized(const FBoneContainer& Bon
 	for (int32 JointIdx = 0; JointIdx < JointBoneRefs.Num(); ++JointIdx)
 	{
 		const FBoneReference& BoneRef = JointBoneRefs[JointIdx];
-		if (!BoneRef.HasValidSetup()) continue;
+		if (!BoneRef.IsValidToEvaluate(BoneContainer)) continue;
 
 		FVRMSimJointState& JointState = JointStates[JointIdx];
 		const FCompactPoseBoneIndex BoneIdx = BoneRef.GetCompactPoseIndex(BoneContainer);
@@ -264,7 +266,7 @@ void FAnimNode_VRMSpringBones::EnsureStatesInitialized(const FBoneContainer& Bon
 					if (JointBoneRefs.IsValidIndex(ChildJoint))
 					{
 						const FBoneReference& ChildBoneRef = JointBoneRefs[ChildJoint];
-						if (ChildBoneRef.HasValidSetup())
+						if (ChildBoneRef.IsValidToEvaluate(BoneContainer))
 						{
 							const FCompactPoseBoneIndex ChildIdx = ChildBoneRef.GetCompactPoseIndex(BoneContainer);
 							ChildCS = CSPose.GetComponentSpaceTransform(ChildIdx).GetLocation();
@@ -365,7 +367,7 @@ void FAnimNode_VRMSpringBones::SimulateSpringsOnce(FAnimInstanceProxy* Proxy,
 			const FVector Gravity        = Joint.GravityDir * Joint.GravityPower * DeltaTime; // cm scale
 
 			const FBoneReference& JointBoneRef = JointBoneRefs[JointIndex];
-			if (!JointBoneRef.HasValidSetup()) continue;
+			if (!JointBoneRef.IsValidToEvaluate(BoneContainer)) continue;
 
 			// A joint follows the previous joint of its chain only if that one was simulated; after a
 			// skipped joint (no bone at this LOD, bad index) it starts from its own animated head.
@@ -652,7 +654,7 @@ void FAnimNode_VRMSpringBones::ResolveCollisions(
 			if (!Col.BoneName.IsNone())
 			{
 				FBoneReference BR; BR.BoneName = Col.BoneName; BR.Initialize(CSPose.GetPose().GetBoneContainer());
-				if (BR.HasValidSetup())
+				if (BR.IsValidToEvaluate(CSPose.GetPose().GetBoneContainer()))
 				{
 					NodeXf = CSPose.GetComponentSpaceTransform(BR.GetCompactPoseIndex(CSPose.GetPose().GetBoneContainer())) * ComponentTM;
 				}
