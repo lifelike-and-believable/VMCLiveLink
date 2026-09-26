@@ -26,7 +26,13 @@ bool UVRMSpringBoneData::RequiresReimport(int32 DataVersion, const FVRMSpringCon
 {
     // Empty data has nothing in the wrong axes.
     const bool bHasGeometry = Config.Springs.Num() > 0 || Config.Colliders.Num() > 0;
-    return bHasGeometry && DataVersion < FVRMSpringDataCustomVersion::ConvertedColliderAxes;
+    if (bHasGeometry && DataVersion < FVRMSpringDataCustomVersion::ConvertedColliderAxes)
+    {
+        return true;
+    }
+    // VRM 0.x chains used to hold only the listed roots; their descendants need the source file.
+    return Config.Spec == EVRMSpringSpec::VRM0 && Config.Springs.Num() > 0
+        && DataVersion < FVRMSpringDataCustomVersion::ExpandedVRM0Chains;
 }
 
 void UVRMSpringBoneData::CopySpringParametersToJoints(FVRMSpringConfig& Config)
@@ -65,7 +71,7 @@ void UVRMSpringBoneData::PostLoad()
     if (bNeedsReimport)
     {
         UE_LOG(LogVRMSpringData, Warning,
-            TEXT("%s holds spring data from an older VRMInterchange version. Its collider offsets and gravity are in the old axes, so spring bones won't match a fresh import. Reimport '%s' to update it."),
+            TEXT("%s holds spring data from an older VRMInterchange version that a fresh import would produce differently (collider axes, or VRM 0.x chains without their descendant bones). Reimport '%s' to update it."),
             *GetPathName(), SourceFilename.IsEmpty() ? TEXT("the source VRM file") : *SourceFilename);
     }
 }

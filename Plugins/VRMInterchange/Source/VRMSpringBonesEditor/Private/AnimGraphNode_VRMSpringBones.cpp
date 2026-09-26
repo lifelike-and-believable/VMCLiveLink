@@ -30,7 +30,7 @@ void UAnimGraphNode_VRMSpringBones::ValidateAnimNodeDuringCompilation(USkeleton*
         if (SpringData->bNeedsReimport)
         {
             const FString Message = FString::Printf(
-                TEXT("@@: spring data '%s' is from an older VRMInterchange version and its colliders and gravity are in the old axes. Reimport '%s' to update it."),
+                TEXT("@@: spring data '%s' is from an older VRMInterchange version and won't match a fresh import. Reimport '%s' to update it."),
                 *SpringData->GetName(),
                 SpringData->SourceFilename.IsEmpty() ? TEXT("the source VRM file") : *SpringData->SourceFilename);
             MessageLog.Warning(*Message, this);

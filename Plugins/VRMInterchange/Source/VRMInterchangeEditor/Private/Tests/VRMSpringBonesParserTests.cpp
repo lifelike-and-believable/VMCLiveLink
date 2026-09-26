@@ -264,6 +264,7 @@ bool FVRMParseVRM0Json::RunTest(const FString& Parameters)
     const FString Json = TEXT(R"JSON(
     {
       "asset": {"version":"2.0"},
+      "nodes": [ {"name":"Root", "children":[1, 2]}, {"name":"Head"}, {"name":"Hair1", "children":[3]}, {"name":"Hair2"} ],
       "extensions": {
         "VRM": {
           "secondaryAnimation": {
@@ -279,7 +280,7 @@ bool FVRMParseVRM0Json::RunTest(const FString& Parameters)
                 "gravityDir": {"x": 0, "y": -1, "z": 0},
                 "gravityPower": 1.0,
                 "hitRadius": 0.03,
-                "bones": [ 2, 3 ],
+                "bones": [ 2 ],
                 "colliderGroups": [ 0 ]
               }
             ]
@@ -297,7 +298,7 @@ bool FVRMParseVRM0Json::RunTest(const FString& Parameters)
     TestEqual(TEXT("Springs"), Cfg.Springs.Num(), 1);
     TestTrue(TEXT("IsValid()"), Cfg.IsValid());
 
-    // Every joint gets the bone group's parameters.
+    // The listed root and its child are joints, and every joint gets the bone group's parameters.
     if (TestEqual(TEXT("Joints"), Cfg.Joints.Num(), 2))
     {
         for (const FVRMSpringJoint& Joint : Cfg.Joints)
@@ -308,6 +309,68 @@ bool FVRMParseVRM0Json::RunTest(const FString& Parameters)
             TestEqual(TEXT("Joint hit radius from group (cm)"), Joint.HitRadius, 3.f, 1.0e-3f);
             TestTrue(TEXT("Joint gravity is down"), Joint.GravityDir.Equals(FVector(0, 0, -1), 1.0e-3f));
         }
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMParseVRM0Chains, "VRM.SpringBones.Parse.VRM0Chains",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMParseVRM0Chains::RunTest(const FString& Parameters)
+{
+    // Node tree:  0 Root -> 1 A -> { 2 B, 3 C -> 4 D },  1 A -> 5 Mesh (carries a mesh),  6 E (separate root)
+    // bones lists A, D (already under A) and E.
+    const FString Json = TEXT(R"JSON(
+    {
+      "asset": {"version":"2.0"},
+      "nodes": [
+        {"name":"Root", "children":[1, 6]},
+        {"name":"A", "children":[2, 3, 5]},
+        {"name":"B"},
+        {"name":"C", "children":[4]},
+        {"name":"D"},
+        {"name":"Mesh", "mesh": 0},
+        {"name":"E"}
+      ],
+      "extensions": { "VRM": { "secondaryAnimation": {
+        "colliderGroups": [ { "node": 0, "colliders": [ { "offset": {"x":0,"y":0,"z":0}, "radius": 0.1 } ] } ],
+        "boneGroups": [ { "comment": "hair", "stiffiness": 0.6, "dragForce": 0.3, "gravityPower": 0, "gravityDir": {"x":0,"y":-1,"z":0},
+                          "hitRadius": 0.02, "center": -1, "bones": [1, 4, 6], "colliderGroups": [0] } ]
+      } } }
+    })JSON");
+
+    FVRMSpringConfig Cfg;
+    FString Err;
+    if (!TestTrue(TEXT("Parse"), VRM::ParseSpringBonesFromJson(Json, Cfg, Err)))
+    {
+        return false;
+    }
+
+    auto ExpectChain = [this, &Cfg](const TCHAR* What, int32 SpringIndex, const TArray<int32>& Expected)
+    {
+        TArray<int32> Nodes;
+        for (const int32 J : Cfg.Springs[SpringIndex].JointIndices) { Nodes.Add(Cfg.Joints[J].NodeIndex); }
+        auto Join = [](const TArray<int32>& A) { return FString::JoinBy(A, TEXT(","), [](int32 V) { return FString::FromInt(V); }); };
+        TestTrue(FString::Printf(TEXT("%s: nodes [%s], expected [%s]"), What, *Join(Nodes), *Join(Expected)), Nodes == Expected);
+    };
+
+    // A follows its first child (B); C starts its own chain and takes D; the mesh node is skipped;
+    // the listed D is already in A's subtree, so it isn't a chain of its own; E is a chain of one.
+    if (TestEqual(TEXT("Chains"), Cfg.Springs.Num(), 3))
+    {
+        ExpectChain(TEXT("Chain A-B"), 0, { 1, 2 });
+        ExpectChain(TEXT("Branch chain C-D"), 1, { 3, 4 });
+        ExpectChain(TEXT("Chain E"), 2, { 6 });
+        for (const FVRMSpring& Spring : Cfg.Springs)
+        {
+            TestEqual(TEXT("Every chain keeps the group name"), Spring.Name, FString(TEXT("hair")));
+            TestTrue(TEXT("Every chain keeps the group's colliders"), Spring.ColliderGroupIndices == TArray<int32>({ 0 }));
+        }
+    }
+    TestEqual(TEXT("Each node is one joint"), Cfg.Joints.Num(), 5);
+    for (const FVRMSpringJoint& Joint : Cfg.Joints)
+    {
+        TestEqual(TEXT("Joint stiffness from group"), Joint.Stiffness, 0.6f, 1.0e-3f);
     }
     return true;
 }

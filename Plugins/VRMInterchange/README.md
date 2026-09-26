@@ -144,7 +144,7 @@ If you prefer manual control:
 
 The `VRMSpringBoneData` asset contains:
 - **Joints**: stiffness, drag, gravity direction and power, and hit radius for every joint. The solver reads these. VRM 1.0 files set them per joint; VRM 0.x files set them per bone group, and every joint of the group gets a copy.
-- **Springs**: the chains of joints, with their collider groups and center. A spring's stiffness, drag, gravity and hit radius fields are editing helpers: changing one applies it to every joint of that spring.
+- **Springs**: the chains of joints, with their collider groups and center. A VRM 0.x bone group lists only the root bone of each chain; the importer adds every bone below it, and each branch becomes a chain of its own with the group's settings. A spring's stiffness, drag, gravity and hit radius fields are editing helpers: changing one applies it to every joint of that spring.
 - **Node Hierarchy**: Bone parent-child relationships
 - **Colliders**: Sphere, capsule and plane collision volumes. For VRM 1.0 colliders with the `VRMC_springBone_extended_collider` extension, the extended shape (including inside colliders and planes) replaces the base shape.
 
@@ -240,7 +240,7 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 - Verify the Spring Data asset is assigned
 - Ensure the Spring Data asset is not empty (check SpringConfig)
 - Confirm bone names in Spring Data match your skeleton
-- If the Spring Data asset shows **Needs Reimport**, it was made by an older plugin version and its colliders and gravity are in the old axes. Reimport the VRM file
+- If the Spring Data asset shows **Needs Reimport**, it was made by an older plugin version (colliders in the old axes, or VRM 0.x chains without their descendant bones). Reimport the VRM file
 
 ### IK Rig Not Generated
 - Enable **Generate IK Rig Assets** in project settings
