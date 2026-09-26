@@ -211,7 +211,7 @@ void FVRMDocument::LoadGeometry()
 	{
 		if (Data)
 		{
-			cgltf_free(Data); // cgltf frees its own partial parse, but don't rely on it
+			cgltf_free(Data); // cgltf only sets Data on success; free it if an error ever comes with one
 		}
 		GeometryError = FString::Printf(TEXT("cgltf_parse failed (cgltf error %d): %s"), int32(Result), *Filename);
 		return;
