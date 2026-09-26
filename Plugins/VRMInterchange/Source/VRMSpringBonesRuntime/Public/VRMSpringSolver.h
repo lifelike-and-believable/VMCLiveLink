@@ -157,7 +157,9 @@ private:
 	FVRMSpringSolverSettings Settings;
 	TArray<TArray<FJointState>> States; // per chain, per joint
 	TArray<FTransform> ColliderCS;
-	TArray<FTransform> SimulatedCS;     // per bone: its simulated transform this pass, where BoneSimulated
+	// Per solver bone, rebuilt every pass: the component-space transform a joint was given this pass.
+	// An entry is valid only where BoneSimulated is true (the bone is a joint already simulated).
+	TArray<FTransform> SimulatedCS;
 	TArray<bool> BoneSimulated;
 	TArray<FTransform> OutJoints;
 	TArray<int32> OutBones;
