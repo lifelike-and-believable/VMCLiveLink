@@ -5,6 +5,7 @@
 #include "ILiveLinkSource.h"
 #include "Templates/UniquePtr.h"
 #include "UObject/StrongObjectPtr.h"
+#include "VMCConnectionSettings.h"
 
 // Forward declarations (keep OSC headers out of Public/)
 class UOSCServer;
@@ -14,6 +15,8 @@ struct FOSCMessage;
 class ULiveLinkSubjectRemapper;
 class ULiveLinkSubjectSettings;
 class FVMCFrameAssembler;
+class ULiveLinkSourceSettings;
+struct FPropertyChangedEvent;
 
 /**
  * VMC → Live Link source (UE 5.6).
@@ -28,12 +31,19 @@ class VMCLIVELINK_API FVMCLiveLinkSource
     , public TSharedFromThis<FVMCLiveLinkSource>
 {
 public:
-    // Constructors
-    FVMCLiveLinkSource(const FString& InSourceName);                                  // defaults: port=39539, unity→ue=on, meters→cm=on, yaw=0
+    explicit FVMCLiveLinkSource(const FVMCConnectionSettings& InSettings, const FString& InSourceName = TEXT("VMC"));
+
+    UE_DEPRECATED(5.6, "Use the FVMCConnectionSettings constructor.")
+    FVMCLiveLinkSource(const FString& InSourceName);
+    UE_DEPRECATED(5.6, "Use the FVMCConnectionSettings constructor.")
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort);
+    UE_DEPRECATED(5.6, "Use the FVMCConnectionSettings constructor.")
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg);
+    UE_DEPRECATED(5.6, "Use the FVMCConnectionSettings constructor.")
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg, FString Subject);
     virtual ~FVMCLiveLinkSource();
+
+    const FVMCConnectionSettings& GetConnectionSettings() const { return Settings; }
 
     // ILiveLinkSource
     virtual void ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid) override;
@@ -43,6 +53,11 @@ public:
     virtual FText GetSourceType() const override { return NSLOCTEXT("VMCLiveLink", "SourceType", "VMC (OSC)"); }
     virtual FText GetSourceMachineName() const override { return FText::FromString(TEXT("Local/Network")); }
     virtual FText GetSourceStatus() const override;
+
+    // Settings shown in the Live Link panel (UVMCLiveLinkSourceSettings)
+    virtual TSubclassOf<ULiveLinkSourceSettings> GetSettingsClass() const override;
+    virtual void InitializeSettings(ULiveLinkSourceSettings* InSettings) override;
+    virtual void OnSettingsChanged(ULiveLinkSourceSettings* InSettings, const FPropertyChangedEvent& PropertyChangedEvent) override;
 
 private:
     // OSC lifecycle
@@ -63,10 +78,6 @@ private:
     TMap<FName, FVector> RefLocalTranslationByName;
     bool bHaveRefOffsets = false;
 
-    // Controls
-    bool bUseRefOffsets = true;              // ← use ref-pose translations for non-root bones
-    bool bPreferIncomingTranslations = false;// ← set true if your stream sends correct local translations
-
     // One-shot flag to force static re-publish next Apply when maps change
     bool bForceStaticNext = false;
 
@@ -78,12 +89,9 @@ private:
 private:
     // Identity / config
     FString SourceName;
-    int32   ListenPort = 39539;
+    FVMCConnectionSettings Settings;
+    bool bListening = false; // the OSC server is bound and listening
 
-    bool  bUnityToUE = true;   // enable basis conversion
-    bool  bMetersToCm = true;   // scale positions 1m→100cm
-    float YawOffsetDeg = 0.f;    // extra yaw about UE Z (re-express frame; no visible spin)
- 
     // Live Link client
     ILiveLinkClient* Client = nullptr;
     FGuid  SourceGuid;
@@ -92,9 +100,6 @@ private:
     // OSC server (UObject) – strong ref so it isn't GC'd
     TStrongObjectPtr<UOSCServer> OscServer;
 
-    // Subject
-    FName SubjectName = FName(TEXT("VMC_Subject"));
-
     // Static (skeleton) tracking
     bool bStaticSent = false;
     bool bStaticDirty = false; // a new bone or curve arrived; publish static data before the next frame
@@ -102,10 +107,6 @@ private:
     // Skeleton, pose and curves
     TUniquePtr<FVMCFrameAssembler> Assembler;
     void InitSkeleton();
-
-    // When true, curves not sent since the previous Blend/Apply are published as 0 instead of
-    // holding their last value. Senders that stream only changed blend shapes need this off.
-    bool bZeroMissingCurves = false;
 
     // One-time warnings for non-conformant or unsupported input
     bool bWarnedLegacyRoot = false;
