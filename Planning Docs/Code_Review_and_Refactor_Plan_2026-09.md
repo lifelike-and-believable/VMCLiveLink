@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-26):** 31 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 and 2, P3.1 to P3.4, and P7.1), plus two unplanned fixes. `main` builds and passes all 68 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-26):** 33 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1, and P7.1), plus two unplanned fixes. `main` builds (the Editor build without unity files) and passes all 73 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -868,6 +868,12 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
 - **Resolves:** PE-09, PE-10, VMC-21
 - **Steps:** remove editor modules from the runtime `VRMInterchange.build.cs` and deduplicate its dependency lists. Replace `PrivateIncludePaths` hacks with module dependencies. Decide platform allowlists (D-2): add `Mac` and `Linux` to editor modules at minimum if they compile. Make the empty module classes `FDefaultModuleImpl`.
 - **Acceptance:** `BuildPlugin` succeeds for every allowed platform available to CI. Include-what-you-use builds (`bUseUnity = false` in a CI job) succeed.
+- **Status (#142, merged):**
+  - `VRMInterchange.build.cs` no longer lists editor modules; `InterchangeEngine` is private. The spring bone runtime module's dependency lists are deduplicated.
+  - The editor module's cross-module `PrivateIncludePaths` entry is gone; it uses module dependencies.
+  - The spring bone runtime and editor modules use `FDefaultModuleImpl`, and their empty module headers are deleted. `NotifySpringDataCreated` and `NotifySpringDataSaved` (never called) are removed.
+  - The PR build compiles the Editor target with `-DisableUnity`, so every file must include what it uses. All 108 actions compiled on the first valid run.
+  - D-2 was decided as Win64 only, so no Mac or Linux entries were added. The READMEs say so.
 
 ---
 
@@ -882,6 +888,18 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - Look-at settings, first-person mesh annotations, and a reference to the spring data asset.
 - Show licence and meta in the import summary notification (VRM licences often restrict usage).
 - **Acceptance:** fixtures produce descriptions with complete humanoid maps. Expression binds point at morph targets that exist on the mesh.
+- **Status (#143, #144, merged):** both acceptance checks pass in tests against every fixture's `expected.json`. Nothing has been checked in the editor yet.
+  - #143 (data and parser, in `VRMCore`):
+    - `VRMAvatarTypes.h` holds the UENUMs (`EVRMHumanBone` with the 55 VRM 1.0 bones, `EVRMExpressionPreset`, override, look-at and first-person types) and the USTRUCTs (`FVRMMeta`, `FVRMExpression` with morph, material colour and texture transform binds, `FVRMLookAt`, `FVRMFirstPersonAnnotation`, `FVRMAvatarData`).
+    - `VRM::BuildAvatarData` reads VRM 1.0 and 0.x. For 0.x it maps the thumb bones (0.x has no metacarpal, so each thumb bone moves up one), the expression presets (joy to happy, a to aa, and so on), bind weights (0 to 100 becomes 0 to 1) and the licence fields.
+    - Morph binds carry the morph target name, taken from the mesh's `extras.targetNames` as the translator names them.
+    - Tests: `VRM.Avatar.VRM1`, `.VRM0`, `.Names`.
+  - #144 (asset and pipeline):
+    - `UVRMAvatarDescription` (a data asset in `VRMCore`) holds the data, the mesh, the spring data asset, and the source file and hash.
+    - The translator builds the data once and stores it on `UInterchangeVRMNode`; the new `UVRMAvatarDescriptionPipeline` creates `<Mesh>_Avatar` in the character folder from it.
+    - The pipeline shows the licence and allowed uses in a notification, except in unattended imports.
+    - Tests: `VRM.Avatar.NodeRoundTrip`, `.Pipeline`.
+  - **Deviation:** the thumbnail is stored as the glTF image index in the meta, not as a texture reference; the texture assets are named by the translator and the pipeline doesn't resolve them yet.
 
 ### P4.2 Driving expressions from VMC `Blend/Val`
 - **Resolves:** X-01 (runtime side), VMC-08 (the real fix) · **Depends on:** P4.1
@@ -1089,14 +1107,18 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P3.2 Remapping, workers, editor tools | #133, #134 | Merged | `DuplicateAsset` in the retarget factory declined (see P3.2 status) |
 | P3.3 One parse per VRM file (`VRMCore`) | #136, #137 | Merged | #136's first run warned (missing-file read); #137's first build used a translator API UE 5.6 doesn't have, and its next run hit error 4551 (re-run cleared it) |
 | P3.4 Pipeline base, post-import step, actor wiring | #139, #140 | Merged | #140's first three runs crashed on a bare test `USkeletalMesh` (no bones or LODs); the tests use `SkeletalCube` |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, this PR | Merged | |
+| P3.5 Build files and platforms | #142 | Merged | Win64 only (D-2). The first push had an unquoted `:` in a workflow step name, which made the workflow invalid, so no jobs ran |
+| P4.1 Avatar description asset | #143, #144 | Merged | |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, this PR | Merged | |
 
-**Not started:** P3.5, and Phases 4 to 7.
+**Not started:** P4.2 to P4.7, and Phases 5 to 7.
 
 **Recommended next:**
-1. P3.5: build files and platforms (removes the remaining `PrivateIncludePaths` workarounds; decides D-2).
-2. Owner: fix the runner's Application Control block (X-07).
-3. The editor checks below: the spring solver comparison (P2.1), a real VMC sender through both receive paths (P3.1, P3.2), a VRM import comparison (P3.3), and an import and reimport with all four pipelines (P3.4).
+1. P4.2: the "VRM Expressions" AnimGraph node, driven by `UVRMAvatarDescription`.
+2. P4.3: the IK Rig generated from the humanoid map.
+3. Decisions D-4 (for P4.4) and D-7 (for P4.5).
+4. Owner: fix the runner's Application Control block (X-07).
+5. The editor checks below.
 
 ### How the merges went
 
@@ -1132,6 +1154,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P4.1):** import a VRoid VRM 0.x and a VRM 1.0 avatar. `<Mesh>_Avatar` shows the humanoid map, expressions and meta; the licence notification appears; the spring data reference is set.
 - **In the editor (P3.4):** import a VRM with the spring bone, IK Rig, Live Link and material pipelines. Open `BP_LL_VRM_<name>` and `BP_LL_VRM_To_UE5_<name>`: the mesh and anim Blueprint are set, and a placed actor shows the character. Reimport with and without Overwrite: with it, the same assets are updated; without it, new ones get unique names.
 - **In the editor (P3.3):** import a VRM 0.x and a VRM 1.0 avatar and compare the skeletal mesh, textures, materials and spring data asset with an import made before #136; reimport one. Open a spring data asset saved before #137 (it had `RawJson`) and check it loads.
 - **In the editor (P3.1, P3.2):** receive from `scripts/vmc_sender.py send --fps 60` and from VSeeFace with Receive Thread on and off; record the status's fps and jitter for both, also with the editor in the background (the D-1 comparison). With a reference skeleton on the remapper, the character looks as before. Change the port, rename the subject and reapply a preset while receiving. Japanese blend shape names arrive intact. The Mapping Tools buttons, undo, and save-then-auto-detect on a fresh remapper.
