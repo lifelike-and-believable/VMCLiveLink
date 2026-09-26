@@ -2,7 +2,6 @@
 
 #include "VRMSpringBonesValidation.h"
 #include "VRMInterchangeLog.h"
-#include "Misc/FileHelper.h"
 
 namespace VRM
 {
@@ -185,18 +184,5 @@ namespace VRM
         }
         
         return Report;
-    }
-    
-    bool HasSpringBoneData(const FString& Filename)
-    {
-        FString Content;
-        if (!FFileHelper::LoadFileToString(Content, *Filename))
-        {
-            return false;
-        }
-        
-        // Simple string search for VRM extensions
-        return Content.Contains(TEXT("VRMC_springBone")) || 
-               Content.Contains(TEXT("secondaryAnimation"));
     }
 }

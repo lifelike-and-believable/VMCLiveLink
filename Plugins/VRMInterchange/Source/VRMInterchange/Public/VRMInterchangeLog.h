@@ -2,6 +2,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "VRMCoreLog.h" // LogVRMInterchange
 
 VRMINTERCHANGE_API DECLARE_LOG_CATEGORY_EXTERN(LogVRMSpring, Log, All);
-VRMINTERCHANGE_API DECLARE_LOG_CATEGORY_EXTERN(LogVRMInterchange, Log, All);

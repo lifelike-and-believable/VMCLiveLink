@@ -18,6 +18,7 @@ public class VRMInterchange : ModuleRules
             // Expose Interchange types in public headers
             "InterchangeCore",
             "InterchangeImport",
+            "VRMCore",              // FVRMDocument and FVRMParsedModel, in VRMTranslator.h
             "VRMSpringBonesRuntime"
         });
 
@@ -67,13 +68,6 @@ public class VRMInterchange : ModuleRules
                 // Add "UnrealEd" only if needed (many editor APIs are in UnrealEd)
                 // "UnrealEd",
             });
-        }
-
-        // Add ThirdParty include path for cgltf (put cgltf.h into Plugins/VRMInterchange/ThirdParty/cgltf/)
-        string ThirdPartyCgltf = Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "cgltf");
-        if (Directory.Exists(ThirdPartyCgltf))
-        {
-            PrivateIncludePaths.Add(ThirdPartyCgltf);
         }
     }
 }

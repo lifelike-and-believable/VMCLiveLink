@@ -12,6 +12,7 @@ class USkeleton;
 class USkeletalMesh;
 class UFactory;
 struct FVRMSpringConfig;
+class FVRMDocument;
 
 /**
  * VRM Spring Bones (Post-Import)
@@ -72,9 +73,9 @@ public:
 private:
 #if WITH_EDITOR
 	// Parsing/materialization helpers
-	bool ParseAndFillDataAssetFromFile(const FString& Filename, UVRMSpringBoneData* Dest) const;
+	bool ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest) const;
 	FString MakeTargetPathAndName(const FString& SourceFilename, const FString& ContentBasePath, FString& OutPackagePath, FString& OutAssetName) const;
-	bool ResolveBoneNamesFromFile(const FString& Filename, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const;
+	bool ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const;
 	void ValidateBoneNamesAgainstSkeleton(const FString& SearchRootPackagePath, const FVRMSpringConfig& Config) const;
 
 	// Asset helpers

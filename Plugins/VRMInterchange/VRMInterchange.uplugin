@@ -7,6 +7,12 @@
   "Category": "Importers",
   "Modules": [
     {
+      "Name": "VRMCore",
+      "Type": "Runtime",
+      "LoadingPhase": "Default",
+      "EnabledByDefault": true
+    },
+    {
       "Name": "VRMInterchange",
       "Type": "Runtime",
       "LoadingPhase": "Default",
