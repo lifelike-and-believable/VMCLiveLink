@@ -7,6 +7,7 @@
 #include "AnimNode_VRMExpressions.h"
 #include "Animation/AnimCurveTypes.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/MemStack.h"
 #include "Misc/Paths.h"
 #include "UObject/Package.h"
 #include "VRMAvatarDescription.h"
@@ -86,6 +87,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMExpressionsRulesTest, "VRM.Expressions.Rule
 bool FVRMExpressionsRulesTest::RunTest(const FString& Parameters)
 {
 	using namespace VRMExpressionsTests;
+	// FBlendedCurve allocates from the thread's FMemStack, which needs a mark (the anim system
+	// makes one around evaluation). Declared first, so every curve is freed before it ends.
+	FMemMark Mark(FMemStack::Get());
 
 	UVRMAvatarDescription* Description = NewObject<UVRMAvatarDescription>(GetTransientPackage());
 	FVRMExpression Happy = MakeExpression(TEXT("happy"), EVRMExpressionPreset::Happy, { { TEXT("MorphJoy"), 1.f }, { TEXT("MorphBrow"), 0.5f } });
@@ -168,6 +172,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMExpressionsCrossVersionTest, "VRM.Expressio
 bool FVRMExpressionsCrossVersionTest::RunTest(const FString& Parameters)
 {
 	using namespace VRMExpressionsTests;
+	// FBlendedCurve allocates from the thread's FMemStack, which needs a mark (the anim system
+	// makes one around evaluation). Declared first, so every curve is freed before it ends.
+	FMemMark Mark(FMemStack::Get());
 
 	// A VRM 0.x sender (Joy) drives a VRM 1.0 avatar, and a VRM 1.0 sender (happy) a VRM 0.x one.
 	// Both fixtures bind their happy expression to Fcl_ALL_Joy at full weight.
