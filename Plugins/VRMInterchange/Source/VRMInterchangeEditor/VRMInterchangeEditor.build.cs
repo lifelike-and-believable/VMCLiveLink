@@ -48,6 +48,7 @@ public class VRMInterchangeEditor : ModuleRules
             // Runtime plugin module this editor module depends on
             "VRMInterchange",
             "VRMSpringBonesRuntime",
+            "AnimGraphRuntime", // spring anim node base class, used by the node tests
 
             // For IKRigDefinition asset
             "IKRig",
