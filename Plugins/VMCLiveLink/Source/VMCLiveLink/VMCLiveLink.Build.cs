@@ -31,8 +31,12 @@ public class VMCLiveLink : ModuleRules
 			// used by AutoDetectAndApplyMapping()
 			"AssetRegistry",
 
-			// FIPv4Address, for validating the bind address
-			"Networking"
+			// The receive thread's UDP socket (P3.1 step 2), and FIPv4Address
+			"Networking",
+			"Sockets",
+
+			// IPluginManager, for the replay tests' capture files
+			"Projects"
         });
 
         // Keep editor-only modules guarded so runtime packaging doesn't pull them in

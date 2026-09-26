@@ -3,6 +3,9 @@
 
 #include "CoreMinimal.h"
 #include "LiveLinkTypes.h"
+#include "VMCProtocol.h"
+
+struct FVMCConnectionSettings;
 
 /**
  * Collects VMC messages into Live Link data, independent of the source's networking so it can be
@@ -32,6 +35,27 @@ public:
 	};
 
 	FVMCFrameAssembler();
+
+	/** What one message did. */
+	struct FMessageResult
+	{
+		bool bMalformed = false;       // wrong argument count or types; ignored
+		bool bStaticChanged = false;   // a new bone or curve: publish static data before the next frame
+		bool bApply = false;           // /VMC/Ext/Blend/Apply: the frame is complete
+		bool bLegacyRoot = false;      // Root/Pos without a name (accepted)
+		bool bRootScaleOffset = false; // VMC v2.1 root scale and offset (not applied)
+		FName NewBone;                 // set with bStaticChanged when the new entry is a non-humanoid bone
+	};
+
+	/**
+	 * One VMC message: parses it (VMCProtocol), converts it to UE space per the settings and stores
+	 * it. Both receive paths (the OSC plugin on the game thread, VMCOscParser on the receive thread)
+	 * go through here, so they behave the same.
+	 */
+	FMessageResult ApplyMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, const FVMCConnectionSettings& Settings);
+
+	/** The sender's clock from the last /VMC/Ext/T, in seconds, if it sends one. */
+	TOptional<float> GetSenderTime() const { return SenderTime; }
 
 	/** A /VMC/Ext/Bone/Pos transform (already in UE space). Returns true if the bone is new, in
 	 *  which case the static data must be published again. */
@@ -66,6 +90,8 @@ private:
 	TArray<FTransform> Pose;
 	TBitArray<> PoseReceived;
 	FTransform Root = FTransform::Identity;
+
+	TOptional<float> SenderTime;
 
 	TArray<FName> CurveNames;
 	TMap<FName, int32> CurveIndexByName;

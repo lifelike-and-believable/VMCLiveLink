@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCFrameAssembler.h"
 #include "VMCHumanoid.h"
+#include "VMCConnectionSettings.h"
 #include "Roles/LiveLinkAnimationTypes.h"
 
 FVMCFrameAssembler::FVMCFrameAssembler()
@@ -12,6 +13,87 @@ FVMCFrameAssembler::FVMCFrameAssembler()
 	}
 	Pose.SetNum(BoneNames.Num());
 	PoseReceived.Init(false, BoneNames.Num());
+}
+
+FVMCFrameAssembler::FMessageResult FVMCFrameAssembler::ApplyMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, const FVMCConnectionSettings& Settings)
+{
+	using namespace VMCProtocol;
+	FMessageResult Result;
+	switch (Kind)
+	{
+	case EAddress::BonePos:
+	{
+		FPose Parsed;
+		if (!ParseBonePos(Args, Parsed))
+		{
+			Result.bMalformed = true;
+			break;
+		}
+		const FTransform Xf(
+			ToUERotation(Parsed.Rotation, Settings.bUnityToUE),
+			ToUEPosition(Parsed.Position, Settings.bUnityToUE, Settings.bMetersToCm),
+			FVector::OneVector);
+		if (SetBone(Parsed.Name, Xf))
+		{
+			Result.bStaticChanged = true;
+			Result.NewBone = Parsed.Name;
+		}
+		break;
+	}
+	case EAddress::RootPos:
+	{
+		FPose Parsed;
+		if (!ParseRootPos(Args, Parsed, Result.bLegacyRoot))
+		{
+			Result.bMalformed = true;
+			break;
+		}
+		Result.bRootScaleOffset = Parsed.bHasScaleAndOffset;
+
+		FVector Position = ToUEPosition(Parsed.Position, Settings.bUnityToUE, Settings.bMetersToCm);
+		FQuat Rotation = ToUERotation(Parsed.Rotation, Settings.bUnityToUE);
+		if (!FMath::IsNearlyZero(Settings.YawOffsetDeg))
+		{
+			// Extra yaw about UE Z
+			const FQuat YawDelta(FVector::UpVector, FMath::DegreesToRadians(Settings.YawOffsetDeg));
+			Rotation = YawDelta * Rotation;
+			Position = YawDelta.RotateVector(Position);
+		}
+		SetRoot(FTransform(Rotation, Position, FVector::OneVector));
+		break;
+	}
+	case EAddress::BlendVal:
+	{
+		FName Name;
+		float Value = 0.f;
+		if (!ParseBlendVal(Args, Name, Value))
+		{
+			Result.bMalformed = true;
+			break;
+		}
+		Result.bStaticChanged = SetCurve(Name, Value);
+		break;
+	}
+	case EAddress::Time:
+	{
+		float Seconds = 0.f;
+		if (ParseTime(Args, Seconds))
+		{
+			SenderTime = Seconds;
+		}
+		else
+		{
+			Result.bMalformed = true;
+		}
+		break;
+	}
+	case EAddress::BlendApply:
+		Result.bApply = true;
+		break;
+	default:
+		break; // availability, devices, camera, ...: not used yet
+	}
+	return Result;
 }
 
 bool FVMCFrameAssembler::SetBone(FName Bone, const FTransform& Local)

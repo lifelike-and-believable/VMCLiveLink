@@ -8,7 +8,7 @@
  * reads and writes it (P3.1, VMC-17).
  *
  * Format: "key=value" pairs separated by ';', keys case-insensitive, unknown keys ignored, e.g.
- *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;subject=VMC_Subject;zeromissing=0
+ *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;thread=1;subject=VMC_Subject
  * Booleans accept 1/0, true/false, yes/no, on/off. Strings saved by earlier versions (port,
  * unity2ue, meters2cm, subject) read the same.
  */
@@ -34,6 +34,9 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	bool bPreferIncomingTranslations = false;
 	/** Use the reference skeleton's translations for bones without one of their own. */
 	bool bUseRefOffsets = true;
+	/** Receive and build frames on a thread of their own, timestamped on arrival (D-1). Off: the OSC
+	 *  plugin delivers messages on the game thread, as before P3.1 step 2. */
+	bool bReceiveThread = true;
 
 	/**
 	 * Reads a connection string. Keys that are missing keep their defaults. Returns false if any
