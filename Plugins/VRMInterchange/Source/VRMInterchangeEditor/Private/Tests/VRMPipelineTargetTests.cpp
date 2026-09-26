@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
-// Tests for the post-import pipelines' toggles and target resolution (P1.15).
+// Tests for the post-import pipelines' toggles (P1.15) and their post-import step (P3.4).
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
@@ -15,6 +15,10 @@
 #include "VRMLiveLinkPostImportPipeline.h"
 #include "VRMPipelineTargets.h"
 #include "VRMSpringBonesPostImportPipeline.h"
+#include "VRMSpringBoneData.h"
+#include "Rig/IKRigDefinition.h"
+#include "Misc/SecureHash.h"
+#include "UObject/UObjectIterator.h"
 
 namespace VRMPipelineTargetTests
 {
@@ -90,42 +94,119 @@ bool FVRMPipelinePathBoundary::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelineSiblingCharacters, "VRM.Pipeline.Targets.SiblingCharacters",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelinePostImportSpringData, "VRM.Pipeline.PostImport.SpringData",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FVRMPipelineSiblingCharacters::RunTest(const FString& Parameters)
+bool FVRMPipelinePostImportSpringData::RunTest(const FString& Parameters)
 {
+	// The spring pipeline stages its data in ExecutePipeline and creates the asset when Interchange
+	// reports this import's skeletal mesh (P3.4). Overwrite updates the asset in place.
 	using namespace VRMPipelineTargetTests;
-	const FString Alice = SourceFile(TEXT("Alice"));
-	const FString Alice2 = SourceFile(TEXT("Alice2"));
-	const FString AliceFolder = FString(ContentBase) / TEXT("Alice");
+	if (!TestFalse(TEXT("Fixture found"), FixturePath().IsEmpty()))
+	{
+		return false;
+	}
+	FScopedSettings Scoped;
+	const FString CharacterFolder = FString(ContentBase) / TEXT("vrm1_minimal");
+	const FString SpringFolder = CharacterFolder / TEXT("SpringBones");
+	USkeletalMesh* Mesh = MakeMesh(CharacterFolder / TEXT("SK_PostImportSpring"), FixturePath());
 
-	// Alice and Alice2 imported into sibling folders; Alice's pipelines must take only Alice's mesh.
-	USkeletalMesh* AliceMesh = MakeMesh(AliceFolder / TEXT("SK_Alice"), Alice);
-	USkeletalMesh* Alice2Mesh = MakeMesh(FString(ContentBase) / TEXT("Alice2") / TEXT("SK_Alice2"), Alice2);
-	AddInfo(FString::Printf(TEXT("Import data records '%s' for '%s'"),
-		AliceMesh->GetAssetImportData() ? *AliceMesh->GetAssetImportData()->GetFirstFilename() : TEXT("(none)"), *Alice));
-	TestTrue(TEXT("Alice's mesh belongs to Alice's import"),
-		VRMPipeline::ResolveImportedMesh(AliceMesh, Alice, AliceFolder, ContentBase) == AliceMesh);
-	TestTrue(TEXT("Alice2's mesh does not belong to Alice's import"),
-		VRMPipeline::ResolveImportedMesh(Alice2Mesh, Alice, AliceFolder, ContentBase) == nullptr);
+	auto CountSpringAssets = [&SpringFolder]()
+	{
+		int32 Count = 0;
+		for (TObjectIterator<UVRMSpringBoneData> It; It; ++It)
+		{
+			if (VRMPipeline::IsUnderPath(It->GetOutermost()->GetName(), SpringFolder) && It->GetName().StartsWith(TEXT("SK_PostImportSpring_SpringData")))
+			{
+				++Count;
+			}
+		}
+		return Count;
+	};
+	auto MakePipeline = [](bool bOverwrite)
+	{
+		UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+		Pipeline->bGenerateSpringBoneData = true;
+		Pipeline->bGeneratePostProcessAnimBP = false;
+		Pipeline->bOverwriteExisting = bOverwrite;
+		return Pipeline;
+	};
 
-	// The source file decides wherever the mesh landed, e.g. directly in the content folder.
-	USkeletalMesh* FlatAlice = MakeMesh(FString(ContentBase) / TEXT("SK_AliceFlat"), Alice);
-	TestTrue(TEXT("Alice's mesh outside the character folder still belongs to Alice"),
-		VRMPipeline::MeshBelongsToImport(FlatAlice, Alice, AliceFolder));
-	USkeletalMesh* AliceFromOtherFile = MakeMesh(AliceFolder / TEXT("SK_Other"), SourceFile(TEXT("Bob")));
-	TestFalse(TEXT("A mesh in Alice's folder imported from another file is not Alice's"),
-		VRMPipeline::MeshBelongsToImport(AliceFromOtherFile, Alice, AliceFolder));
+	const int32 Before = CountSpringAssets();
+	UVRMSpringBonesPostImportPipeline* First = MakePipeline(true);
+	Execute(First);
+	TestTrue(TEXT("Staged, waiting for the mesh"), First->HasPendingPostImportWork());
+	First->HandleImportedAsset(NewObject<UAssetImportData>(), false);
+	TestTrue(TEXT("Other assets of the import don't finish the job"), First->HasPendingPostImportWork());
+	First->HandleImportedAsset(Mesh, false);
+	TestFalse(TEXT("The mesh finishes the job"), First->HasPendingPostImportWork());
 
-	// Without import data, only the character folder counts, with a folder boundary.
-	TestTrue(TEXT("No import data, in Alice's folder"),
-		VRMPipeline::MeshBelongsToImport(MakeMesh(AliceFolder / TEXT("SK_NoData"), FString()), Alice, AliceFolder));
-	TestFalse(TEXT("No import data, in Alice2's folder"),
-		VRMPipeline::MeshBelongsToImport(MakeMesh(FString(ContentBase) / TEXT("Alice2") / TEXT("SK_NoData"), FString()), Alice, AliceFolder));
+	const FString AssetPath = SpringFolder / TEXT("SK_PostImportSpring_SpringData.SK_PostImportSpring_SpringData");
+	UVRMSpringBoneData* Created = FindObject<UVRMSpringBoneData>(nullptr, *AssetPath);
+	if (!TestNotNull(TEXT("Spring data created next to the character"), Created))
+	{
+		return false;
+	}
+	TestTrue(TEXT("It holds the parsed springs"), Created->SpringConfig.Joints.Num() > 0);
+	TestEqual(TEXT("It records the file's hash"), Created->SourceHash, LexToString(FMD5Hash::HashFile(*FixturePath())));
+	const int32 AfterFirst = CountSpringAssets();
 
-	TestTrue(TEXT("Objects that are not meshes or skeletons are ignored"),
-		VRMPipeline::ResolveImportedMesh(NewObject<UAssetImportData>(), Alice, AliceFolder, ContentBase) == nullptr);
+	// Overwrite: the same asset is updated, nothing new is created.
+	Created->SpringConfig.Joints.Reset();
+	UVRMSpringBonesPostImportPipeline* Overwrite = MakePipeline(true);
+	Execute(Overwrite);
+	Overwrite->HandleImportedAsset(Mesh, true);
+	TestTrue(TEXT("Overwrite keeps the same object"), FindObject<UVRMSpringBoneData>(nullptr, *AssetPath) == Created);
+	TestTrue(TEXT("... and replaces its data"), Created->SpringConfig.Joints.Num() > 0);
+	TestEqual(TEXT("... without another asset"), CountSpringAssets(), AfterFirst);
+
+	// Without overwrite: a new asset under a unique name, the old one untouched.
+	UVRMSpringBonesPostImportPipeline* Unique = MakePipeline(false);
+	Execute(Unique);
+	Unique->HandleImportedAsset(Mesh, false);
+	TestEqual(TEXT("No overwrite: one more asset"), CountSpringAssets(), AfterFirst + 1);
+	TestTrue(TEXT("... the first one is still there"), FindObject<UVRMSpringBoneData>(nullptr, *AssetPath) == Created);
+	TestTrue(TEXT("At least one asset was made"), AfterFirst > Before);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelinePostImportIKRig, "VRM.Pipeline.PostImport.IKRig",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMPipelinePostImportIKRig::RunTest(const FString& Parameters)
+{
+	// The IK Rig is copied from the template with IAssetTools::DuplicateAsset once the mesh arrives.
+	using namespace VRMPipelineTargetTests;
+	if (!TestFalse(TEXT("Fixture found"), FixturePath().IsEmpty()))
+	{
+		return false;
+	}
+	FScopedSettings Scoped;
+	const FString CharacterFolder = FString(ContentBase) / TEXT("vrm1_minimal");
+	USkeletalMesh* Mesh = MakeMesh(CharacterFolder / TEXT("SK_PostImportIK"), FixturePath());
+
+	UVRMIKRigPostImportPipeline* Pipeline = NewObject<UVRMIKRigPostImportPipeline>();
+	Pipeline->bGenerateIKRig = true;
+	Pipeline->bOverwriteExisting = true;
+	Execute(Pipeline);
+	Pipeline->HandleImportedAsset(Mesh, false);
+	TestFalse(TEXT("Done"), Pipeline->HasPendingPostImportWork());
+
+	const FString RigPath = CharacterFolder / TEXT("IKRigDefinition") / TEXT("IK_Rig_VRM_SK_PostImportIK.IK_Rig_VRM_SK_PostImportIK");
+	UIKRigDefinition* Rig = FindObject<UIKRigDefinition>(nullptr, *RigPath);
+	if (!TestNotNull(TEXT("IK Rig created"), Rig))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Its preview mesh is the imported mesh"), Rig->GetPreviewMesh() == Mesh);
+
+	// Reimport with overwrite reuses it.
+	UVRMIKRigPostImportPipeline* Again = NewObject<UVRMIKRigPostImportPipeline>();
+	Again->bGenerateIKRig = true;
+	Again->bOverwriteExisting = true;
+	Execute(Again);
+	Again->HandleImportedAsset(Mesh, true);
+	TestTrue(TEXT("Overwrite reuses the IK Rig"), FindObject<UIKRigDefinition>(nullptr, *RigPath) == Rig);
 	return true;
 }
 

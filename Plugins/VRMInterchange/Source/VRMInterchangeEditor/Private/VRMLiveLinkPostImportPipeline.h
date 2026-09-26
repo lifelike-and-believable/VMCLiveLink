@@ -2,7 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "InterchangePipelineBase.h"
+#include "VRMPipelineBase.h"
 #include "VRMLiveLinkPostImportPipeline.generated.h"
 
 class UInterchangeBaseNodeContainer;
@@ -16,13 +16,13 @@ class UFactory;
 /**
  * VRM Live Link (Post-Import)
  *
- * - Runs after the user confirms the Interchange import dialog.
+ * - Runs once the import's skeletal mesh exists (UVRMPipelineBase).
  * - Duplicates a character Actor Blueprint and an AnimBlueprint from templates.
  * - Wires up the imported SkeletalMesh to the actor and sets the preview mesh on the AnimBP.
  * - Does NOT save packages during import; marks packages dirty so Save All/SCC handle persistence.
  */
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, ClassGroup=(Interchange), meta=(DisplayName="VRM Live Link (Post-Import)"))
-class VRMINTERCHANGEEDITOR_API UVRMLiveLinkPostImportPipeline : public UInterchangePipelineBase
+class VRMINTERCHANGEEDITOR_API UVRMLiveLinkPostImportPipeline : public UVRMPipelineBase
 {
 	GENERATED_BODY()
 public:
@@ -36,12 +36,12 @@ public:
 	/** Generate the LiveLink-enabled Actor + AnimBP scaffold assets */
 	UPROPERTY(EditAnywhere, Category = "VRM Character")
 	bool bGenerateLiveLinkEnabledActor = true;
-	/** Generate the LiveLink-enabled Actor + AnimBP scaffold assets */
 
+	/** Generate the actor that retargets the Live Link pose to the UE5 mannequin */
 	UPROPERTY(EditAnywhere, Category = "VRM Character")
 	bool bGenerateLiveLinkRetargetActor = true;
 
-	/** If true, overwrite existing assets with the same names; otherwise create unique names */
+	/** If assets with these names exist, reuse them (they are wired to the new mesh again); otherwise the new ones get unique names */
 	UPROPERTY(EditAnywhere, Category="VRM Character")
 	bool bOverwriteExisting = false;
 
@@ -55,49 +55,20 @@ public:
 
 #if WITH_EDITOR
 	virtual void PostInitProperties() override;
-	virtual void BeginDestroy() override;
-
-	/** True while this pipeline waits for its import's skeletal mesh to finish the job (tests use it). */
-	bool HasPendingPostImportWork() const { return ImportPostHandle.IsValid(); }
 #endif
 
-private:
-#if WITH_EDITOR
-	/** Duplicate an asset from a template path into the target package; compiles blueprints; no save */
-	UObject* DuplicateTemplate(const TCHAR* TemplatePath, const FString& TargetPackagePath, const FString& DesiredName, bool bOverwrite) const;
+protected:
+	virtual void OnSkeletalMeshImported(USkeletalMesh* Mesh, bool bIsAReimport) override;
 
+private:
 	/** Assign a SkeletalMesh to the first SkeletalMeshComponent on the actor blueprint CDO; marks dirty */
 	bool AssignSkeletalMeshToActorBP(UObject* ActorBlueprintObj, USkeletalMesh* SkeletalMesh) const;
 
 	bool AssignSkeletalMeshToActorBPProperty(UObject* ActorBlueprintObj, USkeletalMesh* SkeletalMesh) const;
 
-	/** Assign an AnimBP class to the actor blueprint’s SkeletalMeshComponent; marks dirty */
+	/** Assign an AnimBP class to the actor blueprint's SkeletalMeshComponent; marks dirty */
 	bool AssignAnimBPToActorBP(UObject* ActorBlueprintObj, UAnimBlueprint* AnimBP) const;
 
 	/** Set preview mesh on an AnimBP; marks dirty */
 	bool SetPreviewMeshOnAnimBP(UAnimBlueprint* AnimBP, USkeletalMesh* SkeletalMesh) const;
-
-	/** Post-import commit registration (UImportSubsystem) */
-	void RegisterPostImportCommit();
-	void UnregisterPostImportCommit();
-	void OnAssetPostImport(class UFactory* InFactory, UObject* InCreatedObject);
-
-	// Compute a robust character name using the imported mesh name if available, else the last segment of the package path
-	FString ResolveEffectiveCharacterName(USkeletalMesh* SkelMesh, const FString& PackagePath) const;
-
-	// Deferred state for post-import commit
-	FDelegateHandle ImportPostHandle;
-	FString DeferredContentBasePath;
-	FString DeferredSourceFilename;
-	FString DeferredPackagePath; // <ContentBasePath>/<source file base name>
-	bool bDeferredCompleted=false;
-
-	// Names and locations staged during ExecutePipeline
-	FString DeferredActorBPPath;
-	FString DeferredAnimBPPath;
-	FString DeferredActorBPName;
-	FString DeferredAnimBPName;
-	FString DeferredRetargetActorBPName;
-	bool bDeferredOverwrite=false;
-#endif
 };

@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 // VRMSpringBonesPostImportPipeline
-// - Defers any on-disk mutations until after the user confirms the import dialog.
+// - Parses spring data while the import is set up; creates assets once the import's skeletal mesh
+//   exists (UVRMPipelineBase::OnSkeletalMeshImported).
 // - Creates assets (Spring data + optional post-process ABP), marks packages dirty,
 //   and does NOT save during import. Let the editor Save/Source Control flow handle persistence.
-// - Supports unattended/CI mode if you later want an opt-in "save immediately" gate.
 
 #include "VRMSpringBonesPostImportPipeline.h"
 #include "VRMSpringBoneData.h"                // runtime asset
@@ -12,7 +12,6 @@
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
-#include "Factories/Factory.h"
 #include "IAssetTools.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
@@ -24,12 +23,6 @@
 #include "VRMSpringBonesValidation.h"
 #include "VRMInterchangeLog.h"
 #include "VRMInterchangeSettings.h"
-#include "VRMPipelineTargets.h"
-
-#if WITH_EDITOR
-#include "UnrealEdGlobals.h"
-#include "Subsystems/ImportSubsystem.h"
-#endif
 
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
@@ -59,125 +52,77 @@ void UVRMSpringBonesPostImportPipeline::PostInitProperties()
 
 // ExecutePipeline
 // - Parse VRM spring data into a transient asset
-// - Stage all decisions (paths, names, flags)
-// - Register a post-import handler to materialize assets after the import dialog is accepted
+// - Wait for this import's skeletal mesh (OnSkeletalMeshImported) to create the assets
 void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath)
 {
-#if WITH_EDITOR
+    Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
+    StagedSpringData.Reset();
+
     // Only this instance's flags count. The project settings seeded them (PostInitProperties), and the
     // import dialog may have changed them since; OR-ing the settings back in would ignore an unticked box.
-    const bool bWantsSpringData    = bGenerateSpringBoneData;
-    const bool bWantsOverwrite     = bOverwriteExisting;
-    const bool bWantsABPOverwrite  = bOverwriteExistingPostProcessABP;
-    const bool bWantsReuseABP      = bReusePostProcessABPOnReimport;
-
-    if (!BaseNodeContainer)
-    {
-        return;
-    }
-
-    const UInterchangeSourceData* Source = nullptr;
-    for (const UInterchangeSourceData* SD : SourceDatas)
-    {
-        if (SD) { Source = SD; break; }
-    }
-    if (!Source)
+    if (!BeginImport(SourceDatas, ContentBasePath) || !BaseNodeContainer)
     {
         UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: No SourceData."));
         return;
     }
+    const FString& Filename = GetSourceFilename();
 
-    const FString Filename = Source->GetFilename();
-
-    // Compute character base package path only; defer asset naming to post-import.
-    const FString PackagePath = VRMPipeline::MakeCharacterBasePath(Filename, ContentBasePath);
-    const FString SkeletonSearchRoot = PackagePath;
-
-    // The translator read the file and left its JSON and hash in a VRM node (P3.3), so the file is
-    // not opened again. A container the VRM translator didn't make has no such node; then the
-    // file is read here, once.
-    FString LoadError;
-    FString SourceHash;
-    TSharedPtr<const FVRMDocument> Document;
-    if (const UInterchangeVRMNode* VRMNode = UInterchangeVRMNode::Find(*BaseNodeContainer))
+    if (bGenerateSpringBoneData)
     {
-        Document = VRMNode->MakeDocument(LoadError);
-        VRMNode->GetSourceHash(SourceHash);
-    }
-    else
-    {
-        Document = FVRMDocument::LoadFile(Filename, LoadError);
-        if (Document.IsValid())
+        // The translator read the file and left its JSON and hash in a VRM node (P3.3), so the file is
+        // not opened again. A container the VRM translator didn't make has no such node; then the
+        // file is read here, once.
+        FString LoadError;
+        FString SourceHash;
+        TSharedPtr<const FVRMDocument> Document;
+        if (const UInterchangeVRMNode* VRMNode = UInterchangeVRMNode::Find(*BaseNodeContainer))
         {
-            SourceHash = LexToString(Document->GetSourceHash());
-        }
-    }
-    if (!Document.IsValid())
-    {
-        UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: %s"), *LoadError);
-    }
-
-    // Prepare transient spring data (no assets created on disk)
-    UVRMSpringBoneData* TransientSpringData = nullptr;
-    if (bWantsSpringData && Document.IsValid())
-    {
-        TransientSpringData = NewObject<UVRMSpringBoneData>(GetTransientPackage(), NAME_None);
-        if (!ParseAndFillDataAsset(*Document, TransientSpringData))
-        {
-            UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: No spring data found in '%s'."), *Filename);
-            TransientSpringData = nullptr;
+            Document = VRMNode->MakeDocument(LoadError);
+            VRMNode->GetSourceHash(SourceHash);
         }
         else
         {
-            int32 ResolvedC=0, ResolvedJ=0, ResolvedCenters=0;
-            ResolveBoneNames(*Document, TransientSpringData->SpringConfig, ResolvedC, ResolvedJ, ResolvedCenters);
-
-            // The parser already returns Unreal axes and centimetres (VRMCoordinateConversion.h).
-            ValidateBoneNamesAgainstSkeleton(SkeletonSearchRoot, TransientSpringData->SpringConfig);
-            TransientSpringData->SourceFilename = Filename;
-            if (!SourceHash.IsEmpty())
+            Document = FVRMDocument::LoadFile(Filename, LoadError);
+            if (Document.IsValid())
             {
+                SourceHash = LexToString(Document->GetSourceHash());
+            }
+        }
+
+        UVRMSpringBoneData* TransientSpringData = nullptr;
+        if (!Document.IsValid())
+        {
+            UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: %s"), *LoadError);
+        }
+        else
+        {
+            TransientSpringData = NewObject<UVRMSpringBoneData>(GetTransientPackage(), NAME_None);
+            if (!ParseAndFillDataAsset(*Document, TransientSpringData))
+            {
+                UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: No spring data found in '%s'."), *Filename);
+                TransientSpringData = nullptr;
+            }
+            else
+            {
+                int32 ResolvedC=0, ResolvedJ=0, ResolvedCenters=0;
+                ResolveBoneNames(*Document, TransientSpringData->SpringConfig, ResolvedC, ResolvedJ, ResolvedCenters);
+                // The parser already returns Unreal axes and centimetres (VRMCoordinateConversion.h).
+                TransientSpringData->SourceFilename = Filename;
                 TransientSpringData->SourceHash = SourceHash;
             }
         }
+        StagedSpringData.Reset(TransientSpringData);
     }
 
-    const bool bWantsABP  = bGeneratePostProcessAnimBP;
-    const bool bWantsAssign = bAssignPostProcessABP;
-
-    // Stage state for the post-import commit
-    DeferredContentBasePath       = ContentBasePath;
-    DeferredPackagePath           = PackagePath;
-    DeferredSourceFilename        = Filename;
-    DeferredSourceHash            = SourceHash;
-    bDeferredWantsAssign          = bWantsAssign;
-    bDeferredOverwriteABP         = bWantsABPOverwrite;
-    bDeferredOverwriteSpringAsset = bWantsOverwrite;
-    bDeferredReuseABP             = bWantsReuseABP;
-    DeferredSpringDataTransient.Reset(TransientSpringData);
-
-    // Location for ABP
-    DeferredAnimFolder = PackagePath / AnimationSubFolder;
-
-    const bool bAnythingToDo = (bWantsSpringData && DeferredSpringDataTransient.IsValid()) || bWantsABP;
-    if (bAnythingToDo)
+    if (StagedSpringData.IsValid() || bGeneratePostProcessAnimBP)
     {
-        RegisterPostImportCommit();
+        WaitForSkeletalMesh();
     }
-#endif
 }
-
-#if WITH_EDITOR
-void UVRMSpringBonesPostImportPipeline::BeginDestroy()
-{
-    UnregisterPostImportCommit();
-    Super::BeginDestroy();
-}
-#endif
 
 // ParseAndFillDataAsset
 // - Parses the document's spring config into a runtime asset container
-// - The container is transient here; materialization happens in OnAssetPostImport
+// - The container is transient here; the asset is created in OnSkeletalMeshImported
 bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest) const
 {
     if (!Dest) return false;
@@ -235,22 +180,8 @@ bool UVRMSpringBonesPostImportPipeline::ResolveBoneNames(const FVRMDocument& Doc
     return (OutResolvedColliders+OutResolvedJoints+OutResolvedCenters)>0;
 }
 
-void UVRMSpringBonesPostImportPipeline::ValidateBoneNamesAgainstSkeleton(const FString& SearchRootPackagePath, const FVRMSpringConfig& Config) const
+void UVRMSpringBonesPostImportPipeline::ValidateBoneNamesAgainstSkeleton(const USkeleton* Skeleton, const FVRMSpringConfig& Config) const
 {
-    if (SearchRootPackagePath.IsEmpty()) return;
-    FAssetRegistryModule& ARM = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-    FARFilter SkelFilter; SkelFilter.bRecursivePaths=true; SkelFilter.PackagePaths.Add(*SearchRootPackagePath); SkelFilter.ClassPaths.Add(USkeleton::StaticClass()->GetClassPathName());
-    TArray<FAssetData> FoundSkeletons; ARM.Get().GetAssets(SkelFilter, FoundSkeletons);
-    USkeleton* Skeleton = FoundSkeletons.Num()>0?Cast<USkeleton>(FoundSkeletons[0].GetAsset()):nullptr;
-    if (!Skeleton)
-    {
-        FARFilter MeshFilter; 
-        MeshFilter.bRecursivePaths=true;
-        MeshFilter.PackagePaths.Add(*SearchRootPackagePath);
-        MeshFilter.ClassPaths.Add(USkeletalMesh::StaticClass()->GetClassPathName());
-        TArray<FAssetData> Meshes; ARM.Get().GetAssets(MeshFilter, Meshes);
-        if (Meshes.Num()>0) if (USkeletalMesh* SM=Cast<USkeletalMesh>(Meshes[0].GetAsset())) Skeleton=SM->GetSkeleton();
-    }
     if (!Skeleton) return;
 
     const FReferenceSkeleton& RefSkel = Skeleton->GetReferenceSkeleton();
@@ -271,52 +202,6 @@ void UVRMSpringBonesPostImportPipeline::ValidateBoneNamesAgainstSkeleton(const F
     Report(MC,TEXT("collider BoneName(s)"));
     Report(MJ,TEXT("joint BoneName(s)"));
     Report(MCent,TEXT("center BoneName(s)"));
-}
-
-// Duplicate a template Post-Process AnimBlueprint into the target folder.
-// Does not save; marks package dirty and compiles the new ABP to ensure GeneratedClass is valid.
-UObject* UVRMSpringBonesPostImportPipeline::DuplicateTemplateAnimBlueprint(const FString& TargetPackagePath, const FString& BaseName, USkeleton* TargetSkeleton, bool bOverwriteExistingABP) const
-{
-    if(!TargetSkeleton) return nullptr;
-
-    const TCHAR* TemplatePath=TEXT("/VRMInterchange/Animation/ABP_VRMSpringBones_Template.ABP_VRMSpringBones_Template");
-    UAnimBlueprint* TemplateABP=Cast<UAnimBlueprint>(StaticLoadObject(UAnimBlueprint::StaticClass(),nullptr,TemplatePath));
-    if(!TemplateABP)
-    {
-        UE_LOG(LogVRMSpring,Warning,TEXT("[VRMInterchange] Spring pipeline: Could not find template ABP at '%s'."),TemplatePath);
-        return nullptr;
-    }
-
-    FString NewAssetPath=TargetPackagePath/ BaseName;
-    FAssetToolsModule& AssetToolsModule=FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
-    FString UniquePath,UniqueName;
-
-    if (!bOverwriteExistingABP)
-    {
-        AssetToolsModule.Get().CreateUniqueAssetName(NewAssetPath,TEXT(""),UniquePath,UniqueName);
-    }
-    else
-    {
-        UniquePath = NewAssetPath;
-        UniqueName = BaseName;
-    }
-
-    const FString LongPackage=UniquePath.StartsWith(TEXT("/"))?UniquePath:TEXT("/")+UniquePath;
-    UPackage* Pkg=CreatePackage(*LongPackage);
-    if(!Pkg) return nullptr;
-    UObject* Duplicated=StaticDuplicateObject(TemplateABP,Pkg,*UniqueName);
-    if(!Duplicated)
-    {
-        UE_LOG(LogVRMSpring,Warning,TEXT("[VRMInterchange] Spring pipeline: Failed to duplicate template ABP."));
-        return nullptr;
-    }
-    FAssetRegistryModule::AssetCreated(Duplicated);
-    if(UAnimBlueprint* NewABP=Cast<UAnimBlueprint>(Duplicated))
-    {
-        NewABP->TargetSkeleton=TargetSkeleton;
-        FKismetEditorUtilities::CompileBlueprint(NewABP);
-    }
-    return Duplicated;
 }
 
 // Tries to set SpringConfig (object or soft object) on the ABP CDO and mark dirty.
@@ -395,180 +280,76 @@ bool UVRMSpringBonesPostImportPipeline::AssignPostProcessABPToMesh(USkeletalMesh
     return true;
 }
 
-// OnAssetPostImport
-// - After user accepts the import dialog, skeletal assets exist.
-// - Materialize SpringData and optional ABP; assign ABP to mesh if requested.
+// OnSkeletalMeshImported
+// - Called once with this import's skeletal mesh, after the import dialog was accepted.
+// - Create (or update) the spring data and the optional ABP; assign the ABP to the mesh if requested.
 // - Do not save packages; leave them dirty for the editor Save/SCC flow.
-void UVRMSpringBonesPostImportPipeline::OnAssetPostImport(UFactory* InFactory, UObject* InCreatedObject)
+void UVRMSpringBonesPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* SkelMesh, bool bIsAReimport)
 {
-    if (bDeferredCompleted || !InCreatedObject)
-    {
-        return;
-    }
-
-    // Only this import's mesh: every import in the editor reports its assets here (VRMPipelineTargets.h).
-    USkeletalMesh* SkelMesh = VRMPipeline::ResolveImportedMesh(InCreatedObject, DeferredSourceFilename, DeferredPackagePath, DeferredContentBasePath);
-    if (!SkelMesh)
-    {
-        return;
-    }
     USkeleton* Skeleton = SkelMesh->GetSkeleton();
+    const FString CharacterName = SkelMesh->GetName();
 
     // 1) Spring data asset
     UVRMSpringBoneData* SpringDataAsset = nullptr;
-    if (DeferredSpringDataTransient.IsValid())
+    if (StagedSpringData.IsValid())
     {
-        // Use the staged character base path; name derives from the actual SkeletalMesh.
-        const FString PackagePath = DeferredPackagePath;
+        ValidateBoneNamesAgainstSkeleton(Skeleton, StagedSpringData->SpringConfig);
 
-        FString SpringAssetName = SkelMesh
-            ? (SkelMesh->GetName() + TEXT("_SpringData"))
-            : (FPaths::GetBaseFilename(DeferredSourceFilename) + TEXT("_SpringData"));
-
-        FString SpringDataFolder = PackagePath;
-        if (!SubFolder.IsEmpty())
+        const FString SpringDataFolder = SubFolder.IsEmpty() ? GetCharacterFolder() : GetCharacterFolder() / SubFolder;
+        bool bReused = false;
+        SpringDataAsset = Cast<UVRMSpringBoneData>(CreateOrReuseAsset(UVRMSpringBoneData::StaticClass(), SpringDataFolder,
+            CharacterName + TEXT("_SpringData"), bOverwriteExisting, bReused));
+        if (SpringDataAsset)
         {
-            SpringDataFolder /= SubFolder;
-        }
-
-        FString FinalSpringPackageName = SpringDataFolder / SpringAssetName;
-        if (!bDeferredOverwriteSpringAsset)
-        {
-            FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
-            AssetToolsModule.Get().CreateUniqueAssetName(FinalSpringPackageName, TEXT(""), FinalSpringPackageName, SpringAssetName);
-        }
-
-        FString LongSpringPackageName = FinalSpringPackageName;
-        if (!LongSpringPackageName.StartsWith(TEXT("/")))
-        {
-            LongSpringPackageName = TEXT("/") + LongSpringPackageName;
-        }
-
-        UPackage* SpringPackage = CreatePackage(*LongSpringPackageName);
-        if (SpringPackage)
-        {
-            SpringDataAsset = NewObject<UVRMSpringBoneData>(SpringPackage, *SpringAssetName, RF_Public | RF_Standalone);
-            SpringDataAsset->SpringConfig = DeferredSpringDataTransient->SpringConfig;
-            SpringDataAsset->NodeParent   = DeferredSpringDataTransient->NodeParent;
-            SpringDataAsset->NodeChildren = DeferredSpringDataTransient->NodeChildren;
-            SpringDataAsset->SetNodeToBoneMapping(DeferredSpringDataTransient->NodeToBoneMap);
+            // Replaced in place when reused, so anim nodes and ABPs pointing at it keep working.
+            SpringDataAsset->SpringConfig = StagedSpringData->SpringConfig;
+            SpringDataAsset->NodeParent   = StagedSpringData->NodeParent;
+            SpringDataAsset->NodeChildren = StagedSpringData->NodeChildren;
+            SpringDataAsset->SetNodeToBoneMapping(StagedSpringData->NodeToBoneMap);
             if (SpringDataAsset->NodeChildren.Num() > 0)
             {
                 SpringDataAsset->BuildResolvedChildren();
             }
-            SpringDataAsset->SourceFilename = DeferredSpringDataTransient->SourceFilename;
-            SpringDataAsset->SourceHash     = DeferredSpringDataTransient->SourceHash;
+            SpringDataAsset->SourceFilename = StagedSpringData->SourceFilename;
+            SpringDataAsset->SourceHash     = StagedSpringData->SourceHash;
             SpringDataAsset->bNeedsReimport = false; // freshly parsed, so current (FVRMSpringDataCustomVersion)
-
-#if WITH_EDITOR
+            if (bReused)
+            {
+                // A new effective hash makes running spring nodes pick up the replaced data.
+                ++SpringDataAsset->EditRevision;
+            }
             FVRMInterchangeEditorModule::NotifySpringDataCreated(SpringDataAsset);
-            FAssetRegistryModule::AssetCreated(SpringDataAsset);
-#endif
             SpringDataAsset->MarkPackageDirty();
-            SpringPackage->SetDirtyFlag(true);
         }
     }
 
     // 2) ABP create/reuse and assignment
-    const bool bWantsABP = bGeneratePostProcessAnimBP;
-    if (bWantsABP)
+    if (bGeneratePostProcessAnimBP && Skeleton)
     {
-        FString CharName = SkelMesh ? SkelMesh->GetName() : FPaths::GetBaseFilename(DeferredSourceFilename);
-        const FString EffectiveABPName = FString::Printf(TEXT("PP_ABP_VRMSpringBones_%s"), *CharName);
-
-        UObject* ReusedOrDuplicatedABP = nullptr;
-
-        if (bDeferredReuseABP)
+        const TCHAR* TemplatePath = TEXT("/VRMInterchange/Animation/ABP_VRMSpringBones_Template.ABP_VRMSpringBones_Template");
+        bool bReused = false;
+        UAnimBlueprint* ABP = Cast<UAnimBlueprint>(DuplicateTemplateAsset(TemplatePath, GetCharacterFolder() / AnimationSubFolder,
+            FString::Printf(TEXT("PP_ABP_VRMSpringBones_%s"), *CharacterName),
+            bOverwriteExistingPostProcessABP || bReusePostProcessABPOnReimport, bReused));
+        if (ABP)
         {
-            FAssetRegistryModule& ARM = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-            FARFilter Filter;
-            Filter.bRecursivePaths = false;
-            Filter.PackagePaths.Add(*DeferredAnimFolder);
-            Filter.ClassPaths.Add(UAnimBlueprint::StaticClass()->GetClassPathName());
-            TArray<FAssetData> Found; ARM.Get().GetAssets(Filter, Found);
-            if (Found.Num() > 0)
+            if (!bReused)
             {
-                for (const FAssetData& AD : Found)
-                {
-                    if (AD.AssetName.ToString().Equals(EffectiveABPName, ESearchCase::IgnoreCase))
-                    {
-                        ReusedOrDuplicatedABP = AD.GetAsset();
-                        break;
-                    }
-                }
-                if (!ReusedOrDuplicatedABP)
-                {
-                    ReusedOrDuplicatedABP = Found[0].GetAsset();
-                }
-
-                if (ReusedOrDuplicatedABP && SpringDataAsset)
-                {
-                    if (!SetSpringConfigOnAnimBlueprint(ReusedOrDuplicatedABP, SpringDataAsset))
-                    {
-                        UE_LOG(LogVRMSpring, Warning, TEXT("[VRMInterchange] Spring pipeline: Failed to set SpringConfig on existing ABP."));
-                        ReusedOrDuplicatedABP = nullptr;
-                    }
-                }
+                ABP->TargetSkeleton = Skeleton;
+                FKismetEditorUtilities::CompileBlueprint(ABP);
             }
-        }
-
-        if (!ReusedOrDuplicatedABP)
-        {
-            ReusedOrDuplicatedABP = DuplicateTemplateAnimBlueprint(
-                DeferredAnimFolder,
-                EffectiveABPName,
-                Skeleton ? Skeleton : (SkelMesh ? SkelMesh->GetSkeleton() : nullptr),
-                bDeferredOverwriteABP
-            );
-        }
-
-        if (ReusedOrDuplicatedABP && SpringDataAsset)
-        {
-            if (!SetSpringConfigOnAnimBlueprint(ReusedOrDuplicatedABP, SpringDataAsset))
+            if (SpringDataAsset && !SetSpringConfigOnAnimBlueprint(ABP, SpringDataAsset))
             {
-                UE_LOG(LogVRMSpring, Warning, TEXT("[VRMInterchange] Spring pipeline: Failed to set SpringConfig on duplicated ABP."));
+                UE_LOG(LogVRMSpring, Warning, TEXT("[VRMInterchange] Spring pipeline: '%s' has no SpringConfig variable to set."), *ABP->GetPathName());
             }
-        }
-        if (ReusedOrDuplicatedABP && bDeferredWantsAssign && SkelMesh)
-        {
-            AssignPostProcessABPToMesh(SkelMesh, ReusedOrDuplicatedABP);
-            SkelMesh->MarkPackageDirty();
-        }
-        if (ReusedOrDuplicatedABP)
-        {
-            ReusedOrDuplicatedABP->MarkPackageDirty();
+            if (bAssignPostProcessABP)
+            {
+                AssignPostProcessABPToMesh(SkelMesh, ABP);
+            }
+            ABP->MarkPackageDirty();
         }
     }
 
-    bDeferredCompleted = true;
-    UnregisterPostImportCommit();
-    DeferredSpringDataTransient.Reset();
-    UE_LOG(LogVRMSpring, Log, TEXT("[VRMInterchange] Spring pipeline: Post-import commit completed (no save)."));
+    StagedSpringData.Reset();
+    UE_LOG(LogVRMSpring, Log, TEXT("[VRMInterchange] Spring pipeline: assets for '%s' created (not saved)."), *CharacterName);
 }
-
-#if WITH_EDITOR
-void UVRMSpringBonesPostImportPipeline::RegisterPostImportCommit()
-{
-    if (ImportPostHandle.IsValid())
-    {
-        return;
-    }
-    if (UImportSubsystem* ImportSubsystem = GEditor ? GEditor->GetEditorSubsystem<UImportSubsystem>() : nullptr)
-    {
-        ImportPostHandle = ImportSubsystem->OnAssetPostImport.AddUObject(
-            this, &UVRMSpringBonesPostImportPipeline::OnAssetPostImport);
-    }
-}
-
-void UVRMSpringBonesPostImportPipeline::UnregisterPostImportCommit()
-{
-    if (ImportPostHandle.IsValid())
-    {
-        if (UImportSubsystem* ImportSubsystem = GEditor ? GEditor->GetEditorSubsystem<UImportSubsystem>() : nullptr)
-        {
-            ImportSubsystem->OnAssetPostImport.Remove(ImportPostHandle);
-        }
-        ImportPostHandle.Reset();
-    }
-}
-#endif

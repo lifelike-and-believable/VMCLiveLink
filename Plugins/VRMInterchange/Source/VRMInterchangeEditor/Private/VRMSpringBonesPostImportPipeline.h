@@ -2,7 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "InterchangePipelineBase.h"
+#include "VRMPipelineBase.h"
 #include "VRMSpringBoneData.h" // Ensure UVRMSpringBoneData is a complete type here
 #include "VRMSpringBonesPostImportPipeline.generated.h"
 
@@ -17,12 +17,13 @@ class FVRMDocument;
 /**
  * VRM Spring Bones (Post-Import)
  *
- * - Parses VRM spring bone data and materializes a SpringBone DataAsset after import confirmation.
+ * - Parses VRM spring bone data while the import is set up, and creates a spring data asset once
+ *   the import's skeletal mesh exists (UVRMPipelineBase).
  * - Optionally duplicates a Post-Process AnimBP, injects the SpringConfig, and assigns it to the SkeletalMesh.
  * - Does NOT save packages during import; marks packages dirty so Save All/SCC handle persistence.
  */
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, ClassGroup=(Interchange), meta=(DisplayName="VRM Spring Bones (Post-Import)"))
-class VRMINTERCHANGEEDITOR_API UVRMSpringBonesPostImportPipeline : public UInterchangePipelineBase
+class VRMINTERCHANGEEDITOR_API UVRMSpringBonesPostImportPipeline : public UVRMPipelineBase
 {
 	GENERATED_BODY()
 public:
@@ -38,6 +39,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VRM Spring")
 	bool bGenerateSpringBoneData = true;
 
+	/** If a spring data asset with this name exists, update it in place (what refers to it keeps working); otherwise the new one gets a unique name. */
 	UPROPERTY(EditAnywhere, Category = "VRM Spring")
 	bool bOverwriteExisting = false;
 
@@ -47,6 +49,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VRM Spring")
 	bool bAssignPostProcessABP = false;
 
+	/** If the post-process AnimBP exists, reuse it (its spring data is updated); otherwise a new one gets a unique name. */
 	UPROPERTY(EditAnywhere, Category = "VRM Spring")
 	bool bOverwriteExistingPostProcessABP = false;
 
@@ -63,45 +66,19 @@ public:
 	// UInterchangePipelineBase
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
 
-#if WITH_EDITOR
-	virtual void BeginDestroy() override;
-
-	/** True while this pipeline waits for its import's skeletal mesh to finish the job (tests use it). */
-	bool HasPendingPostImportWork() const { return ImportPostHandle.IsValid(); }
-#endif
+protected:
+	virtual void OnSkeletalMeshImported(USkeletalMesh* Mesh, bool bIsAReimport) override;
 
 private:
-#if WITH_EDITOR
 	// Parsing/materialization helpers
 	bool ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest) const;
-	FString MakeTargetPathAndName(const FString& SourceFilename, const FString& ContentBasePath, FString& OutPackagePath, FString& OutAssetName) const;
 	bool ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const;
-	void ValidateBoneNamesAgainstSkeleton(const FString& SearchRootPackagePath, const FVRMSpringConfig& Config) const;
+	void ValidateBoneNamesAgainstSkeleton(const USkeleton* Skeleton, const FVRMSpringConfig& Config) const;
 
 	// Asset helpers
-	UObject* DuplicateTemplateAnimBlueprint(const FString& TargetPackagePath, const FString& BaseName, USkeleton* TargetSkeleton, bool bOverwriteExistingABP) const;
 	bool SetSpringConfigOnAnimBlueprint(UObject* AnimBlueprintObj, UVRMSpringBoneData* SpringData) const;
 	bool AssignPostProcessABPToMesh(USkeletalMesh* SkelMesh, UObject* AnimBlueprintObj) const;
 
-	// Post-import deferral
-	void RegisterPostImportCommit();
-	void UnregisterPostImportCommit();
-	void OnAssetPostImport(class UFactory* InFactory, UObject* InCreatedObject);
-
-	// Deferred state for post-import commit
-	FDelegateHandle ImportPostHandle;
-	FString DeferredContentBasePath;
-	FString DeferredPackagePath; // <ContentBasePath>/<source file base name>
-	TStrongObjectPtr<UVRMSpringBoneData> DeferredSpringDataTransient;
-	bool bDeferredWantsAssign = false;
-	bool bDeferredCompleted = false;
-	FString DeferredAnimFolder;
-	FString DeferredDesiredABPName;
-	bool bDeferredOverwriteABP = false;
-	bool bDeferredOverwriteSpringAsset = false;
-	bool bDeferredReuseABP = true;
-	FString DeferredSourceFilename;
-	FString DeferredSourceHash;
-#endif
+	/** Spring data parsed in ExecutePipeline, waiting for the mesh. */
+	TStrongObjectPtr<UVRMSpringBoneData> StagedSpringData;
 };
-

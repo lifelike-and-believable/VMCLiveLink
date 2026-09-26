@@ -23,10 +23,10 @@ public:
     UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="Assign generated Post-Process AnimBP to the imported SkeletalMesh."))
     bool bAssignPostProcessABP = false;
 
-    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, overwrite existing generated spring assets. If false, create with a suffix."))
+    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, an existing spring data asset with the same name is updated in place, so what refers to it keeps working. If false, the new one gets a unique name."))
     bool bOverwriteExistingSpringAssets = false;
 
-    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, overwrite existing generated Post-Process AnimBlueprints. If false, create with a unique name."))
+    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, an existing Post-Process AnimBlueprint with the same name is reused and given the new spring data. If false, a new one is created with a unique name."))
     bool bOverwriteExistingPostProcessABP = false;
 
     UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, attempt to reuse an existing Post-Process AnimBP when re-importing. If false, the importer will offer to overwrite or create a new ABP."))
