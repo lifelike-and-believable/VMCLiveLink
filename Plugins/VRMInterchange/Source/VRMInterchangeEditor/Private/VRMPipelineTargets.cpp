@@ -47,7 +47,11 @@ namespace VRMPipeline
 			const FString MeshSource = ImportData->GetFirstFilename();
 			if (!MeshSource.IsEmpty())
 			{
-				return NormalizedFile(MeshSource).Equals(NormalizedFile(SourceFilename), ESearchCase::IgnoreCase);
+				// Import data stores the path relative to the package and resolves it again when read, so
+				// the full path may not round-trip exactly. The file name still tells Alice.vrm from
+				// Alice2.vrm (or any other file).
+				return NormalizedFile(MeshSource).Equals(NormalizedFile(SourceFilename), ESearchCase::IgnoreCase)
+					|| FPaths::GetCleanFilename(MeshSource).Equals(FPaths::GetCleanFilename(SourceFilename), ESearchCase::IgnoreCase);
 			}
 		}
 #endif

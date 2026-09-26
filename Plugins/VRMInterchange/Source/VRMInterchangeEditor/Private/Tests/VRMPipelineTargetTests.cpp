@@ -103,6 +103,8 @@ bool FVRMPipelineSiblingCharacters::RunTest(const FString& Parameters)
 	// Alice and Alice2 imported into sibling folders; Alice's pipelines must take only Alice's mesh.
 	USkeletalMesh* AliceMesh = MakeMesh(AliceFolder / TEXT("SK_Alice"), Alice);
 	USkeletalMesh* Alice2Mesh = MakeMesh(FString(ContentBase) / TEXT("Alice2") / TEXT("SK_Alice2"), Alice2);
+	AddInfo(FString::Printf(TEXT("Import data records '%s' for '%s'"),
+		AliceMesh->GetAssetImportData() ? *AliceMesh->GetAssetImportData()->GetFirstFilename() : TEXT("(none)"), *Alice));
 	TestTrue(TEXT("Alice's mesh belongs to Alice's import"),
 		VRMPipeline::ResolveImportedMesh(AliceMesh, Alice, AliceFolder, ContentBase) == AliceMesh);
 	TestTrue(TEXT("Alice2's mesh does not belong to Alice's import"),

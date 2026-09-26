@@ -23,7 +23,8 @@ namespace VRMPipeline
 
 	/**
 	 * True when Mesh was imported from SourceFilename. A mesh whose import data records a source file
-	 * must record this one. A mesh without one must be inside CharacterBasePath.
+	 * must record this one (the same full path, or the same file name). A mesh without one must be
+	 * inside CharacterBasePath.
 	 */
 	bool MeshBelongsToImport(const USkeletalMesh* Mesh, const FString& SourceFilename, const FString& CharacterBasePath);
 
