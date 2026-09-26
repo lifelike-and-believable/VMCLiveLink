@@ -3,6 +3,7 @@
 #include "VRMDocumentAccess.h"
 #include "VRMCoreLog.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
@@ -124,8 +125,9 @@ namespace
 
 TSharedPtr<const FVRMDocument> FVRMDocument::LoadFile(const FString& InFilename, FString& OutError)
 {
+	// Checked first: reading a missing file logs a warning of its own.
 	TArray64<uint8> FileBytes;
-	if (!FFileHelper::LoadFileToArray(FileBytes, *InFilename))
+	if (!FPaths::FileExists(InFilename) || !FFileHelper::LoadFileToArray(FileBytes, *InFilename))
 	{
 		OutError = FString::Printf(TEXT("Could not read '%s'."), *InFilename);
 		return nullptr;
