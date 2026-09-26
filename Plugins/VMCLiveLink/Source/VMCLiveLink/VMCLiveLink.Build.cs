@@ -44,11 +44,9 @@ public class VMCLiveLink : ModuleRules
         {
             PrivateDependencyModuleNames.AddRange(new[]
             {
-				// Editor-only functionality (creating assets, factories, editor UI)
-				"UnrealEd",
-                "AssetTools",
-
-                // Slate for editor UI implemented in runtime module under WITH_EDITOR
+                // The Live Link source creation panel (UVMCLiveLinkSourceFactory::BuildCreationPanel).
+                // Editor tools (mapping assets, remapper buttons) live in VMCLiveLinkEditor, so the
+                // runtime module doesn't need UnrealEd or AssetTools (P3.2).
                 "Slate",
                 "SlateCore"
             });
