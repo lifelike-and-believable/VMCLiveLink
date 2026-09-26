@@ -248,8 +248,10 @@ def read_recording(path):
     with open(path, "rb") as f:
         while True:
             head = f.read(12)
+            if not head:
+                return  # clean end of file
             if len(head) < 12:
-                return
+                raise ValueError(f"{path}: truncated record header ({len(head)} of 12 bytes)")
             t, n = struct.unpack("<dI", head)
             if n > MAX_PACKET:
                 raise ValueError(f"{path}: packet of {n} bytes at t={t:.3f}s; the recording is corrupt")
@@ -321,8 +323,8 @@ def cmd_selftest(_opts):
 
 def positive_float(text):
     value = float(text)
-    if value <= 0:
-        raise argparse.ArgumentTypeError(f"must be greater than 0, not {text}")
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"must be a finite number greater than 0, not {text}")
     return value
 
 
