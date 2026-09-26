@@ -44,9 +44,13 @@ namespace VRMActorWiringTests
 		return Property ? Property->GetObjectPropertyValue(Property->ContainerPtrToValuePtr<void>(Component)) : nullptr;
 	}
 
-	USkeletalMesh* MakeMesh(const TCHAR* Name)
+	/**
+	 * A real skeletal mesh from engine content. A bare NewObject<USkeletalMesh> (no bones, LODs or
+	 * render data) crashes component code once a Blueprint compiles with it.
+	 */
+	USkeletalMesh* LoadMesh()
 	{
-		return NewObject<USkeletalMesh>(GetTransientPackage(), Name, RF_Transient);
+		return LoadObject<USkeletalMesh>(nullptr, TEXT("/Engine/EngineMeshes/SkeletalCube.SkeletalCube"));
 	}
 }
 
@@ -56,25 +60,29 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMActorWiringConstructionScript, "VRM.Pipelin
 bool FVRMActorWiringConstructionScript::RunTest(const FString& Parameters)
 {
 	using namespace VRMActorWiringTests;
-	USkeletalMesh* Mesh = MakeMesh(TEXT("SK_WiringScript"));
+	USkeletalMesh* Mesh = LoadMesh();
+	if (!TestNotNull(TEXT("Engine skeletal mesh"), Mesh))
+	{
+		return false;
+	}
 
-	// A component added in the Blueprint editor: its template gets the mesh (it isn't on the CDO).
 	USCS_Node* Node = nullptr;
 	UBlueprint* Blueprint = MakeBlueprintWithMeshNode(TEXT("BP_WiringScript"), Node);
-	TestTrue(TEXT("The template is found"), VRMPipeline::FindSkeletalMeshComponentTemplate(Blueprint) == Node->ComponentTemplate);
-	TestTrue(TEXT("Wired"), VRMPipeline::SetActorBlueprintMesh(Blueprint, Mesh, nullptr));
 	const USkeletalMeshComponent* Template = Cast<USkeletalMeshComponent>(Node->ComponentTemplate);
-	TestTrue(TEXT("The construction script template has the mesh"), MeshOf(Template) == Mesh);
+	TestTrue(TEXT("The template is found"), VRMPipeline::FindSkeletalMeshComponentTemplate(Blueprint) == Template);
 
-	// A child Blueprint overrides the parent's template; the parent keeps its own.
+	// A child Blueprint overrides the parent's template; the parent's stays as it was (no mesh).
 	UBlueprint* Child = MakeBlueprint(Blueprint->GeneratedClass, TEXT("BP_WiringScriptChild"));
 	FKismetEditorUtilities::CompileBlueprint(Child);
-	USkeletalMesh* ChildMesh = MakeMesh(TEXT("SK_WiringScriptChild"));
-	TestTrue(TEXT("Child wired"), VRMPipeline::SetActorBlueprintMesh(Child, ChildMesh, nullptr));
+	TestTrue(TEXT("Child wired"), VRMPipeline::SetActorBlueprintMesh(Child, Mesh, nullptr));
 	const UInheritableComponentHandler* Handler = Child->GetInheritableComponentHandler(false);
 	const USkeletalMeshComponent* Override = Handler ? Cast<USkeletalMeshComponent>(Handler->GetOverridenComponentTemplate(FComponentKey(Node))) : nullptr;
-	TestTrue(TEXT("The child's override has the child's mesh"), MeshOf(Override) == ChildMesh);
-	TestTrue(TEXT("The parent keeps its mesh"), MeshOf(Template) == Mesh);
+	TestTrue(TEXT("The child's override has the mesh"), MeshOf(Override) == Mesh);
+	TestTrue(TEXT("The parent's template is untouched"), MeshOf(Template) == nullptr);
+
+	// A component added in the Blueprint editor: its template gets the mesh (it isn't on the CDO).
+	TestTrue(TEXT("Wired"), VRMPipeline::SetActorBlueprintMesh(Blueprint, Mesh, nullptr));
+	TestTrue(TEXT("The construction script template has the mesh"), MeshOf(Template) == Mesh);
 
 	// Nothing to wire.
 	AddExpectedError(TEXT("has no Skeletal Mesh component"), EAutomationExpectedErrorFlags::Contains, 1);
@@ -90,7 +98,11 @@ bool FVRMActorWiringNative::RunTest(const FString& Parameters)
 {
 	// A native component (ACharacter's mesh) is set on the class defaults and survives compiling.
 	using namespace VRMActorWiringTests;
-	USkeletalMesh* Mesh = MakeMesh(TEXT("SK_WiringNative"));
+	USkeletalMesh* Mesh = LoadMesh();
+	if (!TestNotNull(TEXT("Engine skeletal mesh"), Mesh))
+	{
+		return false;
+	}
 	UBlueprint* Blueprint = MakeBlueprint(ACharacter::StaticClass(), TEXT("BP_WiringNative"));
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	TestTrue(TEXT("Wired"), VRMPipeline::SetActorBlueprintMesh(Blueprint, Mesh, nullptr));
@@ -106,7 +118,11 @@ bool FVRMActorWiringVariable::RunTest(const FString& Parameters)
 {
 	// The retarget actor template takes the mesh through its "VRM Character" variable.
 	using namespace VRMActorWiringTests;
-	USkeletalMesh* Mesh = MakeMesh(TEXT("SK_WiringVariable"));
+	USkeletalMesh* Mesh = LoadMesh();
+	if (!TestNotNull(TEXT("Engine skeletal mesh"), Mesh))
+	{
+		return false;
+	}
 	UBlueprint* Blueprint = MakeBlueprint(AActor::StaticClass(), TEXT("BP_WiringVariable"));
 	const FEdGraphPinType MeshPin(UEdGraphSchema_K2::PC_Object, NAME_None, USkeletalMesh::StaticClass(), EPinContainerType::None, false, FEdGraphTerminalType());
 	FBlueprintEditorUtils::AddMemberVariable(Blueprint, TEXT("VRM Character"), MeshPin);

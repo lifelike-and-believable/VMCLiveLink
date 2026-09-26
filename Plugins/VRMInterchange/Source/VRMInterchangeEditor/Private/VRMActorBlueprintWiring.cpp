@@ -93,10 +93,10 @@ namespace VRMPipeline
 			return false;
 		}
 
-		// A template is never registered, so its setters (SetSkeletalMeshAsset and friends), which
-		// update render state and animation, don't apply to it: they asserted in the engine. The
-		// values are written straight to the properties (the *_InContainer writers would call the
-		// same setters). The mesh is held twice (the skinned asset of USkinnedMeshComponent and
+		// A template is never registered, so the runtime work its setters (SetSkeletalMeshAsset and
+		// friends) do, such as render state, bounds and animation, doesn't apply to it. Only the values
+		// matter: they are written straight to the properties (the *_InContainer writers would call
+		// the same setters). The mesh is held twice (the skinned asset of USkinnedMeshComponent and
 		// SkeletalMeshAsset); both are set so they agree.
 		Template->Modify();
 		bool bMeshSet = false;
