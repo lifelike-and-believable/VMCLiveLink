@@ -95,10 +95,13 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     PublishSnapshot();
 
     TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FVMCLiveLinkSource::Tick));
-    bIsValid = StartReceiving();
+    // The source stays valid when the port can't be opened, so its status says why ("Can't listen
+    // on port") rather than "Stopped"; a new port in the settings starts receiving again.
+    StartReceiving();
+    bIsValid = true;
 
-    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %s:%d (valid=%d, %s)"),
-        *SourceName, *Settings.BindAddress, Settings.Port, bIsValid ? 1 : 0, *Settings.ToString());
+    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' on %s:%d (listening=%d, %s)"),
+        *SourceName, *Settings.BindAddress, Settings.Port, bListening ? 1 : 0, *Settings.ToString());
 }
 
 FVMCLiveLinkSource::~FVMCLiveLinkSource()

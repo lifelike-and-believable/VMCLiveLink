@@ -168,6 +168,16 @@ namespace VMCOscParser
 				}
 			}
 
+			// The arguments must account for the whole element. Zero padding is tolerated; anything
+			// else left over means the type tags and the data disagree, so the message is malformed.
+			for (int32 i = Pos; i < Data.Num(); ++i)
+			{
+				if (Data[i] != 0)
+				{
+					return false;
+				}
+			}
+
 			OnMessage(FAnsiStringView(reinterpret_cast<const ANSICHAR*>(Address), AddressLen), Args);
 			return true;
 		}

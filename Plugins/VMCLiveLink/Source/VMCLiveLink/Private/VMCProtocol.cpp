@@ -45,7 +45,8 @@ namespace VMCProtocol
 			if (Is("Root/Pos"))    return EAddress::RootPos;
 			if (Is("T"))           return EAddress::Time;
 			if (Is("OK"))          return EAddress::Available;
-			for (const char* Device : { "Hmd/Pos", "Con/Pos", "Tra/Pos", "Hmd/Pos/Local", "Con/Pos/Local", "Tra/Pos/Local" })
+			static const char* const Devices[] = { "Hmd/Pos", "Con/Pos", "Tra/Pos", "Hmd/Pos/Local", "Con/Pos/Local", "Tra/Pos/Local" };
+			for (const char* Device : Devices)
 			{
 				if (Is(Device)) return EAddress::DevicePos;
 			}
