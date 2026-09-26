@@ -511,6 +511,7 @@ void UVRMSpringBonesPostImportPipeline::OnAssetPostImport(UFactory* InFactory, U
             }
             SpringDataAsset->SourceFilename = DeferredSpringDataTransient->SourceFilename;
             SpringDataAsset->SourceHash     = DeferredSpringDataTransient->SourceHash;
+            SpringDataAsset->bNeedsReimport = false; // freshly parsed, so current (FVRMSpringDataCustomVersion)
 
 #if WITH_EDITOR
             FVRMInterchangeEditorModule::NotifySpringDataCreated(SpringDataAsset);

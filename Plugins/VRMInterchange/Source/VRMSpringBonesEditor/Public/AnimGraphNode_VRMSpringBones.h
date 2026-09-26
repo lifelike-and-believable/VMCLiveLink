@@ -20,4 +20,5 @@ public:
     virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
     virtual FString GetNodeCategory() const override { return TEXT("VRM"); }
 	virtual const FAnimNode_SkeletalControlBase* GetNode() const override { return &Node; }
+    virtual void ValidateAnimNodeDuringCompilation(USkeleton* ForSkeleton, FCompilerResultsLog& MessageLog) override;
 };

@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "VRMSpringBonesTypes.h"
+#include "VRMSpringDataCustomVersion.h"
 #include "VRMSpringBoneData.generated.h"
 
 // Runtime-available data asset storing parsed spring bone configuration.
@@ -36,6 +37,24 @@ public:
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     int32 EditRevision = 0;
 
+    /**
+     * Set on load when the asset was saved by an older plugin version whose data can't be upgraded
+     * in place (see FVRMSpringDataCustomVersion). The spring bones still run, but may behave
+     * differently from a fresh import. Reimport the source file (SourceFilename) to fix it.
+     * Saved with the asset, so re-saving an old asset doesn't hide that its data is still old.
+     */
+    UPROPERTY(VisibleAnywhere, Category="Spring Bones")
+    bool bNeedsReimport = false;
+
+    virtual void Serialize(FArchive& Ar) override;
+    virtual void PostLoad() override;
+
+    /** The FVRMSpringDataCustomVersion this asset was loaded with (the latest for new assets). */
+    int32 GetLoadedDataVersion() const { return LoadedDataVersion; }
+
+    /** True when data saved at DataVersion has to be reimported to match the current plugin. */
+    static bool RequiresReimport(int32 DataVersion, const FVRMSpringConfig& Config);
+
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
     void BuildResolvedChildren();
@@ -56,4 +75,7 @@ public:
     {
         NodeToBoneMap = InNodeToBoneMap;
     }
+
+private:
+    int32 LoadedDataVersion = FVRMSpringDataCustomVersion::LatestVersion;
 };
