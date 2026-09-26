@@ -54,20 +54,15 @@ public:
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
 
 #if WITH_EDITOR
+	virtual void PostInitProperties() override;
 	virtual void BeginDestroy() override;
+
+	/** True while this pipeline waits for its import's skeletal mesh to finish the job (tests use it). */
+	bool HasPendingPostImportWork() const { return ImportPostHandle.IsValid(); }
 #endif
 
 private:
 #if WITH_EDITOR
-	/** Locate a SkeletalMesh and/or Skeleton under a given package root */
-	bool FindImportedSkeletalAssets(const FString& SearchRootPackagePath, USkeletalMesh*& OutSkeletalMesh, USkeleton*& OutSkeleton) const;
-
-	/** Get the parent package path of the given path */
-	FString GetParentPackagePath(const FString& InPath) const;
-
-	/** Compute base package path for a character from the source filename/content root */
-	FString MakeCharacterBasePath(const FString& SourceFilename, const FString& ContentBasePath) const;
-
 	/** Duplicate an asset from a template path into the target package; compiles blueprints; no save */
 	UObject* DuplicateTemplate(const TCHAR* TemplatePath, const FString& TargetPackagePath, const FString& DesiredName, bool bOverwrite) const;
 
@@ -92,9 +87,9 @@ private:
 
 	// Deferred state for post-import commit
 	FDelegateHandle ImportPostHandle;
-	FString DeferredSkeletonSearchRoot;
-	FString DeferredAltSkeletonSearchRoot;
-	FString DeferredPackagePath;
+	FString DeferredContentBasePath;
+	FString DeferredSourceFilename;
+	FString DeferredPackagePath; // <ContentBasePath>/<source file base name>
 	bool bDeferredCompleted=false;
 
 	// Names and locations staged during ExecutePipeline

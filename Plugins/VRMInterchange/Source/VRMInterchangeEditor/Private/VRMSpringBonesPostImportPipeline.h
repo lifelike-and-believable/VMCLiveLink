@@ -64,6 +64,9 @@ public:
 
 #if WITH_EDITOR
 	virtual void BeginDestroy() override;
+
+	/** True while this pipeline waits for its import's skeletal mesh to finish the job (tests use it). */
+	bool HasPendingPostImportWork() const { return ImportPostHandle.IsValid(); }
 #endif
 
 private:
@@ -75,11 +78,9 @@ private:
 	void ValidateBoneNamesAgainstSkeleton(const FString& SearchRootPackagePath, const FVRMSpringConfig& Config) const;
 
 	// Asset helpers
-	bool FindImportedSkeletalAssets(const FString& SearchRootPackagePath, USkeletalMesh*& OutSkeletalMesh, USkeleton*& OutSkeleton) const;
 	UObject* DuplicateTemplateAnimBlueprint(const FString& TargetPackagePath, const FString& BaseName, USkeleton* TargetSkeleton, bool bOverwriteExistingABP) const;
 	bool SetSpringConfigOnAnimBlueprint(UObject* AnimBlueprintObj, UVRMSpringBoneData* SpringData) const;
 	bool AssignPostProcessABPToMesh(USkeletalMesh* SkelMesh, UObject* AnimBlueprintObj) const;
-	FString GetParentPackagePath(const FString& InPath) const;
 
 	// Post-import deferral
 	void RegisterPostImportCommit();
@@ -88,9 +89,8 @@ private:
 
 	// Deferred state for post-import commit
 	FDelegateHandle ImportPostHandle;
-	FString DeferredSkeletonSearchRoot;
-	FString DeferredAltSkeletonSearchRoot; // parent of root
-	FString DeferredPackagePath;
+	FString DeferredContentBasePath;
+	FString DeferredPackagePath; // <ContentBasePath>/<source file base name>
 	TStrongObjectPtr<UVRMSpringBoneData> DeferredSpringDataTransient;
 	bool bDeferredWantsAssign = false;
 	bool bDeferredCompleted = false;

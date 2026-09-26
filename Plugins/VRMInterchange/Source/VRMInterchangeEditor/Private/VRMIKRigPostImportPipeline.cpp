@@ -15,25 +15,33 @@
 #include "Rig/IKRigDefinition.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMInterchangeLog.h"
+#include "VRMPipelineTargets.h"
 
 #if WITH_EDITOR
 #include "UnrealEdGlobals.h"
 #include "Subsystems/ImportSubsystem.h"
 #endif
 
+#if WITH_EDITOR
+void UVRMIKRigPostImportPipeline::PostInitProperties()
+{
+	Super::PostInitProperties();
+	// The project setting is the default for new pipelines; the import dialog decides per import.
+	if (!HasAnyFlags(RF_ClassDefaultObject))
+	{
+		if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
+		{
+			bGenerateIKRig = Settings->bGenerateIKRigAssets;
+		}
+	}
+}
+#endif
+
 // Stage names/paths and defer creation to post-import (after dialog confirmation)
 void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath)
 {
 #if WITH_EDITOR
-	// Respect project-level toggle
-	if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
-	{
-		if (!Settings->bGenerateIKRigAssets)
-		{
-			return;
-		}
-	}
-	// Per-instance
+	// Only this instance's flag counts (seeded from the project settings in PostInitProperties).
 	if (!bGenerateIKRig || !BaseNodeContainer)
 	{
 		return;
@@ -52,10 +60,10 @@ void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer*
 	const FString Filename = Source->GetFilename();
 
 	// Character base path and desired names
-	const FString CharacterBasePath = MakeCharacterBasePath(Filename, ContentBasePath);
+	const FString CharacterBasePath = VRMPipeline::MakeCharacterBasePath(Filename, ContentBasePath);
 	DeferredPackagePath = CharacterBasePath;
-	DeferredSkeletonSearchRoot = CharacterBasePath;
-	DeferredAltSkeletonSearchRoot = GetParentPackagePath(CharacterBasePath);
+	DeferredContentBasePath = ContentBasePath;
+	DeferredSourceFilename = Filename;
 
 	const FString CharacterName = FPaths::GetBaseFilename(Filename);
 	DeferredAnimFolder = CharacterBasePath / IKRigDefinitionSubFolder;
@@ -76,27 +84,6 @@ void UVRMIKRigPostImportPipeline::BeginDestroy()
 #endif
 
 #if WITH_EDITOR
-
-bool UVRMIKRigPostImportPipeline::FindImportedSkeletalAssets(const FString& SearchRootPackagePath, USkeletalMesh*& OutSkeletalMesh, USkeleton*& OutSkeleton) const
-{
-	OutSkeletalMesh=nullptr; OutSkeleton=nullptr; if(SearchRootPackagePath.IsEmpty()) return false; FAssetRegistryModule& ARM=FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	FARFilter MeshFilter; MeshFilter.bRecursivePaths=true; MeshFilter.PackagePaths.Add(*SearchRootPackagePath); MeshFilter.ClassPaths.Add(USkeletalMesh::StaticClass()->GetClassPathName());
-	TArray<FAssetData> Meshes; ARM.Get().GetAssets(MeshFilter, Meshes);
-	if (Meshes.Num()>0){ OutSkeletalMesh=Cast<USkeletalMesh>(Meshes[0].GetAsset()); if(OutSkeletalMesh) OutSkeleton=OutSkeletalMesh->GetSkeleton(); }
-	if(!OutSkeleton){ FARFilter SkelFilter; SkelFilter.bRecursivePaths=true; SkelFilter.PackagePaths.Add(*SearchRootPackagePath); SkelFilter.ClassPaths.Add(USkeleton::StaticClass()->GetClassPathName()); TArray<FAssetData> Skels; ARM.Get().GetAssets(SkelFilter, Skels); if(Skels.Num()>0) OutSkeleton=Cast<USkeleton>(Skels[0].GetAsset()); }
-	return (OutSkeletalMesh!=nullptr)||(OutSkeleton!=nullptr);
-}
-
-FString UVRMIKRigPostImportPipeline::GetParentPackagePath(const FString& InPath) const
-{
-	int32 SlashIdx=INDEX_NONE; return (InPath.FindLastChar(TEXT('/'),SlashIdx)&&SlashIdx>1)?InPath.Left(SlashIdx):InPath;
-}
-
-FString UVRMIKRigPostImportPipeline::MakeCharacterBasePath(const FString& SourceFilename, const FString& ContentBasePath) const
-{
-	const FString BaseName = FPaths::GetBaseFilename(SourceFilename);
-	return !ContentBasePath.IsEmpty() ? (ContentBasePath / BaseName) : FString::Printf(TEXT("/Game/%s"), *BaseName);
-}
 
 bool UVRMIKRigPostImportPipeline::DuplicateTemplateIKRig(const FString& TargetPackagePath, const FString& BaseName, UIKRigDefinition*& OutIKRig, bool bOverwrite) const
 {
@@ -164,28 +151,9 @@ void UVRMIKRigPostImportPipeline::OnAssetPostImport(UFactory* InFactory, UObject
 		return;
 	}
 
-	const bool bIsSkelMesh = InCreatedObject->IsA<USkeletalMesh>();
-	const bool bIsSkeleton = InCreatedObject->IsA<USkeleton>();
-	if (!bIsSkelMesh && !bIsSkeleton)
-	{
-		return;
-	}
-
-	const FString PkgPath = InCreatedObject->GetOutermost()->GetPathName();
-	if (!PkgPath.StartsWith(DeferredSkeletonSearchRoot) && !PkgPath.StartsWith(DeferredAltSkeletonSearchRoot))
-	{
-		return;
-	}
-
-	// Resolve skeletal assets now
-	USkeletalMesh* SkelMesh = nullptr;
-	USkeleton* Skeleton = nullptr;
-	bool bFound = FindImportedSkeletalAssets(DeferredSkeletonSearchRoot, SkelMesh, Skeleton) && (SkelMesh || Skeleton);
-	if (!bFound)
-	{
-		bFound = FindImportedSkeletalAssets(DeferredAltSkeletonSearchRoot, SkelMesh, Skeleton) && (SkelMesh || Skeleton);
-	}
-	if (!bFound)
+	// Only this import's mesh: every import in the editor reports its assets here (VRMPipelineTargets.h).
+	USkeletalMesh* SkelMesh = VRMPipeline::ResolveImportedMesh(InCreatedObject, DeferredSourceFilename, DeferredPackagePath, DeferredContentBasePath);
+	if (!SkelMesh)
 	{
 		return;
 	}

@@ -32,7 +32,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
 	FString PipelineDisplayName = "VRM IK Rig Set-up";
 
-	/** Generate IK Rig asset next to the imported mesh */
+	/** Generate IK Rig asset next to the imported mesh (defaults to the project setting) */
 	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
 	bool bGenerateIKRig = true;
 
@@ -53,15 +53,16 @@ public:
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
 
 #if WITH_EDITOR
+	virtual void PostInitProperties() override;
 	virtual void BeginDestroy() override;
+
+	/** True while this pipeline waits for its import's skeletal mesh to finish the job (tests use it). */
+	bool HasPendingPostImportWork() const { return ImportPostHandle.IsValid(); }
 #endif
 
 private:
 #if WITH_EDITOR
-	bool FindImportedSkeletalAssets(const FString& SearchRootPackagePath, USkeletalMesh*& OutSkeletalMesh, USkeleton*& OutSkeleton) const;
-	FString GetParentPackagePath(const FString& InPath) const;
 	bool DuplicateTemplateIKRig(const FString& TargetPackagePath, const FString& BaseName, UIKRigDefinition*& OutIKRig, bool bOverwrite) const;
-	FString MakeCharacterBasePath(const FString& SourceFilename, const FString& ContentBasePath) const;
 
 	// Compute a robust character name using the imported mesh name if available, else the last segment of the package path
 	FString ResolveEffectiveCharacterName(USkeletalMesh* SkelMesh, const FString& PackagePath) const;
@@ -73,9 +74,9 @@ private:
 
 	// Deferred state for post-import commit
 	FDelegateHandle ImportPostHandle;
-	FString DeferredSkeletonSearchRoot;
-	FString DeferredAltSkeletonSearchRoot;
-	FString DeferredPackagePath;
+	FString DeferredContentBasePath;
+	FString DeferredSourceFilename;
+	FString DeferredPackagePath; // <ContentBasePath>/<source file base name>
 	bool bDeferredCompleted = false;
 
 	// Naming/location

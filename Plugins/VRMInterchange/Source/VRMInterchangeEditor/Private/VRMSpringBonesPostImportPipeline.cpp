@@ -22,6 +22,7 @@
 #include "VRMSpringBonesValidation.h"
 #include "VRMInterchangeLog.h"
 #include "VRMInterchangeSettings.h"
+#include "VRMPipelineTargets.h"
 
 #if WITH_EDITOR
 #include "UnrealEdGlobals.h"
@@ -76,11 +77,12 @@ void UVRMSpringBonesPostImportPipeline::PostInitProperties()
 void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath)
 {
 #if WITH_EDITOR
-    const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>();
-    const bool bWantsSpringData    = (bGenerateSpringBoneData || (Settings && Settings->bGenerateSpringBoneData));
-    const bool bWantsOverwrite     = (bOverwriteExisting || (Settings && Settings->bOverwriteExistingSpringAssets));
-    const bool bWantsABPOverwrite  = (bOverwriteExistingPostProcessABP || (Settings && Settings->bOverwriteExistingPostProcessABP));
-    const bool bWantsReuseABP      = (bReusePostProcessABPOnReimport || (Settings && Settings->bReusePostProcessABPOnReimport));
+    // Only this instance's flags count. The project settings seeded them (PostInitProperties), and the
+    // import dialog may have changed them since; OR-ing the settings back in would ignore an unticked box.
+    const bool bWantsSpringData    = bGenerateSpringBoneData;
+    const bool bWantsOverwrite     = bOverwriteExisting;
+    const bool bWantsABPOverwrite  = bOverwriteExistingPostProcessABP;
+    const bool bWantsReuseABP      = bReusePostProcessABPOnReimport;
 
     if (!BaseNodeContainer)
     {
@@ -101,13 +103,8 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
     const FString Filename = Source->GetFilename();
 
     // Compute character base package path only; defer asset naming to post-import.
-    const FString BaseName = FPaths::GetBaseFilename(Filename);
-    const FString PackagePath = !ContentBasePath.IsEmpty()
-        ? (ContentBasePath / BaseName)
-        : FString::Printf(TEXT("/Game/%s"), *BaseName);
-
+    const FString PackagePath = VRMPipeline::MakeCharacterBasePath(Filename, ContentBasePath);
     const FString SkeletonSearchRoot = PackagePath;
-    const FString ParentSearchRoot   = GetParentPackagePath(SkeletonSearchRoot);
 
     // Early tombstone check
     FString SourceHash;
@@ -141,12 +138,11 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
         }
     }
 
-    const bool bWantsABP  = (bGeneratePostProcessAnimBP || (Settings && Settings->bGeneratePostProcessAnimBP));
-    const bool bWantsAssign = (bAssignPostProcessABP || (Settings && Settings->bAssignPostProcessABP));
+    const bool bWantsABP  = bGeneratePostProcessAnimBP;
+    const bool bWantsAssign = bAssignPostProcessABP;
 
     // Stage state for the post-import commit
-    DeferredSkeletonSearchRoot    = SkeletonSearchRoot;
-    DeferredAltSkeletonSearchRoot = ParentSearchRoot;
+    DeferredContentBasePath       = ContentBasePath;
     DeferredPackagePath           = PackagePath;
     DeferredSourceFilename        = Filename;
     DeferredSourceHash            = SourceHash;
@@ -293,16 +289,6 @@ void UVRMSpringBonesPostImportPipeline::ValidateBoneNamesAgainstSkeleton(const F
     Report(MCent,TEXT("center BoneName(s)"));
 }
 
-bool UVRMSpringBonesPostImportPipeline::FindImportedSkeletalAssets(const FString& SearchRootPackagePath, USkeletalMesh*& OutSkeletalMesh, USkeleton*& OutSkeleton) const
-{
-    OutSkeletalMesh=nullptr; OutSkeleton=nullptr; if(SearchRootPackagePath.IsEmpty()) return false; FAssetRegistryModule& ARM=FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-    FARFilter MeshFilter; MeshFilter.bRecursivePaths=true; MeshFilter.PackagePaths.Add(*SearchRootPackagePath); MeshFilter.ClassPaths.Add(USkeletalMesh::StaticClass()->GetClassPathName());
-    TArray<FAssetData> Meshes; ARM.Get().GetAssets(MeshFilter, Meshes);
-    if (Meshes.Num()>0){ OutSkeletalMesh=Cast<USkeletalMesh>(Meshes[0].GetAsset()); if(OutSkeletalMesh) OutSkeleton=OutSkeletalMesh->GetSkeleton(); }
-    if(!OutSkeleton){ FARFilter SkelFilter; SkelFilter.bRecursivePaths=true; SkelFilter.PackagePaths.Add(*SearchRootPackagePath); SkelFilter.ClassPaths.Add(USkeleton::StaticClass()->GetClassPathName()); TArray<FAssetData> Skels; ARM.Get().GetAssets(SkelFilter, Skels); if(Skels.Num()>0) OutSkeleton=Cast<USkeleton>(Skels[0].GetAsset()); }
-    return (OutSkeletalMesh!=nullptr)||(OutSkeleton!=nullptr);
-}
-
 // Duplicate a template Post-Process AnimBlueprint into the target folder.
 // Does not save; marks package dirty and compiles the new ABP to ensure GeneratedClass is valid.
 UObject* UVRMSpringBonesPostImportPipeline::DuplicateTemplateAnimBlueprint(const FString& TargetPackagePath, const FString& BaseName, USkeleton* TargetSkeleton, bool bOverwriteExistingABP) const
@@ -425,12 +411,6 @@ bool UVRMSpringBonesPostImportPipeline::AssignPostProcessABPToMesh(USkeletalMesh
     return true;
 }
 
-FString UVRMSpringBonesPostImportPipeline::GetParentPackagePath(const FString& InPath) const
-{
-    int32 SlashIdx=INDEX_NONE;
-    return (InPath.FindLastChar(TEXT('/'),SlashIdx)&&SlashIdx>1)?InPath.Left(SlashIdx):InPath;
-}
-
 // OnAssetPostImport
 // - After user accepts the import dialog, skeletal assets exist.
 // - Materialize SpringData and optional ABP; assign ABP to mesh if requested.
@@ -442,30 +422,13 @@ void UVRMSpringBonesPostImportPipeline::OnAssetPostImport(UFactory* InFactory, U
         return;
     }
 
-    const bool bIsSkelMesh = InCreatedObject->IsA<USkeletalMesh>();
-    const bool bIsSkeleton = InCreatedObject->IsA<USkeleton>();
-    if (!bIsSkelMesh && !bIsSkeleton)
+    // Only this import's mesh: every import in the editor reports its assets here (VRMPipelineTargets.h).
+    USkeletalMesh* SkelMesh = VRMPipeline::ResolveImportedMesh(InCreatedObject, DeferredSourceFilename, DeferredPackagePath, DeferredContentBasePath);
+    if (!SkelMesh)
     {
         return;
     }
-
-    const FString PkgPath = InCreatedObject->GetOutermost()->GetPathName();
-    if (!PkgPath.StartsWith(DeferredSkeletonSearchRoot) && !PkgPath.StartsWith(DeferredAltSkeletonSearchRoot))
-    {
-        return;
-    }
-
-    USkeletalMesh* SkelMesh = nullptr;
-    USkeleton* Skeleton = nullptr;
-    bool bFound = FindImportedSkeletalAssets(DeferredSkeletonSearchRoot, SkelMesh, Skeleton) && (SkelMesh || Skeleton);
-    if (!bFound)
-    {
-        bFound = FindImportedSkeletalAssets(DeferredAltSkeletonSearchRoot, SkelMesh, Skeleton) && (SkelMesh || Skeleton);
-    }
-    if (!bFound)
-    {
-        return;
-    }
+    USkeleton* Skeleton = SkelMesh->GetSkeleton();
 
     // 1) Spring data asset
     UVRMSpringBoneData* SpringDataAsset = nullptr;
@@ -523,7 +486,7 @@ void UVRMSpringBonesPostImportPipeline::OnAssetPostImport(UFactory* InFactory, U
     }
 
     // 2) ABP create/reuse and assignment
-    const bool bWantsABP = (bGeneratePostProcessAnimBP || (GetDefault<UVRMInterchangeSettings>()->bGeneratePostProcessAnimBP));
+    const bool bWantsABP = bGeneratePostProcessAnimBP;
     if (bWantsABP)
     {
         FString CharName = SkelMesh ? SkelMesh->GetName() : FPaths::GetBaseFilename(DeferredSourceFilename);
