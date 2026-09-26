@@ -2,6 +2,8 @@
 
 #include "VMCLiveLinkSourceFactory.h"
 #include "VMCLiveLinkSource.h"
+#include "VMCConnectionSettings.h"
+#include "VMCLog.h"
 
 #if WITH_EDITOR
 #include "Widgets/SBoxPanel.h"
@@ -14,96 +16,23 @@
 #include "Framework/Application/SlateApplication.h"
 #endif
 
-static int32 ParsePort(const FString & Conn, int32 DefaultPort)
-{
-	int32 Port = DefaultPort;
-	TArray<FString> Parts;
-	Conn.ParseIntoArray(Parts, TEXT(";"), true);
-	for (const FString& P : Parts)
-	{
-		FString K, V;
-		if (P.Split(TEXT("="), &K, &V))
-		{
-			if (K.Equals(TEXT("port"), ESearchCase::IgnoreCase))
-			{
-				Port = FCString::Atoi(*V);
-			}
-		}
-	}
-	return Port;
-}
-
-static bool ParseUnityToUnreal(const FString& Conn, bool DefaultUnityToUnreal)
-{
-	bool UnityToUnreal = DefaultUnityToUnreal;
-	TArray<FString> Parts;
-	Conn.ParseIntoArray(Parts, TEXT(";"), true);
-	for (const FString& P : Parts)
-	{
-		FString K, V;
-		if (P.Split(TEXT("="), &K, &V))
-		{
-			if (K.Equals(TEXT("unity2ue"), ESearchCase::IgnoreCase))
-			{
-				UnityToUnreal = FCString::Atoi(*V) == 1;
-			}
-		}
-	}
-	return UnityToUnreal;
-}
-
-static bool ParseMetersToCm(const FString& Conn, bool DefaultMetersToCm)
-{
-	bool MetersToCm = DefaultMetersToCm;
-	TArray<FString> Parts;
-	Conn.ParseIntoArray(Parts, TEXT(";"), true);
-	for (const FString& P : Parts)
-	{
-		FString K, V;
-		if (P.Split(TEXT("="), &K, &V))
-		{
-			if (K.Equals(TEXT("meters2cm"), ESearchCase::IgnoreCase))
-			{
-				MetersToCm = FCString::Atoi(*V) == 1;
-			}
-		}
-	}
-	return MetersToCm;
-}
-
-static FString ParseSubject(const FString& Conn, FString DefaultSubject)
-{
-	FString Subject = DefaultSubject;
-	TArray<FString> Parts;
-	Conn.ParseIntoArray(Parts, TEXT(";"), true);
-	for (const FString& P : Parts)
-	{
-		FString K, V;
-		if (P.Split(TEXT("="), &K, &V))
-		{
-			if (K.Equals(TEXT("subject"), ESearchCase::IgnoreCase))
-			{
-				Subject = FString(*V);
-			}
-		}
-	}
-	return Subject;
-}
-
 TSharedPtr<ILiveLinkSource> UVMCLiveLinkSourceFactory::CreateSource(const FString& ConnectionString) const
 {
-	const int32 Port = ParsePort(ConnectionString, 39539);
-	const bool UnityToUnreal = ParseUnityToUnreal(ConnectionString, true);
-	const bool MetersToCm = ParseMetersToCm(ConnectionString, true);
-	const FString Subject = ParseSubject(ConnectionString, TEXT("VMC_Subject"));
-
-	return MakeShared<FVMCLiveLinkSource>(TEXT("VMC"), Port, UnityToUnreal, MetersToCm, 0, Subject);
+	FVMCConnectionSettings Settings;
+	TArray<FString> Errors;
+	if (!FVMCConnectionSettings::FromString(ConnectionString, Settings, &Errors))
+	{
+		// Invalid values keep their defaults; say which, since the source may not be where the user expects.
+		UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC connection string '%s': %s. Using defaults for those."),
+			*ConnectionString, *FString::Join(Errors, TEXT("; ")));
+	}
+	return MakeShared<FVMCLiveLinkSource>(Settings);
 }
 
 #if WITH_EDITOR
 TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSourceCreated OnCreated) const
 {
-	struct FState { int32 Port = 39539; bool bUnityToUE = true; bool bMetersToCm = true; FString SubjectName = FString(TEXT("VMC_Subject")); };
+	struct FState { int32 Port = FVMCConnectionSettings::DefaultPort; bool bUnityToUE = true; bool bMetersToCm = true; FString SubjectName = FString(TEXT("VMC_Subject")); };
 
 	TSharedRef<FState> State = MakeShared<FState>();
 
@@ -116,13 +45,20 @@ TSharedPtr<SWidget> UVMCLiveLinkSourceFactory::BuildCreationPanel(FOnLiveLinkSou
 			return;
 		}
 
-		const FString Conn = FString::Printf(TEXT("port=%d;unity2ue=%d;meters2cm=%d;subject=%s"),
-			State->Port, State->bUnityToUE ? 1 : 0, State->bMetersToCm ? 1 : 0, *State->SubjectName);
+		FVMCConnectionSettings Settings;
+		Settings.Port = State->Port;
+		Settings.bUnityToUE = State->bUnityToUE;
+		Settings.bMetersToCm = State->bMetersToCm;
+		Settings.SubjectName = FName(*State->SubjectName);
+		if (!Settings.Validate())
+		{
+			return;
+		}
 
-		const TSharedPtr<ILiveLinkSource> Src = MakeShared<FVMCLiveLinkSource>(TEXT("VMC"), State->Port, State->bUnityToUE, State->bMetersToCm, 0.0f, State->SubjectName);
+		const TSharedPtr<ILiveLinkSource> Src = MakeShared<FVMCLiveLinkSource>(Settings);
 		if (OnCreated.IsBound())
 		{
-			OnCreated.Execute(Src, Conn);
+			OnCreated.Execute(Src, Settings.ToString());
 		}
 	};
 

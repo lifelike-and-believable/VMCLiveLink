@@ -12,6 +12,7 @@
 #include "Roles/LiveLinkAnimationTypes.h"
 
 #include "VMCLiveLinkSettings.h"
+#include "VMCLiveLinkSourceSettings.h"
 #include "LiveLinkSubjectSettings.h"
 #include "LiveLinkSubjectRemapper.h"
 #include "VMCLiveLinkRemapper.h"
@@ -27,30 +28,47 @@
 
 // ---------------- Ctors & status ----------------
 
-FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName)
-    : SourceName(InSourceName), ListenPort(39539), bUnityToUE(true), bMetersToCm(true), YawOffsetDeg(0.f)
+FVMCLiveLinkSource::FVMCLiveLinkSource(const FVMCConnectionSettings& InSettings, const FString& InSourceName)
+    : SourceName(InSourceName), Settings(InSettings)
 {
     InitSkeleton();
+}
+
+namespace
+{
+    FVMCConnectionSettings MakeLegacySettings(int32 Port, bool bUnityToUE, bool bMetersToCm, float Yaw, FName Subject)
+    {
+        FVMCConnectionSettings Out;
+        Out.Port = Port;
+        Out.bUnityToUE = bUnityToUE;
+        Out.bMetersToCm = bMetersToCm;
+        Out.YawOffsetDeg = Yaw;
+        Out.SubjectName = Subject;
+        return Out;
+    }
+}
+
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName)
+    : FVMCLiveLinkSource(FVMCConnectionSettings(), InSourceName)
+{
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort)
-    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(true), bMetersToCm(true), YawOffsetDeg(0.f)
+    : FVMCLiveLinkSource(MakeLegacySettings(InPort, true, true, 0.f, TEXT("VMC_Subject")), InSourceName)
 {
-    InitSkeleton();
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg)
-    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), bMetersToCm(bInMetersToCm), YawOffsetDeg(InYawDeg)
+    : FVMCLiveLinkSource(MakeLegacySettings(InPort, bInUnityToUE, bInMetersToCm, InYawDeg, TEXT("VMC_Subject")), InSourceName)
 {
-    InitSkeleton();
 }
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg, FString InSubject)
-    : SourceName(InSourceName), ListenPort(InPort), bUnityToUE(bInUnityToUE), bMetersToCm(bInMetersToCm), YawOffsetDeg(InYawDeg), SubjectName(InSubject)
-
+    : FVMCLiveLinkSource(MakeLegacySettings(InPort, bInUnityToUE, bInMetersToCm, InYawDeg, FName(*InSubject)), InSourceName)
 {
-    InitSkeleton();
 }
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void FVMCLiveLinkSource::InitSkeleton()
 {
@@ -71,7 +89,7 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     bForceStaticNext = true;
 
     UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %d (valid=%d, unity2ue=%d, m_to_cm=%d, yaw=%.1f)"),
-        *SourceName, ListenPort, bIsValid ? 1 : 0, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, YawOffsetDeg);
+        *SourceName, Settings.Port, bIsValid ? 1 : 0, Settings.bUnityToUE ? 1 : 0, Settings.bMetersToCm ? 1 : 0, Settings.YawOffsetDeg);
 }
 
 FVMCLiveLinkSource::~FVMCLiveLinkSource()
@@ -95,12 +113,76 @@ bool FVMCLiveLinkSource::RequestSourceShutdown()
 
 FText FVMCLiveLinkSource::GetSourceStatus() const
 {
+    if (bIsValid && !bListening)
+    {
+        return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_NotListening", "Can't listen on port {0}"), FText::AsNumber(Settings.Port, &FNumberFormattingOptions::DefaultNoGrouping()));
+    }
     const bool bReady = bIsValid && bStaticSent;
     return bIsValid
         ? (bReady
             ? NSLOCTEXT("VMCLiveLink", "Status_Receiving", "Receiving data")
             : NSLOCTEXT("VMCLiveLink", "Status_Waiting", "Waiting for first frame"))
         : NSLOCTEXT("VMCLiveLink", "Status_Stopped", "Stopped");
+}
+
+// ---------------- Settings ----------------
+
+TSubclassOf<ULiveLinkSourceSettings> FVMCLiveLinkSource::GetSettingsClass() const
+{
+    return UVMCLiveLinkSourceSettings::StaticClass();
+}
+
+void FVMCLiveLinkSource::InitializeSettings(ULiveLinkSourceSettings* InSettings)
+{
+    // The source was created from the connection string (also when a preset is applied), so its
+    // settings are the truth; show them.
+    if (UVMCLiveLinkSourceSettings* VMCSettings = Cast<UVMCLiveLinkSourceSettings>(InSettings))
+    {
+        VMCSettings->FromConnectionSettings(Settings);
+    }
+}
+
+void FVMCLiveLinkSource::OnSettingsChanged(ULiveLinkSourceSettings* InSettings, const FPropertyChangedEvent& PropertyChangedEvent)
+{
+    UVMCLiveLinkSourceSettings* VMCSettings = Cast<UVMCLiveLinkSourceSettings>(InSettings);
+    if (!VMCSettings)
+    {
+        return;
+    }
+    const FVMCConnectionSettings New = VMCSettings->ToConnectionSettings();
+    TArray<FString> Errors;
+    if (!New.Validate(&Errors))
+    {
+        UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC source '%s': %s. Keeping the previous settings."), *SourceName, *FString::Join(Errors, TEXT("; ")));
+        VMCSettings->FromConnectionSettings(Settings);
+        return;
+    }
+    if (New == Settings)
+    {
+        return;
+    }
+
+    const bool bRestart = New.Port != Settings.Port || New.BindAddress != Settings.BindAddress;
+    const bool bNewSubject = New.SubjectName != Settings.SubjectName;
+    if (bNewSubject && Client)
+    {
+        // Move to the new subject: remove the old one and bootstrap the new one on the next frame.
+        Client->RemoveSubject_AnyThread({ SourceGuid, Settings.SubjectName });
+        bEnsuredDefaults = false;
+        bStaticSent = false;
+        LastSeenRemapper.Reset();
+        CachedMapsHash = 0;
+    }
+    Settings = New;
+    VMCSettings->ConnectionString = Settings.ToString();
+
+    if (bRestart)
+    {
+        StopOSC();
+        // Stays a valid source if the new port can't be opened; the status says why it's silent.
+        StartOSC();
+    }
+    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': settings changed (%s)."), *SourceName, *Settings.ToString());
 }
 
 // ---------------- OSC lifecycle ----------------
@@ -119,15 +201,17 @@ bool FVMCLiveLinkSource::StartOSC()
 
     OscServer->OnOscMessageReceivedNative.AddRaw(this, &FVMCLiveLinkSource::OnOscMessageReceived);
 
-    if (!OscServer->SetAddress(TEXT("0.0.0.0"), (uint16)ListenPort))
+    if (!OscServer->SetAddress(Settings.BindAddress, (uint16)Settings.Port))
     {
-        UE_LOG(LogVMCLiveLink, Error, TEXT("UOSCServer SetAddress failed for port %d"), ListenPort);
+        UE_LOG(LogVMCLiveLink, Error, TEXT("VMC source '%s': can't listen on %s:%d (address not on this machine, or port in use?)"),
+            *SourceName, *Settings.BindAddress, Settings.Port);
         OscServer->OnOscMessageReceivedNative.RemoveAll(this);
         OscServer.Reset();
         return false;
     }
 
     OscServer->Listen();
+    bListening = true;
     return true;
 }
 
@@ -139,6 +223,7 @@ void FVMCLiveLinkSource::StopOSC()
         OscServer->Stop();
         OscServer.Reset();
     }
+    bListening = false;
 }
 
 // ---------------- OSC message handler ----------------
@@ -181,8 +266,8 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
         }
         const FName BoneName(*Pose.Name);
         const FTransform Xf(
-            VMCProtocol::ToUERotation(Pose.Rotation, bUnityToUE),
-            VMCProtocol::ToUEPosition(Pose.Position, bUnityToUE, bMetersToCm),
+            VMCProtocol::ToUERotation(Pose.Rotation, Settings.bUnityToUE),
+            VMCProtocol::ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm),
             FVector::OneVector);
         if (Assembler->SetBone(BoneName, Xf))
         {
@@ -215,13 +300,13 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
             bWarnedRootScaleOffset = true;
         }
 
-        FVector PR = VMCProtocol::ToUEPosition(Pose.Position, bUnityToUE, bMetersToCm);
-        FQuat   QR = VMCProtocol::ToUERotation(Pose.Rotation, bUnityToUE);
+        FVector PR = VMCProtocol::ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm);
+        FQuat   QR = VMCProtocol::ToUERotation(Pose.Rotation, Settings.bUnityToUE);
 
         // Apply extra yaw offset about UE Z
-        if (!FMath::IsNearlyZero(YawOffsetDeg))
+        if (!FMath::IsNearlyZero(Settings.YawOffsetDeg))
         {
-            const FQuat YawDelta(FVector::UpVector, FMath::DegreesToRadians(YawOffsetDeg));
+            const FQuat YawDelta(FVector::UpVector, FMath::DegreesToRadians(Settings.YawOffsetDeg));
             QR = YawDelta * QR;
             PR = YawDelta.RotateVector(PR);
         }
@@ -265,7 +350,7 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
             PushStaticData();
         }
         PushFrame();
-        Assembler->EndFrame(bZeroMissingCurves);
+        Assembler->EndFrame(Settings.bZeroMissingCurves);
         break;
     }
     default:
@@ -281,7 +366,7 @@ void FVMCLiveLinkSource::PushStaticData()
     {
         return;
     }
-    Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName },
+    Client->PushSubjectStaticData_AnyThread({ SourceGuid, Settings.SubjectName },
         ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(&CachedBoneMap, &CachedCurveMap));
     bStaticSent = true;
 }
@@ -293,11 +378,11 @@ void FVMCLiveLinkSource::PushFrame()
         return;
     }
     FVMCFrameAssembler::FFrameOptions Options;
-    Options.bPreferIncomingTranslations = bPreferIncomingTranslations;
-    Options.bUseRefOffsets = bUseRefOffsets && bHaveRefOffsets;
+    Options.bPreferIncomingTranslations = Settings.bPreferIncomingTranslations;
+    Options.bUseRefOffsets = Settings.bUseRefOffsets && bHaveRefOffsets;
     Options.RefOffsets = &RefLocalTranslationByName;
     Options.BoneMap = &CachedBoneMap;
-    Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, Assembler->MakeFrameData(Options));
+    Client->PushSubjectFrameData_AnyThread({ SourceGuid, Settings.SubjectName }, Assembler->MakeFrameData(Options));
 }
 
 uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FName, FName>& B)
@@ -337,9 +422,9 @@ void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
 {
     if (!Client) return;
 
-    UObject* SettingsObj = Client->GetSubjectSettings({ SourceGuid, SubjectName });
-    ULiveLinkSubjectSettings* Settings = Cast<ULiveLinkSubjectSettings>(SettingsObj);
-    ULiveLinkSubjectRemapper* NowRemapper = Settings ? Settings->Remapper : nullptr;
+    UObject* SettingsObj = Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName });
+    ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(SettingsObj);
+    ULiveLinkSubjectRemapper* NowRemapper = SubjectSettings ? SubjectSettings->Remapper : nullptr;
 
     const bool bRemapperChanged = (LastSeenRemapper.Get() != NowRemapper);
     if (bRemapperChanged)
@@ -394,13 +479,13 @@ void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
 
     check(IsInGameThread());
 
-    const FLiveLinkSubjectKey Key{ SourceGuid, SubjectName };
+    const FLiveLinkSubjectKey Key{ SourceGuid, Settings.SubjectName };
 
     if (Client->GetSubjectSettings(Key) != nullptr)
     {
         // The subject already exists (for example, created by a Live Link preset or configured by
         // the user). Keep its settings, including its remapper choice, as they are.
-        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC subject '%s' already exists; keeping its settings."), *SubjectName.ToString());
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC subject '%s' already exists; keeping its settings."), *Settings.SubjectName.ToString());
     }
     else
     {

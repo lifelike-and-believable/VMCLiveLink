@@ -29,7 +29,10 @@ public class VMCLiveLink : ModuleRules
         PrivateDependencyModuleNames.AddRange(new[]
         {
 			// used by AutoDetectAndApplyMapping()
-			"AssetRegistry"
+			"AssetRegistry",
+
+			// FIPv4Address, for validating the bind address
+			"Networking"
         });
 
         // Keep editor-only modules guarded so runtime packaging doesn't pull them in
