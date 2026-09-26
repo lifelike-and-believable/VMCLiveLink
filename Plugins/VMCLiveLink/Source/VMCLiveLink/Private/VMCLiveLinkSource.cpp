@@ -3,6 +3,7 @@
 #include "VMCLog.h"
 #include "VMCHumanoid.h"
 #include "VMCProtocol.h"
+#include "VMCFrameAssembler.h"
 
 // Live Link
 #include "ILiveLinkClient.h"
@@ -53,12 +54,7 @@ FVMCLiveLinkSource::FVMCLiveLinkSource(const FString& InSourceName, int32 InPort
 
 void FVMCLiveLinkSource::InitSkeleton()
 {
-    VMCHumanoid::BuildSkeleton(BoneNames, BoneParents);
-    BoneIndexByName.Reset();
-    for (int32 i = 0; i < BoneNames.Num(); ++i)
-    {
-        BoneIndexByName.Add(BoneNames[i], i);
-    }
+    Assembler = MakeUnique<FVMCFrameAssembler>();
 }
 
 void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid)
@@ -150,6 +146,12 @@ void FVMCLiveLinkSource::StopOSC()
 void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FString& FromIP, uint16 FromPort)
 {
     const FString Addr = Msg.GetAddress().GetFullPath();
+    const VMCProtocol::EAddress Kind = VMCProtocol::ClassifyAddress(Addr);
+    if (Kind != VMCProtocol::EAddress::BonePos && Kind != VMCProtocol::EAddress::RootPos
+        && Kind != VMCProtocol::EAddress::BlendVal && Kind != VMCProtocol::EAddress::BlendApply)
+    {
+        return; // not used (yet): time, availability, devices, camera, ...
+    }
 
     auto WarnMalformed = [this, &Addr]()
     {
@@ -161,40 +163,37 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
         }
     };
 
-    if (Addr == TEXT("/VMC/Ext/Bone/Pos"))
+    VMCProtocol::FArgs Args;
+    if (Kind != VMCProtocol::EAddress::BlendApply)
     {
-        VMCProtocol::FArgs Args;
         VMCProtocol::ReadArgs(Msg, Args);
+    }
+
+    switch (Kind)
+    {
+    case VMCProtocol::EAddress::BonePos:
+    {
         VMCProtocol::FPose Pose;
         if (!VMCProtocol::ParseBonePos(Args, Pose))
         {
             WarnMalformed();
             return;
         }
-
         const FName BoneName(*Pose.Name);
         const FTransform Xf(
             VMCProtocol::ToUERotation(Pose.Rotation, bUnityToUE),
             VMCProtocol::ToUEPosition(Pose.Position, bUnityToUE, bMetersToCm),
             FVector::OneVector);
-
-        FScopeLock Lock(&DataGuard);
-        if (!BoneIndexByName.Contains(BoneName))
+        if (Assembler->SetBone(BoneName, Xf))
         {
-            // Not a Unity humanoid bone: append it (existing indices never move) under Hips.
-            const int32 NewIndex = BoneNames.Add(BoneName);
-            BoneParents.Add(VMCHumanoid::FallbackParentIndex);
-            BoneIndexByName.Add(BoneName, NewIndex);
             UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': bone '%s' is not a Unity humanoid bone; parenting it to Hips."),
                 *SourceName, *BoneName.ToString());
-            bForceStaticNext = true;
+            bStaticDirty = true;
         }
-        PendingPose.Add(BoneName, Xf);
+        break;
     }
-    else if (Addr == TEXT("/VMC/Ext/Root/Pos"))
+    case VMCProtocol::EAddress::RootPos:
     {
-        VMCProtocol::FArgs Args;
-        VMCProtocol::ReadArgs(Msg, Args);
         VMCProtocol::FPose Pose;
         bool bLegacyForm = false;
         if (!VMCProtocol::ParseRootPos(Args, Pose, bLegacyForm))
@@ -226,14 +225,11 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
             QR = YawDelta * QR;
             PR = YawDelta.RotateVector(PR);
         }
-
-        FScopeLock Lock(&DataGuard);
-        PendingRoot = FTransform(QR, PR, FVector::OneVector);
+        Assembler->SetRoot(FTransform(QR, PR, FVector::OneVector));
+        break;
     }
-    else if (Addr == TEXT("/VMC/Ext/Blend/Val"))
+    case VMCProtocol::EAddress::BlendVal:
     {
-        VMCProtocol::FArgs Args;
-        VMCProtocol::ReadArgs(Msg, Args);
         FString Name;
         float Val = 0.f;
         if (!VMCProtocol::ParseBlendVal(Args, Name, Val))
@@ -241,22 +237,16 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
             WarnMalformed();
             return;
         }
-
-        const FName CurveName(*Name);
-
-        FScopeLock Lock(&DataGuard);
-        if (!CurveNameToIndex.Contains(CurveName))
+        if (Assembler->SetCurve(FName(*Name), Val))
         {
-            const int32 NewIdx = CurveNamesOrdered.Add(CurveName);
-            CurveNameToIndex.Add(CurveName, NewIdx);
-            bStaticCurvesDirty = true; // advertise this name in static data
+            bStaticDirty = true; // advertise this name in static data
         }
-        PendingCurves.Add(CurveName, Val);
+        break;
     }
-    else if (Addr == TEXT("/VMC/Ext/Blend/Apply"))
+    case VMCProtocol::EAddress::BlendApply:
     {
-        // OSC messages are dispatched on the Game Thread (see UOSCServer::PumpPacketQueue), so the
-        // subject bootstrap can run synchronously here, before anything is pushed.
+        // Dispatched on the game thread (see the class comment), so the subject bootstrap can run
+        // synchronously here, before anything is pushed.
         if (!bEnsuredDefaults)
         {
             EnsureSubjectSettingsWithDefaults(); // also refreshes the cached maps
@@ -266,174 +256,48 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
             RefreshStaticMapsFromSettings();
         }
 
-        // Decide on static data before building the frame, so a frame never carries more curve
-        // values than the static data it is validated against. Push static at most once.
-        bool bNeedStatic = false;
+        // Static data before the frame, so a frame never carries more curve values than the
+        // static data it is validated against.
+        if (!bStaticSent || bForceStaticNext || bStaticDirty)
         {
-            FScopeLock Lock(&DataGuard);
-            bNeedStatic = !bStaticSent || bForceStaticNext || bStaticCurvesDirty;
             bForceStaticNext = false;
-            bStaticCurvesDirty = false;
+            bStaticDirty = false;
+            PushStaticData();
         }
-        if (bNeedStatic)
-        {
-            PushStaticData(/*bForce=*/true);
-        }
-
         PushFrame();
-
-        if (bZeroMissingCurves)
-        {
-            FScopeLock Lock(&DataGuard);
-            PendingCurves.Reset();
-        }
+        Assembler->EndFrame(bZeroMissingCurves);
+        break;
+    }
+    default:
+        break;
     }
 }
 
 // ---------------- Live Link data push ----------------
 
-void FVMCLiveLinkSource::PushStaticData(bool bForce)
+void FVMCLiveLinkSource::PushStaticData()
 {
-    FScopeLock Lock(&DataGuard);
-
-    const bool bHaveBones = BoneNames.Num() > 0;
-    if (!Client || (!bForce && (bStaticSent || !bHaveBones)))
+    if (!Client)
     {
         return;
     }
-
-    // Make editable copies
-    TArray<FName> OutBoneNames = BoneNames;
-    TArray<FName> OutCurveNames = CurveNamesOrdered;
-
-    // Apply cached maps (preserve order → indices remain valid)
-    for (FName& N : OutBoneNames)  if (const FName* M = CachedBoneMap.Find(N))  N = *M;
-    for (FName& C : OutCurveNames) if (const FName* M = CachedCurveMap.Find(C)) C = *M;
-
-    // Build static packet
-    FLiveLinkStaticDataStruct StaticData(FLiveLinkSkeletonStaticData::StaticStruct());
-    auto& Skel = *StaticData.Cast<FLiveLinkSkeletonStaticData>();
-
-    Skel.SetBoneNames(OutBoneNames);
-    Skel.SetBoneParents(BoneParents);
-
-    // UE 5.6: curve names live on the base static data array
-    Skel.PropertyNames = OutCurveNames;
-
     Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName },
-        ULiveLinkAnimationRole::StaticClass(), MoveTemp(StaticData));
-
+        ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(&CachedBoneMap, &CachedCurveMap));
     bStaticSent = true;
 }
 
 void FVMCLiveLinkSource::PushFrame()
 {
-    if (!Client) return;
-
-    // Snapshot state under lock
-    TArray<FName>            LocalBoneNames;
-    TMap<FName, FTransform>  LocalPose;
-    FTransform               LocalRoot = FTransform::Identity;
-    TArray<FName>            LocalCurveNames;
-    TMap<FName, int32>       LocalCurveNameToIndex;
-    TMap<FName, float>       LocalCurves;
-
-    TMap<FName, FName>       LocalBoneMap;                 // source → mapped
-    TMap<FName, FVector>     LocalRefOffsets;              // mapped name → ref local translation
-    bool                     bLocalUseRefOffsets = true;
-    bool                     bLocalPreferIncoming = false;
-    bool                     bLocalHaveRefOffsets = false;
-
+    if (!Client)
     {
-        FScopeLock Lock(&DataGuard);
-        LocalBoneNames = BoneNames;
-        LocalPose = PendingPose;
-        LocalRoot = PendingRoot;
-        LocalCurveNames = CurveNamesOrdered;
-        LocalCurveNameToIndex = CurveNameToIndex;
-        LocalCurves = PendingCurves;
-
-        LocalBoneMap = CachedBoneMap;
-        LocalRefOffsets = RefLocalTranslationByName;
-        bLocalUseRefOffsets = bUseRefOffsets;
-        bLocalPreferIncoming = bPreferIncomingTranslations;
-        bLocalHaveRefOffsets = bHaveRefOffsets;
+        return;
     }
-
-    // Build frame payload
-    FLiveLinkFrameDataStruct Frame(FLiveLinkAnimationFrameData::StaticStruct());
-    auto& Anim = *Frame.Cast<FLiveLinkAnimationFrameData>();
-    FLiveLinkBaseFrameData& Base = static_cast<FLiveLinkBaseFrameData&>(Anim);
-
-    const int32 NumBones = LocalBoneNames.Num();
-    const int32 NumCurves = LocalCurveNames.Num();
-
-    Anim.Transforms.SetNum(NumBones);
-    Base.PropertyValues.SetNum(NumCurves);
-    for (int32 i = 0; i < NumCurves; ++i) Base.PropertyValues[i] = 0.f;
-
-    auto MapBoneName = [&](const FName& Src)->FName
-        {
-            if (const FName* M = LocalBoneMap.Find(Src)) return *M;
-            return Src;
-        };
-
-    // Fill transforms as LOCAL (parent-space) per Live Link Animation Role
-    for (int32 i = 0; i < NumBones; ++i)
-    {
-        const FName SrcName = LocalBoneNames[i];
-        const FTransform* In = LocalPose.Find(SrcName);
-        FTransform X = FTransform::Identity;
-
-        if (i == 0)
-        {
-            // Root: a Bone/Pos entry named "root" if the sender provides one, otherwise the
-            // dedicated /VMC/Ext/Root/Pos stream.
-            X = In ? *In : LocalRoot;
-        }
-        else
-        {
-            if (In)
-            {
-                X.SetRotation(In->GetRotation());
-            }
-
-            // Hips always uses the streamed translation: it carries the body's height and
-            // movement relative to the root. Other bones use it only when the stream is trusted
-            // to send proper local translations; otherwise the reference skeleton's offsets.
-            const bool bIsHips = (i == VMCHumanoid::HipsSkeletonIndex);
-            bool bHaveTranslation = false;
-            if (In && (bIsHips || bLocalPreferIncoming))
-            {
-                X.SetTranslation(In->GetTranslation());
-                bHaveTranslation = bIsHips || !X.GetTranslation().IsNearlyZero();
-            }
-            if (!bHaveTranslation && bLocalUseRefOffsets && bLocalHaveRefOffsets)
-            {
-                if (const FVector* Off = LocalRefOffsets.Find(MapBoneName(SrcName)))
-                {
-                    X.SetTranslation(*Off);
-                }
-            }
-        }
-
-        Anim.Transforms[i] = X;
-    }
-
-    // Curves → PropertyValues using fixed order
-    for (const TPair<FName, float>& KV : LocalCurves)
-    {
-        if (const int32* Idx = LocalCurveNameToIndex.Find(KV.Key))
-        {
-            const int32 I = *Idx;
-            if (Base.PropertyValues.IsValidIndex(I))
-            {
-                Base.PropertyValues[I] = KV.Value;
-            }
-        }
-    }
-
-    Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(Frame));
+    FVMCFrameAssembler::FFrameOptions Options;
+    Options.bPreferIncomingTranslations = bPreferIncomingTranslations;
+    Options.bUseRefOffsets = bUseRefOffsets && bHaveRefOffsets;
+    Options.RefOffsets = &RefLocalTranslationByName;
+    Options.BoneMap = &CachedBoneMap;
+    Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, Assembler->MakeFrameData(Options));
 }
 
 uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FName, FName>& B)
@@ -484,17 +348,20 @@ void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
         bForceStaticNext = true; // names may change
     }
 
-    // Pull maps + reference mesh
-    TMap<FName, FName> NewBone, NewCurve;
+    // Maps + reference mesh. Runs every Apply, so the maps are hashed in place and only copied
+    // when they changed.
+    static const TMap<FName, FName> EmptyMap;
+    const TMap<FName, FName>* NewBone = &EmptyMap;
+    const TMap<FName, FName>* NewCurve = &EmptyMap;
     USkeletalMesh* RefMesh = nullptr;
 
     if (NowRemapper)
     {
-        NewBone = NowRemapper->BoneNameMap;
+        NewBone = &NowRemapper->BoneNameMap;
 
         if (const UVMCLiveLinkRemapper* My = Cast<UVMCLiveLinkRemapper>(NowRemapper))
         {
-            NewCurve = My->CurveNameMap;
+            NewCurve = &My->CurveNameMap;
             RefMesh = My->ReferenceSkeleton.LoadSynchronous();
         }
     }
@@ -510,12 +377,12 @@ void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
         LastRefMeshBuiltFrom = RefMesh;
     }
 
-    const uint32 NewHash = HashMaps(NewBone, NewCurve);
+    const uint32 NewHash = HashMaps(*NewBone, *NewCurve);
     if (NewHash != CachedMapsHash)
     {
         CachedMapsHash = NewHash;
-        CachedBoneMap = MoveTemp(NewBone);
-        CachedCurveMap = MoveTemp(NewCurve);
+        CachedBoneMap = *NewBone;
+        CachedCurveMap = *NewCurve;
         bForceStaticNext = true; // names changed → republish once
     }
 }

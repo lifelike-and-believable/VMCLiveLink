@@ -3,7 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "ILiveLinkSource.h"
-#include "HAL/CriticalSection.h"
+#include "Templates/UniquePtr.h"
 #include "UObject/StrongObjectPtr.h"
 
 // Forward declarations (keep OSC headers out of Public/)
@@ -13,9 +13,15 @@ struct FOSCMessage;
 
 class ULiveLinkSubjectRemapper;
 class ULiveLinkSubjectSettings;
+class FVMCFrameAssembler;
 
 /**
- * VMC → Live Link source (UE 5.6)
+ * VMC → Live Link source (UE 5.6).
+ *
+ * Threading: everything runs on the game thread. UOSCServer queues packets on its socket thread and
+ * dispatches them on the game thread (UOSCServer::PumpPacketQueue), and ReceiveClient, shutdown and
+ * subject bootstrap are game-thread calls too. So there is no locking. (D-1: a receive-thread path
+ * is P3.1 step 2.) Message parsing is VMCProtocol, frame building is FVMCFrameAssembler.
  */
 class VMCLIVELINK_API FVMCLiveLinkSource
     : public ILiveLinkSource
@@ -45,8 +51,8 @@ private:
     void OnOscMessageReceived(const FOSCMessage& Message, const FString& IPAddress, uint16 Port);
 
     // Live Link pushes
-    void PushStaticData(bool bForce = false); // bones + property names
-    void PushFrame();                         // bone transforms + property values
+    void PushStaticData();  // bones + property names
+    void PushFrame();       // bone transforms + property values
 
     // Cached copies of the asset’s maps (so we don’t re-hash every frame)
     TMap<FName, FName> CachedBoneMap;
@@ -89,28 +95,13 @@ private:
     // Subject
     FName SubjectName = FName(TEXT("VMC_Subject"));
 
-    // Shared state
-    mutable FCriticalSection DataGuard;
-
     // Static (skeleton) tracking
     bool bStaticSent = false;
+    bool bStaticDirty = false; // a new bone or curve arrived; publish static data before the next frame
 
-    // Bones: "root" at 0, then the Unity humanoid bones (see VMCHumanoid), then any other bone
-    // names the sender streams, appended in arrival order. Indices never change once assigned.
-    TArray<FName> BoneNames;    // index-aligned
-    TArray<int32> BoneParents;  // -1 for root
-    TMap<FName, int32> BoneIndexByName;
+    // Skeleton, pose and curves
+    TUniquePtr<FVMCFrameAssembler> Assembler;
     void InitSkeleton();
-
-    // Per-frame pose cache
-    TMap<FName, FTransform> PendingPose; // bone -> transform
-    FTransform PendingRoot = FTransform::Identity;
-
-    // Curves → Properties (UE 5.6)
-    TArray<FName>     CurveNamesOrdered;     // advertised in StaticData.PropertyNames
-    TMap<FName, int32> CurveNameToIndex;      // name → index in CurveNamesOrdered
-    TMap<FName, float> PendingCurves;         // latest value per curve (held between frames)
-    bool              bStaticCurvesDirty = false; // republish static when set grows
 
     // When true, curves not sent since the previous Blend/Apply are published as 0 instead of
     // holding their last value. Senders that stream only changed blend shapes need this off.
