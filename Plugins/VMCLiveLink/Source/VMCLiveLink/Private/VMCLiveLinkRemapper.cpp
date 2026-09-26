@@ -773,7 +773,9 @@ void UVMCLiveLinkRemapper::OnAutoDetectLoaded(TArray<FSoftObjectPath> Likely, TA
 	{
 		return; // filled in the meantime (by the user, or another pass)
 	}
-	USkeletalMesh* Ref = ReferenceSkeleton.Get();
+	// The mesh may have been unloaded while the candidates loaded; load it again rather than
+	// choosing without it. (This runs on the game thread.)
+	USkeletalMesh* Ref = ReferenceSkeleton.LoadSynchronous();
 	if (UVMCLiveLinkMappingAsset* Chosen = ChooseMapping(Ref, ToLoad, /*bAllowHeuristic*/ bSecondPass))
 	{
 		ApplyMappingAsset(Chosen, /*bAlsoCaptureSignature=*/false);

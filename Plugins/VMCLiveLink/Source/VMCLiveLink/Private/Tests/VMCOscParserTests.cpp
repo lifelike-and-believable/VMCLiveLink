@@ -229,6 +229,15 @@ bool FVMCOscParserMalformedTest::RunTest(const FString& Parameters)
 	Lying[16] = 0xFF; // negative
 	TestFalse(TEXT("A negative element size is rejected"), Parse(Lying, Seen));
 
+	// A message whose data runs past its type tags: garbage is rejected, zero padding isn't.
+	{
+		TArray<uint8> Trailing = Message("/VMC/Ext/Blend/Val", { {'s', 0, 0, "A"}, {'f', 0.5f} });
+		Trailing.Append({ 0, 0, 0, 0 });
+		TestTrue(TEXT("Trailing zero padding is accepted"), Parse(Trailing, Seen));
+		Trailing.Append({ 1, 2, 3, 4 });
+		TestFalse(TEXT("Trailing bytes the tags don't describe are rejected"), Parse(Trailing, Seen));
+	}
+
 	FRandomStream Random(7);
 	for (int32 i = 0; i < 2000; ++i)
 	{

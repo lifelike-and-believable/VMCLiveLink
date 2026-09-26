@@ -288,4 +288,55 @@ bool FVRMSpringSolverSubsteps::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringSolverBranch, "VRM.SpringBones.Solver.Branch",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMSpringSolverBranch::RunTest(const FString& Parameters)
+{
+	// Chain A (bones 0 and 1, tail 2) hangs from a fixed root and falls under gravity. Chain B
+	// (bone 3, tail 4) branches off A's second joint, 5 cm to the side. B's first joint must follow
+	// where A's joint went, not stay where the animation put it. B is listed first, so the solver
+	// has to order the chains itself.
+	TArray<FTransform> Bones = {
+		FTransform(FVector(0, 0, 100)), FTransform(FVector(10, 0, 100)), FTransform(FVector(20, 0, 100)),
+		FTransform(FVector(10, 5, 100)), FTransform(FVector(10, 15, 100)) };
+	FVRMSpringSolverSetup Setup;
+	Setup.NumBones = Bones.Num();
+	{
+		FVRMSpringSolverSetup::FChain& B = Setup.Chains.AddDefaulted_GetRef();
+		FVRMSpringSolverSetup::FJoint& J = B.Joints.AddDefaulted_GetRef();
+		J.Bone = 3; J.TailBone = 4; J.ParentBone = 1; J.Stiffness = 1.f; J.Drag = 0.5f; J.GravityPower = 0.f;
+	}
+	{
+		FVRMSpringSolverSetup::FChain& A = Setup.Chains.AddDefaulted_GetRef();
+		for (int32 I = 0; I < 2; ++I)
+		{
+			FVRMSpringSolverSetup::FJoint& J = A.Joints.AddDefaulted_GetRef();
+			J.Bone = I; J.TailBone = I + 1; J.ParentBone = I - 1;
+			J.Stiffness = 0.f; J.Drag = 0.4f; J.GravityDir = FVector(0, 0, -1); J.GravityPower = 100.f;
+		}
+	}
+
+	FVRMSpringSolver Solver;
+	Solver.Init(Setup);
+	for (int32 Frame = 0; Frame < 600; ++Frame)
+	{
+		Solver.Step(1.f / 60.f, Bones, FTransform::Identity);
+	}
+
+	const TConstArrayView<int32> Out = Solver.JointBones();
+	if (!TestEqual(TEXT("Three joints"), Out.Num(), 3)) return false;
+	TestTrue(TEXT("Chain A is simulated before the branch that hangs off it"), Out[0] == 0 && Out[1] == 1 && Out[2] == 3);
+
+	const FTransform& AJoint = Solver.JointTransforms()[1];
+	const FTransform& BRoot = Solver.JointTransforms()[2];
+	TestTrue(TEXT("A has fallen (its second joint is below the root)"), AJoint.GetLocation().Z < 95.f);
+	// B's root keeps its animated offset from its parent, measured in the parent's simulated frame.
+	const FVector Expected = AJoint.TransformPosition(FVector(0, 5, 0));
+	TestTrue(FString::Printf(TEXT("B's root follows A's simulated joint (off by %.4f cm)"), FVector::Dist(BRoot.GetLocation(), Expected)),
+		FVector::Dist(BRoot.GetLocation(), Expected) < 0.01f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
