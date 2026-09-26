@@ -14,6 +14,7 @@ public class VRMCore : ModuleRules
         {
             "Core",
             "CoreUObject", // the avatar description's USTRUCTs and UENUMs (VRMAvatarTypes.h)
+            "Engine",      // UVRMAvatarDescription (a UDataAsset)
             "Json", // FVRMDocument exposes the parsed top-level JSON
         });
 

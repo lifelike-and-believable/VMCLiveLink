@@ -3,6 +3,7 @@
 #include "VRMInterchangeLog.h"
 #include "VRMDocument.h"
 #include "InterchangeVRMNode.h"
+#include "VRMAvatarParser.h"
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "InterchangeSceneNode.h"
@@ -73,6 +74,18 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     UInterchangeVRMNode* VRMNode = NewObject<UInterchangeVRMNode>(&NodeContainer);
     NodeContainer.SetupNode(VRMNode, MakeNodeUid(TEXT("Document")), TEXT("VRM_Document"), EInterchangeNodeContainerType::TranslatedAsset);
     VRMNode->SetFromDocument(*Document);
+
+    // The avatar description (P4.1): humanoid map, expressions, meta. The pipelines make the asset.
+    FVRMAvatarData Avatar;
+    TArray<FString> AvatarWarnings;
+    if (VRM::BuildAvatarData(*Document, Parsed, Avatar, &AvatarWarnings))
+    {
+        VRMNode->SetAvatarData(Avatar);
+    }
+    for (const FString& Warning : AvatarWarnings)
+    {
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] %s"), *Warning);
+    }
 
     // Folder subpaths
     const FString PackageSubPath = FPaths::GetBaseFilename(GetSourceData()->GetFilename());

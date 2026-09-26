@@ -7,6 +7,7 @@
 #include "VRMIKRigPostImportPipeline.h"
 #include "VRMLiveLinkPostImportPipeline.h"
 #include "VRMMaterialPostImportPipeline.h"
+#include "VRMAvatarDescriptionPipeline.h"
 #include "VRMInterchangeLog.h"
 
 namespace
@@ -155,6 +156,11 @@ namespace
 				nullptr,
 				UVRMMaterialPostImportPipeline::StaticClass(),
 				TEXT("/Script/VRMInterchangeEditor.VRMMaterialPostImportPipeline")), bDirty);
+			// After the spring pipeline, so the description can point at its spring data.
+			AppendIfMissing(*Per, ResolvePipelinePath(
+				nullptr,
+				UVRMAvatarDescriptionPipeline::StaticClass(),
+				TEXT("/Script/VRMInterchangeEditor.VRMAvatarDescriptionPipeline")), bDirty);
 			EnsureVRMAssetsPipelineIsFirst(*Per, bDirty);
 		}
 		EnsureTextureDialogOverride(InOut, bDirty);
