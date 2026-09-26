@@ -81,6 +81,18 @@ public:
 	virtual bool IsValidToEvaluate(const USkeleton* Skeleton, const FBoneContainer& RequiredBones) override;
 	virtual void EvaluateSkeletalControl_AnyThread(FComponentSpacePoseContext& Output, TArray<FBoneTransform>& OutBoneTransforms) override;
 	virtual void GatherDebugData(FNodeDebugData& DebugData) override;
+	virtual bool NeedsDynamicReset() const override { return true; }
+	virtual void ResetDynamics(ETeleportType InTeleportType) override;
+
+	/**
+	 * The per-frame work, without the anim graph plumbing, so tests can run the node on a pose they
+	 * build themselves. BeginFrame is what UpdateInternal does (new delta time, new frame);
+	 * RebuildForBones is what CacheBones does; EvaluateInternal is one evaluation. Proxy is only used
+	 * for debug drawing and may be null.
+	 */
+	void BeginFrame(float DeltaTime);
+	void RebuildForBones(const FBoneContainer& BoneContainer);
+	void EvaluateInternal(FAnimInstanceProxy* Proxy, FCSPose<FCompactPose>& CSPose, const FTransform& ComponentTM, TArray<FBoneTransform>& OutBoneTransforms);
 
 private:
 	/* ---- Core helpers ---- */
@@ -97,11 +109,14 @@ private:
 	// Allocate & fill initial per-joint state
 	void EnsureStatesInitialized(const FBoneContainer& BoneContainer, FCSPose<FCompactPose>& CSPose);
 
+	// True when the mappings no longer describe SpringData (another asset, or the asset was edited)
+	bool MappingsAreStale() const;
+
 	// Simulation pass over all springs
-	void SimulateSpringsOnce(const FComponentSpacePoseContext& Context, const FTransform& ComponentTM, float DeltaTime);
+	void SimulateSpringsOnce(FAnimInstanceProxy* Proxy, FCSPose<FCompactPose>& CSPose, const FTransform& ComponentTM, float DeltaTime);
 
 	// Collision resolution against configured collider groups
-	void ResolveCollisions(const FComponentSpacePoseContext& Context,
+	void ResolveCollisions(FAnimInstanceProxy* Proxy,
 	                       FVector& NextTailWS,
 	                       float JointRadius,
 	                       const FVRMSpringConfig& SpringCfg,
@@ -118,11 +133,11 @@ private:
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	// Debug draw helpers
-	void DrawCollisionSphere(const FComponentSpacePoseContext& Context, const FTransform& NodeXf, const struct FVRMSpringColliderSphere& S) const;
-	void DrawCollisionCapsule(const FComponentSpacePoseContext& Context, const FTransform& NodeXf, const struct FVRMSpringColliderCapsule& Cap) const;
-	void DrawCollisionPlane(const FComponentSpacePoseContext& Context, const FTransform& NodeXf, const struct FVRMSpringColliderPlane& P) const;
+	void DrawCollisionSphere(FAnimInstanceProxy* Proxy, const FTransform& NodeXf, const struct FVRMSpringColliderSphere& S) const;
+	void DrawCollisionCapsule(FAnimInstanceProxy* Proxy, const FTransform& NodeXf, const struct FVRMSpringColliderCapsule& Cap) const;
+	void DrawCollisionPlane(FAnimInstanceProxy* Proxy, const FTransform& NodeXf, const struct FVRMSpringColliderPlane& P) const;
 	// Draw per-joint spring visuals: head, tail, optional velocity and animated-rest target
-	void DrawSpringJoint(const FComponentSpacePoseContext& Context, const FTransform& ComponentTM, const FVRMSimJointState& JointState, const FVector& HeadCS, const FVector& TailCS, float JointRadius, const FVector& RestTargetCS, float DeltaTime) const;
+	void DrawSpringJoint(FAnimInstanceProxy* Proxy, const FTransform& ComponentTM, const FVRMSimJointState& JointState, const FVector& HeadCS, const FVector& TailCS, float JointRadius, const FVector& RestTargetCS, float DeltaTime) const;
 #endif
 
 private:
@@ -132,6 +147,16 @@ private:
 	TArray<FSpringChainRange>  SpringChainRanges;
 	TArray<FBoneWrite>         PendingBoneWrites;
 
+	// What the mappings were built from, so a new asset or an edit rebuilds them (SR-05)
+	const UVRMSpringBoneData* BuiltForData = nullptr;
+	FString BuiltForSourceHash;
+	int32   BuiltForEditRevision = INDEX_NONE;
+	TArray<bool> BuiltBoneValid; // per joint, for spotting LOD changes
+
+	// Output of the last evaluation this frame, re-emitted if the node is evaluated again (SR-04)
+	TArray<FBoneTransform> LastOutBoneTransforms;
+
 	float CurrentDeltaTime = 0.f;
 	bool  bEvalCalledThisFrame = false;
+	bool  bResetRequested = false; // set by ResetDynamics, consumed by the next evaluation
 };
