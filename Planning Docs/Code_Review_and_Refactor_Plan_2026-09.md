@@ -794,6 +794,12 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
 - **Threading (per D-1):** receive on the OSC thread (confirm whether `UOSCServer` can dispatch off the game thread in 5.6 **[Verify]**; otherwise use `FUdpSocketReceiver` with the OSC plugin's packet parsing), assemble on that thread, and push with `_AnyThread` calls. That gives one writer, no `DataGuard`, and a game thread that is never involved.
 - **Timestamps:** set `WorldTime` from the receive time (`FPlatformTime::Seconds()`). If `/VMC/Ext/T` is present, map the sender clock to `MetaData.SceneTime` (frame rate from settings) so Live Link buffering and interpolation modes work.
 - **Acceptance:** replay tests (P0.3 captures) give identical output before and after the refactor (golden frames). Parser unit tests cover every address. There are no per-message heap allocations (checked with `LLM` or a counting allocator in a test).
+- **Status (#130, #131, #132, merged):**
+  - **Step 1** (#130, #131): `FVMCFrameAssembler` holds the skeleton, pose and curves in arrays indexed like the static data. `VMCProtocol::ClassifyAddress` names every address. The source runs on the game thread only, with `DataGuard` gone. `FVMCConnectionSettings` is the one connection-string codec (validated, round-trip tested, old strings read the same). `UVMCLiveLinkSourceSettings` puts the settings in the Live Link panel, and edits apply to the running source.
+  - **Step 2** (#132): the **Receive Thread** setting (default on). `FVMCUdpReceiver` reads the socket on its own thread; `VMCOscParser` (our own OSC 1.0 parser, since the plugin's isn't public) parses in place, with strings as views and names decoded as UTF-8. Frames carry `WorldTime` (arrival) and, with `/VMC/Ext/T`, `SceneTime` (fixed 60 fps rate). UObject work stays on the game thread, which publishes an immutable snapshot. The status shows fps, jitter and path.
+  - **Golden frames:** there are no real captures (P0.3 step 2 is still open), so two synthetic captures from `vmc_sender.py write` are committed and replayed through the parser and assembler against values computed by the generator. The before/after check is `VMC.FrameAssembler.MatchesLegacy`, which keeps the old name-keyed frame building as a reference.
+  - **Not done:** the counting-allocator test (parsing doesn't allocate; building the Live Link frame does, and must); the sender allowlist and timeout (moved to P6.1); the latency and jitter comparison between the two paths (needs the editor and a sender).
+  - The first step 2 build failed on shadowed locals (C4458) and a char cast (C4310).
 
 ### P3.2 Single place for remapping; immutable workers; editor code in the editor module
 - **Resolves:** VMC-06, VMC-09, VMC-10, VMC-22, VMC-23, VMC-24 · **Depends on:** P3.1
@@ -806,6 +812,12 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   6. Move `MatchesMesh` out of `WITH_EDITOR`, or drop `BlueprintCallable`.
   7. Migrate `FAssetTypeActions_VMCLiveLinkMappingAsset` to `UAssetDefinition_VMCLiveLinkMappingAsset`. Replace `StaticDuplicateObject` in the retarget actor factory with `IAssetTools::DuplicateAsset`.
 - **Acceptance:** a Game (non-editor) target builds without `UnrealEd`. Re-initializing a subject leaves user maps and preset untouched. A test checks that a worker created before an edit keeps the old maps (snapshot semantics).
+- **Status (#133, #134, merged):** all three acceptance items hold (`VMC.Remapper.WorkerSnapshot`, `.InitializeKeepsSettings`; CI's Game builds pass with `UnrealEd` and `AssetTools` gone from the runtime module).
+  - Step 1: the source publishes VMC names; the worker renames and adds rest translations (root and Hips never). The source's `refoffsets` setting from P3.1 moved to the remapper as **Use Reference Translations**. The reference skeleton falls back to the project's `DefaultReferenceSkeleton`, which was never read. To keep edits taking effect at once, the remapper has a revision counter the source watches, and republishes static data when it changes.
+  - Step 3: `Initialize` keeps maps and preset. Auto-detect runs automatically only while the maps are empty, finds candidates by registry tag and loads them asynchronously; the button and Blueprint call stay synchronous.
+  - Step 4: a details customization in `VMCLiveLinkEditor` with a Mapping Tools row (Apply Preset, Seed From Subject, Apply / Auto-Detect / Save to / Create Mapping Asset), each undoable.
+  - Step 5: signature version 2 is a CRC32 of the sorted normalized names; `SignatureTag` and `SignatureVersion` are `AssetRegistrySearchable`. Old signatures are rebuilt from the example meshes when first matched or edited, not in `PostLoad` (loading other assets there isn't safe).
+  - Step 7: `UAssetDefinition_VMCLiveLinkMappingAsset` (Animation category). **Not done:** `DuplicateAsset` in the retarget actor factory. A factory must create its asset in the package it's given, which `DuplicateAsset` doesn't, so `StaticDuplicateObject` stays.
 
 ### P3.3 Parse each VRM file once, into a shared document model
 - **Resolves:** T-10, T-11 (parsing), SP-06 (duplicate parse, `RawJson`), PE-09 (cgltf), X-01 (foundation)
@@ -1018,7 +1030,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (night).* Phases 1 and 2 are complete, and every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 47 automation tests pass.
+*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 and P3.2 are merged. Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 61 automation tests pass (43 VRM, 18 VMC).
 
 ### Status by task
 
@@ -1050,15 +1062,16 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P2.1 Solver core | #126 | Merged | First run: the sphere test measured the first frame (see P2.1 status) |
 | P2.2 Collider precomputation | #126, #127 | Merged | Insights timing not done |
 | P2.3 Node editor quality | #127 | Merged | `CopyNodeDataToPreviewNode` not done. First run warned on the template AnimBlueprint |
-| (plan updates) | #114, #117, #121, #124, #128, this PR | Merged | |
+| P3.1 VMC split, settings, receive thread | #130, #131, #132 | Merged | #132's first build failed to compile (C4458, C4310) |
+| P3.2 Remapping, workers, editor tools | #133, #134 | Merged | `DuplicateAsset` in the retarget factory declined (see P3.2 status) |
+| (plan updates) | #114, #117, #121, #124, #128, #129, this PR | Merged | |
 
-**Not started:** Phases 3 to 7.
+**Not started:** P3.3 to P3.5, and Phases 4 to 7.
 
 **Recommended next:**
-1. P3.1 step 1: split VMCLiveLink into parser, frame assembler and source, keeping game-thread dispatch (D-1 decided: receive thread, in two steps).
-2. P3.1 step 2: the receive-thread path, behind a setting.
-3. Owner: fix the runner's Application Control block (X-07).
-4. The editor checks below, most of all the spring solver comparison: P2.1 changed how springs behave.
+1. P3.3: parse each VRM file once into a shared document model (`VRMCore`).
+2. Owner: fix the runner's Application Control block (X-07).
+3. The editor checks below: the spring solver comparison (P2.1), and a real VMC sender through both receive paths (P3.1, P3.2).
 
 ### How the merges went
 
@@ -1082,6 +1095,8 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
 - **New rules:** B.0 rules 10 to 13. New task: P0.5.
 - **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit four builds (#115, #121 twice, #123). Re-runs cleared it each time. It did not recur on #125 to #127, but nothing has changed on the runner, so expect it again (X-07).
+- **Shadowing is an error here:** two first builds failed on C4458 (a local named like a member). Before pushing, check new locals against the class's members, including in static member functions.
+- **Stack PRs that touch the same files, and check squash merges:** #131 and #134 were built on the PR before them; after the base merged, conflicts were only the squash duplicating the base's own changes. Confirm that with `git diff` of the old base branch against `main` for each conflicted file before taking the stacked side (rule 13).
 - **Model the expected numbers before the first CI run:** for P2.1 a short Python model of the solver set the test thresholds, and the one failure was a test measuring a frame the model wasn't checked on. Each CI round trip costs minutes; a local model catches most threshold mistakes first.
 - **Check new editor warnings against the plugin's own content:** P2.3's first version warned on every compile of the plugin's template AnimBlueprint. CI caught it only because the test run compiles that asset and reports "passed with warnings". Read the test summary's warning count, not only pass/fail.
 - **Tests that exercise real engine behaviour pay off:** the P1.14 node tests found an LOD crash already on `main`, and the P1.15 test showed that `UAssetImportData` doesn't round-trip a source path, which would have made the new matching reject every mesh. Both came from running code in the editor rather than from reading it. Where a task's acceptance can be run in a test (even with a skeleton or mesh built in code), do that rather than leave it to an editor check.
@@ -1091,6 +1106,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P3.1, P3.2):** receive from `scripts/vmc_sender.py send --fps 60` and from VSeeFace with Receive Thread on and off; record the status's fps and jitter for both, also with the editor in the background (the D-1 comparison). With a reference skeleton on the remapper, the character looks as before. Change the port, rename the subject and reapply a preset while receiving. Japanese blend shape names arrive intact. The Mapping Tools buttons, undo, and save-then-auto-detect on a fresh remapper.
 - **In the editor (P2.1 to P2.3):** compare springs against UniVRM or three-vrm on the same model and motion, and record GIFs; stiffness changed the most. Walking or turning a character should swing hair and skirts without External Velocity. A spring with a `center` should not lag when its center moves. Compile an AnimBlueprint that uses another character's spring data: the compiler lists the missing bones. Check whether edits to the node in the AnimBlueprint editor reach the preview. Record Insights timing for a large model (P2.2).
 - **In the editor (P1.10):** a lit sphere with an imported normal map shows correct bumps, and the texture assets have the expected settings.
 - **In the editor (P1.14, P1.15):** in PIE, swap spring data on a running character, teleport it and change LODs: no crash, no stretched chains. Import `Alice.vrm` and `Alice2.vrm` into the same folder: each character's spring data, IK Rig and Live Link assets bind to its own mesh. Untick "Generate Spring Bone Data" with the project setting on: no spring data.
