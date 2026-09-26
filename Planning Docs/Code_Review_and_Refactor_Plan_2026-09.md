@@ -1050,7 +1050,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P2.1 Solver core | #126 | Merged | First run: the sphere test measured the first frame (see P2.1 status) |
 | P2.2 Collider precomputation | #126, #127 | Merged | Insights timing not done |
 | P2.3 Node editor quality | #127 | Merged | `CopyNodeDataToPreviewNode` not done. First run warned on the template AnimBlueprint |
-| (plan updates) | #114, #117, #121, #124, this PR | Merged | |
+| (plan updates) | #114, #117, #121, #124, #128, this PR | Merged | |
 
 **Not started:** Phases 3 to 7.
 
