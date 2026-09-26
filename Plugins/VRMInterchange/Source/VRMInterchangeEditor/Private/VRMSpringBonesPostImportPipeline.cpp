@@ -79,8 +79,9 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
             Document = VRMNode->MakeDocument(LoadError);
             VRMNode->GetSourceHash(SourceHash);
         }
-        else
+        if (!Document.IsValid())
         {
+            // No VRM node, or one whose JSON is missing or unreadable: read the file.
             Document = FVRMDocument::LoadFile(Filename, LoadError);
             if (Document.IsValid())
             {
@@ -331,7 +332,8 @@ void UVRMSpringBonesPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Sk
             bOverwriteExistingPostProcessABP || bReusePostProcessABPOnReimport, bReused));
         if (ABP)
         {
-            if (!bReused)
+            // A reused ABP may target the skeleton of an earlier import; retarget and recompile it.
+            if (!bReused || ABP->TargetSkeleton != Skeleton || !ABP->GeneratedClass)
             {
                 ABP->TargetSkeleton = Skeleton;
                 FKismetEditorUtilities::CompileBlueprint(ABP);

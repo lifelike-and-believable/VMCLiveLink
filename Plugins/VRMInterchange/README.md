@@ -50,7 +50,7 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 ### Requirements
 
 - **Unreal Engine**: 5.6 or later
-- **Platform**: Windows (Win64) only, for now. The modules are limited to Win64 because that is the only platform the plugin is built and tested on (the CI runner is Windows). Nothing in the code is known to be Windows-specific; Mac and Linux can be added once they are built and tested.
+- **Platform**: Windows (Win64) only, for now: that is the only platform the plugin is built and tested on (the CI runner is Windows). The editor modules are allowlisted for Win64 in the `.uplugin`; the runtime modules have no platform list. Nothing in the code is known to be Windows-specific; Mac and Linux can be added once they are built and tested.
 - **Dependencies**: 
   - Interchange (built-in)
   - InterchangeEditor (built-in)
@@ -255,7 +255,7 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 - Verify the Spring Data asset is assigned
 - Ensure the Spring Data asset is not empty (check SpringConfig)
 - Confirm bone names in Spring Data match your skeleton
-- If the Spring Data asset shows **Needs Reimport**, it was made by an older plugin version (colliders in the old axes, or VRM 0.x chains without their descendant bones). Reimport the VRM file
+- If the Spring Data asset shows **Needs Reimport**, it was made by an older plugin version (colliders and gravity in the old axes, or VRM 0.x chains without their descendant bones). Reimport the VRM file
 
 ### IK Rig Not Generated
 - Enable **Generate IK Rig Assets** in project settings
@@ -317,10 +317,11 @@ VRM is a 3D avatar format based on glTF 2.0, specifically designed for VR applic
 
 ### Coordinate System
 
-glTF (and so VRM) uses Y-up, right-handed coordinates in metres. UE uses Z-up, left-handed coordinates in centimetres. The importer's net conversion for positions, normals and morph deltas is:
+glTF (and so VRM) uses Y-up, right-handed coordinates in metres. UE uses Z-up, left-handed coordinates in centimetres. The importer's net conversion is:
 
 ```
-UE (X, Y, Z) = glTF (X, Z, Y) * 100
+Positions and morph deltas:  UE (X, Y, Z) = glTF (X, Z, Y) * 100
+Normals:                     UE (X, Y, Z) = glTF (X, Z, Y)
 ```
 
 This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in glTF, which becomes +Y in UE, the direction the UE mannequin faces. VRM 0.x models face −Z, so they also get a 180° turn about UE Z and face +Y too. Files without VRM extensions import as generic glTF with the VRM 1.0 facing. Spring colliders and gravity use the same conversion as the mesh. Bone rest rotations are then reset to identity, so each bone's local transform is a pure translation. This matches how VMC streams local rotations, but it means bone orientations differ from the source file.
@@ -337,7 +338,7 @@ See `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` for the plan that a
 ## Support and Contribution
 
 This plugin is part of the VMCLiveLink project. For issues, feature requests, or contributions:
-- GitHub: [atgoldberg/VMCLiveLink](https://github.com/atgoldberg/VMCLiveLink)
+- GitHub: [lifelike-and-believable/VMCLiveLink](https://github.com/lifelike-and-believable/VMCLiveLink)
 - Issues: Use the GitHub issue tracker
 
 ## License

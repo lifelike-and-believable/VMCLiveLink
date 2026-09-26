@@ -25,7 +25,10 @@ namespace
 		return FSoftObjectPath(ClassPath);
 	}
 
-	FInterchangeTranslatorPipelines* FindOrAddPerTranslator(FInterchangeImportSettings& ImportSettings, bool& bOutDirty)
+	// Templated like UpdateRegistration, which calls it, so both take whatever type the project
+	// settings' ContentImportSettings has.
+	template <typename FContentImportSettings>
+	FInterchangeTranslatorPipelines* FindOrAddPerTranslator(FContentImportSettings& ImportSettings, bool& bOutDirty)
 	{
 		FInterchangePipelineStack* AssetsStack = ImportSettings.PipelineStacks.Find(TEXT("Assets"));
 		if (!AssetsStack)

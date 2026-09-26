@@ -23,7 +23,7 @@ public:
     virtual void ValidateAnimNodeDuringCompilation(USkeleton* ForSkeleton, FCompilerResultsLog& MessageLog) override;
 
 private:
-    /** The node's spring data, or its pin's default. Null with bOutFromGraph when the pin is shown with
-     *  no default, so the asset comes from the graph (a link or a binding) and can't be checked here. */
+    /** The node's spring data, or its pin's default. Null with bOutFromGraph when the pin is linked or
+     *  bound, so the asset comes from the graph and can't be checked here; null without it when unset. */
     const UVRMSpringBoneData* GetSpringDataForValidation(bool& bOutFromGraph) const;
 };

@@ -41,7 +41,12 @@ void FAnimNode_VRMSpringBones::Initialize_AnyThread(const FAnimationInitializeCo
 	LastOutBoneTransforms.Reset();
 	BuiltBoneValid.Reset();
 	BuiltForData = nullptr;
+	BuiltForSourceHash.Reset();
+	BuiltForEditRevision = INDEX_NONE;
+	BuiltForJointCount = 0;
+	BuiltForSpringCount = 0;
 	bEvalCalledThisFrame = false;
+	bResetRequested = false; // the solver was just initialised
 	GetEvaluateGraphExposedInputs().Execute(Context);
 }
 
@@ -279,11 +284,17 @@ void FAnimNode_VRMSpringBones::BuildMappings(const FBoneContainer& BoneContainer
 	if (NotInSkeleton.Num() > 0 && WarnedMissingBonesFor != SpringData)
 	{
 		WarnedMissingBonesFor = SpringData;
+		// Sorted, so the message is the same on every run (a TSet's order isn't).
 		TArray<FString> Names;
 		for (const FName& Name : NotInSkeleton)
 		{
-			if (Names.Num() == 5) { Names.Add(TEXT("...")); break; }
 			Names.Add(Name.ToString());
+		}
+		Names.Sort();
+		if (Names.Num() > 5)
+		{
+			Names.SetNum(5);
+			Names.Add(TEXT("..."));
 		}
 		UE_LOG(LogVRMSpringBones, Warning, TEXT("Spring data '%s': %d bone(s) not in the skeleton (%s). Their joints and colliders are ignored."),
 			*SpringData->GetName(), NotInSkeleton.Num(), *FString::Join(Names, TEXT(", ")));
@@ -319,7 +330,11 @@ void FAnimNode_VRMSpringBones::EvaluateInternal(FAnimInstanceProxy* Proxy, FCSPo
 		OutBoneTransforms = LastOutBoneTransforms;
 		return;
 	}
-	if (!bEnable || !SpringData || !SpringData->SpringConfig.IsValid()) return;
+	if (!bEnable || !SpringData || !SpringData->SpringConfig.IsValid())
+	{
+		OutBoneTransforms.Reset(); // nothing to apply, even if the caller reuses the array
+		return;
+	}
 
 	const FBoneContainer& BoneContainer = CSPose.GetPose().GetBoneContainer();
 

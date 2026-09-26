@@ -67,7 +67,8 @@ public:
     virtual bool Translate(UInterchangeBaseNodeContainer& NodeContainer) const override;
 
     // IInterchangeMeshPayloadInterface (UE 5.6). Only the attribute-storage overload is
-    // implemented; the FTransform overload is deprecated in 5.6 and the engine no longer calls it.
+    // implemented; the FTransform overload is deprecated in 5.6, so it isn't overridden (overriding
+    // it would raise the deprecation warning).
     virtual TOptional<UE::Interchange::FMeshPayloadData> GetMeshPayloadData(const FInterchangeMeshPayLoadKey& PayLoadKey, const UE::Interchange::FAttributeStorage& PayloadAttributes) const override;
 
     // IInterchangeTexturePayloadInterface (UE 5.6)

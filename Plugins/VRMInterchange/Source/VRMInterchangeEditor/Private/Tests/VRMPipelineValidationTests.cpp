@@ -182,6 +182,14 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
                 TestTrue(TEXT("Joint drag in valid range"), Joint.Drag >= 0.0f && Joint.Drag <= 1.0f);
                 TestTrue(TEXT("Joint gravity power reasonable (UE units)"), Joint.GravityPower >= 0.0f && Joint.GravityPower <= 100.0f);
             }
+            // The spring's joints are glTF nodes 2, 3 and 4, in order (node indices, not array indices).
+            for (int32 i = 0; i < Spring.JointIndices.Num(); ++i)
+            {
+                if (TestTrue(*FString::Printf(TEXT("Spring joint %d index is valid"), i), Config.Joints.IsValidIndex(Spring.JointIndices[i])))
+                {
+                    TestEqual(*FString::Printf(TEXT("Spring joint %d is node %d"), i, 2 + i), Config.Joints[Spring.JointIndices[i]].NodeIndex, 2 + i);
+                }
+            }
         }
         
         AddInfo(FString::Printf(TEXT("Successfully parsed VRM with %d springs, %d colliders, %d joints"), 

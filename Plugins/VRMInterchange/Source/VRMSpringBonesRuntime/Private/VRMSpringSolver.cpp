@@ -345,7 +345,8 @@ float FVRMSpringSolver::CollideSphere(const FTransform& ColliderCS, const FVRMSp
 		OutPushDir = -Delta.GetSafeNormal();
 		return (Sphere.Radius - HitRadius) - Delta.Length();
 	}
-	OutPushDir = Delta.GetSafeNormal();
+	// A point exactly at the center has no direction to leave by; push it up rather than not at all.
+	OutPushDir = Delta.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
 	return Delta.Length() - (Sphere.Radius + HitRadius);
 }
 
@@ -365,7 +366,7 @@ float FVRMSpringSolver::CollideCapsule(const FTransform& ColliderCS, const FVRMS
 		OutPushDir = -Delta.GetSafeNormal();
 		return (Capsule.Radius - HitRadius) - Delta.Length();
 	}
-	OutPushDir = Delta.GetSafeNormal();
+	OutPushDir = Delta.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector); // as for a sphere
 	return Delta.Length() - (Capsule.Radius + HitRadius);
 }
 
