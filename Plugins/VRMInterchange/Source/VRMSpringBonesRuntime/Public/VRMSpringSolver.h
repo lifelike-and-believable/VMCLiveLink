@@ -69,6 +69,15 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSettings
 	float MaxDeltaTime = 0.1f;
 	/** Length of a virtual tail, for a VRM 0.x joint at the end of a chain. */
 	float VirtualTailLength = 7.f;
+	/** Tails of springs without a center bone live in world space, so moving the character adds
+	 *  inertia. When false they live in component space and only the animation moves them. */
+	bool bWorldSpace = true;
+
+	bool operator==(const FVRMSpringSolverSettings& Other) const
+	{
+		return SubstepHz == Other.SubstepHz && MaxDeltaTime == Other.MaxDeltaTime
+			&& VirtualTailLength == Other.VirtualTailLength && bWorldSpace == Other.bWorldSpace;
+	}
 };
 
 /** One joint after a frame, for debug drawing. Component space. */
@@ -86,6 +95,11 @@ class VRMSPRINGBONESRUNTIME_API FVRMSpringSolver
 public:
 	/** Takes the chains and colliders. Rest data is captured by the next Reset. */
 	void Init(const FVRMSpringSolverSetup& InSetup, const FVRMSpringSolverSettings& InSettings = FVRMSpringSolverSettings());
+
+	/** Changes the settings without restarting, except that a change of space restarts the tails
+	 *  from the next pose. */
+	void SetSettings(const FVRMSpringSolverSettings& InSettings);
+	const FVRMSpringSolverSettings& GetSettings() const { return Settings; }
 
 	/** Restarts every tail from this pose, with no motion. Also captures bone axes and lengths. */
 	void Reset(TConstArrayView<FTransform> BonesCS, const FTransform& ComponentToWorld);

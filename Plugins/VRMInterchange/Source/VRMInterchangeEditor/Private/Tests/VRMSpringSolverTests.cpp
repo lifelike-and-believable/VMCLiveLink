@@ -124,20 +124,45 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringSolverWorldInertia, "VRM.SpringBones.
 bool FVRMSpringSolverWorldInertia::RunTest(const FString& Parameters)
 {
 	using namespace VRMSpringSolverTests;
-	// A hanging chain; the character then walks sideways at 1 m/s. The tip trails behind.
+	// A hanging chain; the character then walks sideways at 1 m/s. In world space the tip trails
+	// behind; in component space (a node setting) the character's motion adds nothing.
+	for (const bool bWorldSpace : { true, false })
+	{
+		FChainRig Rig(3, FVector(0, 0, -1), 10.f, 0.2f, 0.4f, FVector(0, 0, -100));
+		FVRMSpringSolverSettings Settings;
+		Settings.bWorldSpace = bWorldSpace;
+		FVRMSpringSolver Solver;
+		Solver.Init(Rig.Setup, Settings);
+		for (int32 Frame = 0; Frame < 30; ++Frame)
+		{
+			Solver.Step(1.f / 60.f, Rig.Bones, FTransform::Identity);
+		}
+		for (int32 Frame = 1; Frame <= 15; ++Frame)
+		{
+			Solver.Step(1.f / 60.f, Rig.Bones, FTransform(FVector(0, 100.f * Frame / 60.f, 0)));
+		}
+		const float TipY = Tip(Solver).Y; // component space
+		if (bWorldSpace)
+		{
+			TestTrue(FString::Printf(TEXT("World space: the tip trails the motion (component Y %.3f cm)"), TipY), TipY < -2.f);
+		}
+		else
+		{
+			TestTrue(FString::Printf(TEXT("Component space: no trailing (component Y %.4f cm)"), TipY), FMath::Abs(TipY) < 0.01f);
+		}
+	}
+
+	// Switching space at runtime restarts the tails from the next pose instead of jumping.
 	FChainRig Rig(3, FVector(0, 0, -1), 10.f, 0.2f, 0.4f, FVector(0, 0, -100));
 	FVRMSpringSolver Solver;
 	Solver.Init(Rig.Setup);
-	for (int32 Frame = 0; Frame < 30; ++Frame)
-	{
-		Solver.Step(1.f / 60.f, Rig.Bones, FTransform::Identity);
-	}
-	for (int32 Frame = 1; Frame <= 15; ++Frame)
-	{
-		Solver.Step(1.f / 60.f, Rig.Bones, FTransform(FVector(0, 100.f * Frame / 60.f, 0)));
-	}
-	const float TipY = Tip(Solver).Y; // component space
-	TestTrue(FString::Printf(TEXT("The tip trails the motion (component Y %.3f cm)"), TipY), TipY < -2.f);
+	const FTransform FarAway(FVector(5000, 0, 0));
+	Solver.Step(1.f / 60.f, Rig.Bones, FarAway);
+	FVRMSpringSolverSettings Component;
+	Component.bWorldSpace = false;
+	Solver.SetSettings(Component);
+	Solver.Step(1.f / 60.f, Rig.Bones, FarAway);
+	TestTrue(TEXT("After switching space the chain still hangs from the character"), FVector::Dist(Tip(Solver), Rig.Base[3]) < 1.f);
 	return true;
 }
 

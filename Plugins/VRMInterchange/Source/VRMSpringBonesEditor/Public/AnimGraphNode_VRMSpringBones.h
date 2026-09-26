@@ -21,4 +21,8 @@ public:
     virtual FString GetNodeCategory() const override { return TEXT("VRM"); }
 	virtual const FAnimNode_SkeletalControlBase* GetNode() const override { return &Node; }
     virtual void ValidateAnimNodeDuringCompilation(USkeleton* ForSkeleton, FCompilerResultsLog& MessageLog) override;
+
+private:
+    /** The node's spring data, or its pin's default. Null with bOutFromLinkedPin when it comes from a linked pin. */
+    const UVRMSpringBoneData* GetSpringDataForValidation(bool& bOutFromLinkedPin) const;
 };
