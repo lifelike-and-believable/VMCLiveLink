@@ -241,6 +241,9 @@ def cmd_record(opts):
     print(f"Recorded {count} packets")
 
 
+MAX_PACKET = 65536  # larger than any UDP datagram; a bigger size means a corrupt file
+
+
 def read_recording(path):
     with open(path, "rb") as f:
         while True:
@@ -248,7 +251,12 @@ def read_recording(path):
             if len(head) < 12:
                 return
             t, n = struct.unpack("<dI", head)
-            yield t, f.read(n)
+            if n > MAX_PACKET:
+                raise ValueError(f"{path}: packet of {n} bytes at t={t:.3f}s; the recording is corrupt")
+            data = f.read(n)
+            if len(data) != n:
+                raise ValueError(f"{path}: truncated packet at t={t:.3f}s ({len(data)} of {n} bytes)")
+            yield t, data
 
 
 def cmd_replay(opts):
@@ -311,12 +319,19 @@ def cmd_selftest(_opts):
     print("selftest OK")
 
 
+def positive_float(text):
+    value = float(text)
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"must be greater than 0, not {text}")
+    return value
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="mode")
 
     def stream_opts(p):
-        p.add_argument("--fps", type=float, default=60.0)
+        p.add_argument("--fps", type=positive_float, default=60.0)
         p.add_argument("--v21", action="store_true", help="Root/Pos with v2.1 scale and offset (14 arguments)")
         p.add_argument("--legacy-root", action="store_true", help="Root/Pos as 7 floats, no name (non-conformant)")
         p.add_argument("--vrm1-names", action="store_true", help="VRM 1.0 expression names")
@@ -339,7 +354,7 @@ def main():
     p.add_argument("file")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=39539)
-    p.add_argument("--speed", type=float, default=1.0)
+    p.add_argument("--speed", type=positive_float, default=1.0)
 
     p = sub.add_parser("dump")
     p.add_argument("file", nargs="?")
