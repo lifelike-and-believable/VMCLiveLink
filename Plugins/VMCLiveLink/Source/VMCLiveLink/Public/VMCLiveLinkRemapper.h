@@ -30,21 +30,42 @@ enum class ELLRemapPreset : uint8
 
 
 // ---------------- Worker ----------------
-class FVMCLiveLinkRemapperWorker final : public ILiveLinkSubjectRemapperWorker
+
+/** Everything a worker remaps with. Copied when the worker is created; the worker never changes it. */
+struct FVMCRemapConfig
 {
-public:
-	// Value shaping toggles (copied from asset on CreateWorker)
+	TMap<FName, FName> BoneNameMap;
+	TMap<FName, FName> CurveNameMap;
+
+	/** Local rest translation of each bone of the target skeleton, by target (remapped) name. */
+	TMap<FName, FVector> RefTranslations;
+	/** Give bones the stream sends without a translation their target skeleton's rest translation. */
+	bool bUseRefTranslations = true;
+
 	bool  bEnableMetaHumanCurveNormalizer = false;
 	float JoyToSmileStrength = 1.0f;
 	float BlinkMirrorStrength = 1.0f;
+};
+
+/**
+ * The one place VMC names become target names (P3.2). Immutable: the remapper builds a new worker
+ * whenever its settings change, and Live Link swaps it in, so a worker in use is never edited
+ * under it. Per-static-data state (which curves to synthesize, which bones get a rest
+ * translation) is computed in RemapStaticData and used by RemapFrameData.
+ */
+class FVMCLiveLinkRemapperWorker final : public ILiveLinkSubjectRemapperWorker
+{
+public:
+	explicit FVMCLiveLinkRemapperWorker(FVMCRemapConfig InConfig) : Config(MoveTemp(InConfig)) {}
+
+	const FVMCRemapConfig& GetConfig() const { return Config; }
 
 	virtual void RemapStaticData(FLiveLinkStaticDataStruct& InOutStaticData) override;
 	virtual void RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData) override;
 
-	TMap<FName, FName> BoneNameMap;   // copied from asset on CreateWorker
-	TMap<FName, FName> CurveNameMap;  // copied from asset on CreateWorker
-
 private:
+	const FVMCRemapConfig Config;
+
 	/** A curve the normalizer adds because the stream only provides its counterpart. */
 	struct FSynthesizedCurve
 	{
@@ -57,6 +78,12 @@ private:
 	// matches the count seen at static time.
 	TArray<FSynthesizedCurve> SynthesizedCurves;
 	int32 IncomingPropertyCount = 0;
+
+	// Per incoming bone: the rest translation to use when the stream sends none (root and Hips,
+	// whose translations carry the motion, have none).
+	TArray<FVector> RestTranslations;
+	TBitArray<> HasRestTranslation;
+
 	bool bWarnedDuplicateCurves = false;
 };
 
@@ -71,21 +98,23 @@ public:
 	virtual TSubclassOf<ULiveLinkRole> GetSupportedRole() const override { return ULiveLinkAnimationRole::StaticClass(); }
 	virtual bool IsValidRemapper() const override { return true; }
 	virtual FWorkerSharedPtr GetWorker() const override { return Worker; }
+	/** A new worker from the current settings. Live Link calls it again whenever the remapper is dirty. */
 	virtual FWorkerSharedPtr CreateWorker() override;
+
+	/** Goes up with every change, so a source can republish its static data through the new worker. */
+	uint32 GetRevision() const { return Revision; }
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& Evt) override
 	{
 		Super::PostEditChangeProperty(Evt);
-		bDirty = true;       // <-- important
-		SyncWorker();
-		RequestStaticDataRefresh();
+		MarkDirty(); // Live Link builds a new worker from the edited settings
 	}
 #endif
 
 	// Utilities
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
-	void ForceRefreshStaticData() { RequestStaticDataRefresh(); }
+	void ForceRefreshStaticData() { MarkDirty(); }
 
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void DetectAndSeedFromSubject();
@@ -140,8 +169,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Remapper")
 	TMap<FName, FName> CurveNameMap;
 
+	/** The target skeleton. Its rest pose gives bones the stream sends without a translation
+	 *  their length. Falls back to the project's Default Reference Skeleton (VMC Live Link settings). */
 	UPROPERTY(EditAnywhere, Category = "Remapper|Skeleton", meta = (DisplayThumbnail = "false"))
 	TSoftObjectPtr<USkeletalMesh> ReferenceSkeleton;
+
+	/** Give bones the stream sends without a translation the reference skeleton's rest translation
+	 *  (VMC senders give most bones rotation only). Root and Hips always use the stream. */
+	UPROPERTY(EditAnywhere, Category = "Remapper|Skeleton")
+	bool bUseReferenceTranslations = true;
 
 	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
 	ELLRemapPreset Preset = ELLRemapPreset::None;
@@ -166,8 +202,10 @@ public:
 
 private:
 	// Helpers
-	void RequestStaticDataRefresh();   // flips bDirty
-	void SyncWorker() const;
+	void MarkDirty();   // Live Link creates a new worker and republishes the static data
+
+	/** The reference skeleton, or the project default. May load it. */
+	USkeletalMesh* ResolveReferenceSkeleton() const;
 
 	void SeedFromReferenceSkeleton();
 
@@ -183,5 +221,6 @@ private:
 
 private:
 	FLiveLinkSubjectKey CachedKey;
-	mutable TSharedPtr<FVMCLiveLinkRemapperWorker> Worker;
+	uint32 Revision = 0;
+	TSharedPtr<FVMCLiveLinkRemapperWorker> Worker;
 };

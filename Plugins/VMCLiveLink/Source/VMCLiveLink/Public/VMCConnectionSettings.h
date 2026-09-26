@@ -32,8 +32,6 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	bool bZeroMissingCurves = false;
 	/** Use each bone's streamed translation instead of the reference skeleton's (Hips always uses it). */
 	bool bPreferIncomingTranslations = false;
-	/** Use the reference skeleton's translations for bones without one of their own. */
-	bool bUseRefOffsets = true;
 	/** Receive and build frames on a thread of their own, timestamped on arrival (D-1). Off: the OSC
 	 *  plugin delivers messages on the game thread, as before P3.1 step 2. */
 	bool bReceiveThread = true;

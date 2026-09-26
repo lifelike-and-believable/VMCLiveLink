@@ -81,7 +81,6 @@ bool FVMCConnectionSettingsRoundTripTest::RunTest(const FString& Parameters)
 		In.bMetersToCm = Random.FRand() < 0.5f;
 		In.bZeroMissingCurves = Random.FRand() < 0.5f;
 		In.bPreferIncomingTranslations = Random.FRand() < 0.5f;
-		In.bUseRefOffsets = Random.FRand() < 0.5f;
 		In.bReceiveThread = Random.FRand() < 0.5f;
 
 		const FString String = In.ToString();

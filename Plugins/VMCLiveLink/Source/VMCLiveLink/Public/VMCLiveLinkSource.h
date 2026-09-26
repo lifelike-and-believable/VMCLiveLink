@@ -29,9 +29,9 @@ namespace VMCProtocol { struct FArg; enum class EAddress : uint8; }
  *  - Receive Thread on (default): FVMCUdpReceiver reads the socket on its own thread; packets are
  *    parsed there (VMCOscParser) and frames pushed from there, timestamped when the packet arrived.
  *  - Off: the OSC plugin's UOSCServer dispatches messages on the game thread, as before.
- * Everything that touches UObjects (subject bootstrap, the remapper's maps and reference skeleton,
- * settings) stays on the game thread, which publishes what frame building needs as an immutable
- * snapshot. Switching paths, port, bind address or subject stops the old path before starting the
+ * Everything that touches UObjects (subject bootstrap, settings) stays on the game thread, which
+ * publishes what frame building needs as an immutable snapshot. The source publishes VMC's own
+ * names; the subject's remapper (UVMCLiveLinkRemapper) renames them and adds rest translations. Switching paths, port, bind address or subject stops the old path before starting the
  * new one, so the two never run at once.
  */
 class VMCLIVELINK_API FVMCLiveLinkSource
@@ -72,10 +72,7 @@ private:
     struct FSnapshot
     {
         FVMCConnectionSettings Settings;
-        TMap<FName, FName> BoneMap;
-        TMap<FName, FName> CurveMap;
-        TMap<FName, FVector> RefOffsets; // by published (remapped) bone name
-        uint32 Version = 0;              // a new version republishes static data (names may have changed)
+        uint32 Version = 0; // a new version republishes static data
     };
 
     // ---- Game thread ----
@@ -84,12 +81,9 @@ private:
     bool StartOSC();
     void StopOSC();
     void OnOscMessageReceived(const FOSCMessage& Message, const FString& IPAddress, uint16 Port);
-    bool Tick(float DeltaTime); // subject bootstrap and map refresh for the receive thread
+    bool Tick(float DeltaTime); // subject bootstrap for the receive thread
     void PublishSnapshot();
-    void RefreshStaticMapsFromSettings();
-    void EnsureSubjectSettingsWithDefaults(); // create settings + attach default remapper/skeleton
-    static uint32 HashMaps(const TMap<FName, FName>& A, const TMap<FName, FName>& B);
-    void BuildRefOffsetsFromMesh(class USkeletalMesh* Mesh);
+    void EnsureSubjectSettingsWithDefaults(); // create settings + attach the default remapper
 
     // ---- Frame-building thread (receive thread, or game thread) ----
     void OnPacket(TConstArrayView<uint8> Packet, double ArrivalSeconds);
@@ -115,17 +109,9 @@ private:
     TUniquePtr<FVMCUdpReceiver> Receiver;
     TStrongObjectPtr<UOSCServer> OscServer;
     FTSTicker::FDelegateHandle TickerHandle;
-    double LastRefreshSeconds = 0.0;
-
-    // Game thread's working copies, published through the snapshot
-    TMap<FName, FName> CachedBoneMap;
-    TMap<FName, FName> CachedCurveMap;
-    uint32 CachedMapsHash = 0;
-    TMap<FName, FVector> RefLocalTranslationByName;
-    bool bHaveRefOffsets = false;
-    TWeakObjectPtr<ULiveLinkSubjectRemapper> LastSeenRemapper;
-    TWeakObjectPtr<USkeletalMesh> LastRefMeshBuiltFrom;
     uint32 SnapshotVersion = 0;
+    TWeakObjectPtr<ULiveLinkSubjectRemapper> LastRemapper; // to republish static data when it changes
+    uint32 LastRemapperRevision = 0;
 
     mutable FCriticalSection SnapshotLock;
     TSharedPtr<const FSnapshot> Snapshot;

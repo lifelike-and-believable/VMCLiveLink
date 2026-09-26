@@ -24,7 +24,6 @@
 #include "OSCMessage.h"
 #include "OSCTypes.h"
 
-#include "Engine/SkeletalMesh.h" // for BuildRefOffsetsFromMesh
 
 // ---------------- Ctors ----------------
 
@@ -93,7 +92,6 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     // pushed), not here. Deferring lets a Live Link preset, which adds its sources before its
     // subjects, create the subject with its saved settings first; EnsureSubjectSettingsWithDefaults
     // then leaves those settings alone.
-    RefreshStaticMapsFromSettings();
     PublishSnapshot();
 
     TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FVMCLiveLinkSource::Tick));
@@ -194,17 +192,26 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
 
 bool FVMCLiveLinkSource::Tick(float DeltaTime)
 {
-    // The receive thread can't touch UObjects: it asks for the subject bootstrap, and the maps are
-    // refreshed here (on the game-thread path they are refreshed at each Blend/Apply, as before).
+    // The receive thread can't touch UObjects, so it asks for the subject bootstrap here.
     if (bBootstrapRequested && !bEnsuredDefaults)
     {
         EnsureSubjectSettingsWithDefaults();
     }
-    const double Now = FPlatformTime::Seconds();
-    if (Settings.bReceiveThread && bEnsuredDefaults && Now - LastRefreshSeconds > 0.1)
+
+    // A new or edited remapper renames differently: republish the static data so Live Link runs
+    // it through the new worker.
+    if (Client && bEnsuredDefaults)
     {
-        LastRefreshSeconds = Now;
-        RefreshStaticMapsFromSettings();
+        const ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName }));
+        ULiveLinkSubjectRemapper* Remapper = SubjectSettings ? SubjectSettings->Remapper : nullptr;
+        const UVMCLiveLinkRemapper* VMCRemapper = Cast<UVMCLiveLinkRemapper>(Remapper);
+        const uint32 Revision = VMCRemapper ? VMCRemapper->GetRevision() : 0;
+        if (Remapper != LastRemapper.Get() || Revision != LastRemapperRevision)
+        {
+            LastRemapper = Remapper;
+            LastRemapperRevision = Revision;
+            PublishSnapshot();
+        }
     }
     return true;
 }
@@ -219,12 +226,6 @@ void FVMCLiveLinkSource::PublishSnapshot()
 {
     TSharedRef<FSnapshot> New = MakeShared<FSnapshot>();
     New->Settings = Settings;
-    New->BoneMap = CachedBoneMap;
-    New->CurveMap = CachedCurveMap;
-    if (bHaveRefOffsets)
-    {
-        New->RefOffsets = RefLocalTranslationByName;
-    }
     New->Version = ++SnapshotVersion;
     FScopeLock Lock(&SnapshotLock);
     Snapshot = MoveTemp(New);
@@ -283,8 +284,6 @@ void FVMCLiveLinkSource::OnSettingsChanged(ULiveLinkSourceSettings* InSettings, 
         bEnsuredDefaults = false;
         bBootstrapRequested = false;
         bStaticSent = false;
-        LastSeenRemapper.Reset();
-        CachedMapsHash = 0;
     }
     Settings = New;
     VMCSettings->ConnectionString = Settings.ToString();
@@ -419,14 +418,10 @@ void FVMCLiveLinkSource::ProcessMessage(VMCProtocol::EAddress Kind, TConstArrayV
     {
         if (!bEnsuredDefaults)
         {
-            EnsureSubjectSettingsWithDefaults(); // also refreshes the cached maps
+            EnsureSubjectSettingsWithDefaults();
+            Refreshed = GetSnapshot();
+            Current = Refreshed.Get();
         }
-        else
-        {
-            RefreshStaticMapsFromSettings();
-        }
-        Refreshed = GetSnapshot();
-        Current = Refreshed.Get();
     }
     else if (!bEnsuredDefaults)
     {
@@ -453,7 +448,7 @@ void FVMCLiveLinkSource::PushStaticData(const FSnapshot& Snap)
         return;
     }
     Client->PushSubjectStaticData_AnyThread({ SourceGuid, Snap.Settings.SubjectName },
-        ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(&Snap.BoneMap, &Snap.CurveMap));
+        ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(nullptr, nullptr)); // VMC names; the remapper renames
     PublishedStaticVersion = Snap.Version;
     bStaticSent = true;
 }
@@ -464,11 +459,11 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
     {
         return;
     }
+    // Bones without a streamed translation are left at zero; the remapper's worker gives them the
+    // target skeleton's rest translation.
     FVMCFrameAssembler::FFrameOptions Options;
     Options.bPreferIncomingTranslations = Snap.Settings.bPreferIncomingTranslations;
-    Options.bUseRefOffsets = Snap.Settings.bUseRefOffsets;
-    Options.RefOffsets = &Snap.RefOffsets;
-    Options.BoneMap = &Snap.BoneMap;
+    Options.bUseRefOffsets = false;
 
     FLiveLinkFrameDataStruct Frame = Assembler->MakeFrameData(Options);
     FLiveLinkBaseFrameData& Base = *Frame.Cast<FLiveLinkAnimationFrameData>();
@@ -490,100 +485,7 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
     LastFrameSeconds = ArrivalSeconds;
 }
 
-// ---------------- Maps and subject (game thread) ----------------
-
-uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FName, FName>& B)
-{
-    uint32 H = 1469598103u; // FNV-ish seed
-    auto Mix = [&](const TMap<FName, FName>& M)
-        {
-            for (const auto& P : M)
-            {
-                H = HashCombine(H, GetTypeHash(P.Key));
-                H = HashCombine(H, GetTypeHash(P.Value));
-            }
-        };
-    Mix(A); Mix(B);
-    return H;
-}
-
-void FVMCLiveLinkSource::BuildRefOffsetsFromMesh(USkeletalMesh* Mesh)
-{
-    RefLocalTranslationByName.Empty();
-    bHaveRefOffsets = false;
-    if (!Mesh) return;
-
-    const FReferenceSkeleton& RS = Mesh->GetRefSkeleton();
-    const TArray<FTransform>& RefPose = RS.GetRefBonePose(); // local (parent-space)
-    const int32 Num = RS.GetNum();
-    for (int32 i = 0; i < Num; ++i)
-    {
-        const FName Bone = RS.GetBoneName(i);
-        RefLocalTranslationByName.Add(Bone, RefPose[i].GetTranslation());
-    }
-    bHaveRefOffsets = true;
-}
-
-// Pull remapper + maps + ReferenceSkeleton from subject settings
-void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
-{
-    if (!Client) return;
-
-    UObject* SettingsObj = Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName });
-    ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(SettingsObj);
-    ULiveLinkSubjectRemapper* NowRemapper = SubjectSettings ? SubjectSettings->Remapper : nullptr;
-
-    bool bChanged = false;
-    const bool bRemapperChanged = (LastSeenRemapper.Get() != NowRemapper);
-    if (bRemapperChanged)
-    {
-        LastSeenRemapper = NowRemapper;
-        bChanged = true; // names may change
-    }
-
-    // Maps + reference mesh. Runs every Apply, so the maps are hashed in place and only copied
-    // when they changed.
-    static const TMap<FName, FName> EmptyMap;
-    const TMap<FName, FName>* NewBone = &EmptyMap;
-    const TMap<FName, FName>* NewCurve = &EmptyMap;
-    USkeletalMesh* RefMesh = nullptr;
-
-    if (NowRemapper)
-    {
-        NewBone = &NowRemapper->BoneNameMap;
-
-        if (const UVMCLiveLinkRemapper* My = Cast<UVMCLiveLinkRemapper>(NowRemapper))
-        {
-            NewCurve = &My->CurveNameMap;
-            RefMesh = My->ReferenceSkeleton.LoadSynchronous();
-        }
-    }
-
-    //  - Rebuild offsets if mesh changed or cache invalid
-    const bool bMeshChanged = (LastRefMeshBuiltFrom.Get() != RefMesh);
-    const bool bNeverBuilt = !bHaveRefOffsets || RefLocalTranslationByName.Num() == 0;
-    const bool bCountMismatch = RefMesh && (RefLocalTranslationByName.Num() != RefMesh->GetRefSkeleton().GetNum());
-
-    if (RefMesh && (bMeshChanged || bNeverBuilt || bCountMismatch))
-    {
-        BuildRefOffsetsFromMesh(RefMesh);
-        LastRefMeshBuiltFrom = RefMesh;
-        bChanged = true;
-    }
-
-    const uint32 NewHash = HashMaps(*NewBone, *NewCurve);
-    if (NewHash != CachedMapsHash)
-    {
-        CachedMapsHash = NewHash;
-        CachedBoneMap = *NewBone;
-        CachedCurveMap = *NewCurve;
-        bChanged = true; // names changed: republish once
-    }
-    if (bChanged)
-    {
-        PublishSnapshot();
-    }
-}
+// ---------------- Subject (game thread) ----------------
 
 void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
 {
@@ -626,8 +528,7 @@ void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
         Client->SetSubjectEnabled(Preset.Key, true);
     }
 
-    // Warm caches and make sure the next frame publishes remapped names
-    RefreshStaticMapsFromSettings();
+    // Make sure the next frame publishes static data for the (new) subject
     PublishSnapshot();
     bEnsuredDefaults = true;
 }
