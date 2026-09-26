@@ -635,6 +635,7 @@ Goal: targeted fixes for P0/P1 bugs with minimal architectural change. Each task
 - **Resolves:** T-06
 - **Steps:** during `Translate`, record each image's usage from the materials (base colour, emissive → sRGB; normal → linear + `TC_Normalmap` + flip green; metallic-roughness and occlusion → linear, `TC_Masks`). Set these on the `UInterchangeTexture2DFactoryNode` custom attributes (confirm the 5.6 attribute names). Remove the hard-coded `bSRGB=true` from the payload. If an image has conflicting uses, duplicate the texture node per usage.
 - **Acceptance:** after importing a fixture with a normal map, the texture asset has sRGB off, normal-map compression and the green flip. A lit sphere test scene shows correct bumps (screenshot).
+- **Status (#125, merged):** done. `ComputeTextureUsages` records each image's uses from the materials (Color, Normal, Data flags). Each use gets its own texture node and payload key (`Tex_<i>`, `Tex_<i>_Normal`, `Tex_<i>_Data`), so an image used two ways is imported twice with the right settings. Colour is sRGB; normal maps are linear with `TC_Normalmap`, and the green channel is flipped in the pixel data rather than with the texture's flag; data textures are linear with `TC_Masks`. Covered by `VRM.Textures.Usage` and `VRM.Textures.Decode`. The first build failed to link (`FImportImage` needs `InterchangeImport` in the editor module's dependencies). The lit-sphere check is still an editor check.
 
 ### P1.11 One coordinate-conversion module; convert spring geometry
 - **Resolves:** T-13, SP-01 · **Depends on:** P1.8
@@ -754,16 +755,26 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
     4. A sphere collider keeps tails outside radius + hitRadius.
     5. Center space: moving the center with the root produces no inertia.
   - Visual parity check against UniVRM or three-vrm on the same model and motion (record GIFs in the PR).
+- **Status (#126, merged):** done, with these choices:
+  - The solver takes a flat list of bones and their component-space transforms (`Init(Setup)`, `Reset(BonesCS, ComponentToWorld)`, `Step(Dt, BonesCS, ComponentToWorld, ExternalVelocity)`), not the `RestLocal` array in the design above. Rest data (bone axis and length) is captured from the pose at reset.
+  - The rest rotation each step is the joint's *animated* local rotation under its parent's simulated rotation, not the import-time rest rotation. With no animation on the spring bones this is the reference behaviour; with animation, the springs follow it.
+  - The stiffness force is `stiffness * dt` in metres as in the reference, so ×100 in cm. This changes how springs feel more than anything else in the task.
+  - In VRM 1.0 the last joint of a spring only marks the tail and is not rotated (as in three-vrm). VRM 0.x chains end in a 7 cm virtual tail. The hit radius is no longer clamped to half the bone length.
+  - Interpolation between steps is not done.
+
+  Acceptance tests 1 to 5 are `VRM.SpringBones.Solver.Gravity`, `.FrameRate`, `.WorldInertia`, `.SphereCollider` and `.CenterSpace`, plus `.Substeps` (accumulator and hitch cap). Their thresholds were set with a Python model of the same algorithm before the first CI run. The one failure on that run was the sphere test measuring the first frame, where the tail starts inside the sphere. **Not done:** the visual parity check (needs the editor).
 
 ### P2.2 Collider precomputation
 - **Resolves:** SR-06
 - **Steps:** resolve collider bone indices in `BuildMappings` into `TArray<FCompactPoseBoneIndex>`. Unresolved colliders are **disabled** with a one-time warning instead of being placed at the origin. Compute collider world transforms once per step (not per joint). Remove the `FCSPose` copy.
 - **Acceptance:** Unreal Insights shows no `FBoneReference::Initialize` in the per-frame path. Timing for a 200-joint, 30-collider model is recorded in the PR (see P5 targets).
+- **Status (#126 and #127, merged):** the steps landed with P2.1: collider bones are resolved when the mappings are built, a collider on a bone the skeleton doesn't have is left out, collider transforms are computed once per step, and the per-joint `FCSPose` lookups are gone. #127 added the one-time warning (once per asset, listing the bones) and the node-index fallback for collider bone names. **Not done:** the Insights capture and timing (needs the editor).
 
 ### P2.3 AnimGraph node editor quality
 - **Resolves:** SR-08
 - **Steps:** implement `ValidateAnimNodeDuringCompilation`: warn when `SpringData` is missing, when data bones aren't in the target skeleton (list the first N), and when `bNeedsReimport` is set. Push live edits to the preview instance through `CopyNodeDataToPreviewNode`. Add a details category for sub-step Hz, max dt, simulation space and debug draw toggles (the CVars stay).
 - **Acceptance:** compiling an AnimBP with mismatched data shows actionable warnings in the compiler results.
+- **Status (#127, merged):** compile warnings for missing spring data, data with no springs, bones the skeleton doesn't have (first five listed) and `bNeedsReimport`. The missing-data warning only fires when the Spring Data pin is hidden: the plugin's template AnimBlueprint gets its data through the graph (the pipeline sets its `SpringConfig` variable), which the check can't see, and the first version warned on it in CI. Node settings: Simulation Space (World or Component), Substep Hz, Max Delta Time, and debug draw toggles. **Not done:** `CopyNodeDataToPreviewNode`; its 5.6 signature and call site couldn't be confirmed without engine source, and a wrong `override` breaks the build. Check in the editor whether preview edits already apply.
 
 ---
 
@@ -1004,7 +1015,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (later).* Every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 39 automation tests pass.
+*Last updated 2026-09-26 (night).* Phases 1 and 2 are complete, and every PR opened for the plan so far is merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 47 automation tests pass.
 
 ### Status by task
 
@@ -1032,14 +1043,19 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P1.12 Expand VRM 0.x chains | #120 | Merged | One chain per branch rather than per root-to-leaf path (see P1.12 status). The `main` merge needed a manual fix (rule 13) |
 | P1.14 Anim node robustness | #122 | Merged | Its new LOD test found an out-of-bounds read on `main` (see P1.14 status) |
 | P1.15 Pipeline toggles and targets | #123 | Merged | Source-file match accepts the file name, because the stored path doesn't round-trip (see P1.15 status) |
-| (plan updates) | #114, #117, #121 | Merged | |
+| P1.10 Texture colour space and normal maps | #125 | Merged | First build failed to link (missing `InterchangeImport` dependency) |
+| P2.1 Solver core | #126 | Merged | First run: the sphere test measured the first frame (see P2.1 status) |
+| P2.2 Collider precomputation | #126, #127 | Merged | Insights timing not done |
+| P2.3 Node editor quality | #127 | Merged | `CopyNodeDataToPreviewNode` not done. First run warned on the template AnimBlueprint |
+| (plan updates) | #114, #117, #121, #124, this PR | Merged | |
 
-**Not started:** P1.10, and Phases 2 to 7.
+**Not started:** Phases 3 to 7.
 
 **Recommended next:**
-1. P1.10, texture colour space, the last Phase 1 task. CI can check the texture settings; the lit-sphere acceptance needs an editor check.
-2. Phase 2, the spring solver rework, starting with P2.1 (a pure solver core with tests). Every prerequisite is merged.
+1. Owner: decide D-1 (VMCLiveLink threading). P3.1 depends on it.
+2. Phase 3, starting with P3.1 (split VMCLiveLink into parser, state and source) once D-1 is decided. P3.3 (parse each VRM file once) doesn't depend on D-1 and could go first.
 3. Owner: fix the runner's Application Control block (X-07).
+4. The editor checks below, most of all the spring solver comparison: P2.1 changed how springs behave.
 
 ### How the merges went
 
@@ -1062,7 +1078,9 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
 - **New rules:** B.0 rules 10 to 13. New task: P0.5.
-- **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit four builds (#115, #121 twice, #123). Re-runs cleared it each time, but it is not going away on its own (X-07).
+- **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit four builds (#115, #121 twice, #123). Re-runs cleared it each time. It did not recur on #125 to #127, but nothing has changed on the runner, so expect it again (X-07).
+- **Model the expected numbers before the first CI run:** for P2.1 a short Python model of the solver set the test thresholds, and the one failure was a test measuring a frame the model wasn't checked on. Each CI round trip costs minutes; a local model catches most threshold mistakes first.
+- **Check new editor warnings against the plugin's own content:** P2.3's first version warned on every compile of the plugin's template AnimBlueprint. CI caught it only because the test run compiles that asset and reports "passed with warnings". Read the test summary's warning count, not only pass/fail.
 - **Tests that exercise real engine behaviour pay off:** the P1.14 node tests found an LOD crash already on `main`, and the P1.15 test showed that `UAssetImportData` doesn't round-trip a source path, which would have made the new matching reject every mesh. Both came from running code in the editor rather than from reading it. Where a task's acceptance can be run in a test (even with a skeleton or mesh built in code), do that rather than leave it to an editor check.
 - **Spring data moved to parse time:** after P1.11 the parser returns UE axes and centimetres. The pipeline doesn't touch geometry, so there is one place to check.
 - **Ordering slip:** P1.11 went in before P1.16, against the dependency note on P1.16. The new code is correct, but existing assets are not flagged. Lesson: before starting a task, check the "Must land with or before" notes of other tasks as well as the task's own "Depends on" line. P1.16 landed next (#118) and now flags those assets.
@@ -1070,6 +1088,8 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P2.1 to P2.3):** compare springs against UniVRM or three-vrm on the same model and motion, and record GIFs; stiffness changed the most. Walking or turning a character should swing hair and skirts without External Velocity. A spring with a `center` should not lag when its center moves. Compile an AnimBlueprint that uses another character's spring data: the compiler lists the missing bones. Check whether edits to the node in the AnimBlueprint editor reach the preview. Record Insights timing for a large model (P2.2).
+- **In the editor (P1.10):** a lit sphere with an imported normal map shows correct bumps, and the texture assets have the expected settings.
 - **In the editor (P1.14, P1.15):** in PIE, swap spring data on a running character, teleport it and change LODs: no crash, no stretched chains. Import `Alice.vrm` and `Alice2.vrm` into the same folder: each character's spring data, IK Rig and Live Link assets bind to its own mesh. Untick "Generate Spring Bone Data" with the project setting on: no spring data.
 - **In the editor:** import real VRoid VRM 0.x and 1.0 models (P1.7, P1.8, P1.9, P1.11 to P1.13). Check that both face +Y like the mannequin, and that spring colliders sit on the right body parts (`vrm.SpringBones.DrawColliders 1`). On VRM 0.x, whole hair strands should move, not only their root bone (P1.12). On VRM 1.0, the tip joints of a chain should move more freely than the roots when the file gives them lower stiffness (P1.13). Open a spring data asset imported before #115: it should show **Needs Reimport** and warn when its AnimBlueprint compiles (P1.16). Also receive from a real VMC sender (P1.1, P1.3, P1.5), using `scripts/vmc_sender.py` or VSeeFace. These are not covered by automated tests.
 - **[Verify] items not yet confirmed:**
