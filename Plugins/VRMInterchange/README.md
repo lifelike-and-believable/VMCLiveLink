@@ -9,7 +9,7 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 ### Core Import Capabilities
 - **VRM Format Support**: Imports VRM 0.x and VRM 1.0 files (glTF 2.0-based avatar format)
 - **Skeletal Mesh**: Skeleton built from the skin joints. Bone rest rotations are reset to identity (see [Coordinate System](#coordinate-system))
-- **Textures**: Embedded PNG/JPEG textures imported and assigned to material instances
+- **Textures**: Embedded PNG/JPEG textures imported and assigned to material instances, with colour space and compression set by use: base colour and emissive are sRGB; normal maps are linear with normal-map compression and the green channel flipped from glTF (+Y) to Unreal (-Y); metallic-roughness and occlusion are linear masks. An image a material uses in more than one way is imported once per use
 - **Blend Shapes**: Morph target support for facial expressions
 - **Materials**: Basic material instances with texture assignments (glTF factors and MToon parameters are not yet applied)
 
@@ -309,7 +309,7 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 
 - **VRM Version**: Supports VRM 0.x and VRM 1.0 files. VRM 0.x and 1.0 files face opposite directions in glTF space, and the importer does not yet correct for this, so one of the two may import rotated 180°.
 - **Skinning**: Only the first skin in the file is used. Files with several skins (common in UniVRM/VRoid exports) or with joint order that differs from node order may bind vertices to the wrong bones.
-- **Materials**: MToon and glTF material factors (base colour, emissive, alpha mode, double-sided) are not applied. Normal maps are imported as sRGB without a green-channel flip.
+- **Materials**: MToon and glTF material factors (base colour, emissive, alpha mode, double-sided) are not applied.
 - **Expressions**: VRM expressions (blend shape groups) are not imported. Morph targets are imported individually by name.
 - **Spring bones**: VRM 0.x bone groups simulate only the listed root bones, not their descendants. Collider offsets are not converted to UE axes. VRM 1.0 per-joint parameters are reduced to one set per spring.
 - **Texture Formats**: Embedded textures must be PNG or JPEG

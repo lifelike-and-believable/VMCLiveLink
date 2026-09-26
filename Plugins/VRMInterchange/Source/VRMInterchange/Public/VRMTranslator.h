@@ -112,6 +112,26 @@ namespace VRM
 
     /** The same for a file of the given version (VRM 0.x adds a 180-degree yaw). */
     VRMINTERCHANGE_API FVector GltfPositionToUE(const FVector& GltfPosition, float GlobalScale, VRM::Coord::EVRMVersion Version);
+
+    /** What a material uses an image for; decides colour space and compression (T-06). */
+    enum class ETextureUsage : uint8
+    {
+        None   = 0,
+        Color  = 1 << 0, // base colour, emissive: sRGB
+        Normal = 1 << 1, // normal map: linear, normal-map compression, green flipped (glTF is +Y, UE is -Y)
+        Data   = 1 << 2, // metallic-roughness, occlusion: linear masks
+    };
+    ENUM_CLASS_FLAGS(ETextureUsage)
+
+    /** Every use each image has across the model's materials (one entry per image; None if unused). */
+    VRMINTERCHANGE_API TArray<ETextureUsage> ComputeTextureUsages(const FVRMParsedModel& Model);
+
+    /**
+     * Decodes a PNG or JPEG into the image Interchange imports, set up for one use (a single flag):
+     * sRGB and default compression for Color; linear, TC_Normalmap and the green channel flipped for
+     * Normal; linear TC_Masks for Data.
+     */
+    VRMINTERCHANGE_API TOptional<UE::Interchange::FImportImage> DecodeTextureImage(const TArray64<uint8>& CompressedBytes, ETextureUsage Usage);
 }
 
 #include "VRMTranslator.generated.h"

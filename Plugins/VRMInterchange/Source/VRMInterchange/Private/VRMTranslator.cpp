@@ -181,18 +181,30 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         BoneNode->AddSpecializedType(UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
     }
 
-    // Textures: nodes and factories
+    // Textures: one node (and texture asset) per image and use. Colour space and compression depend
+    // on the use (VRM::ETextureUsage), so an image a material uses both as colour and as data gets
+    // two textures rather than one with the wrong settings for half its uses.
     TexturePayloadKeys.Reset();
-    TArray<FString> TextureNodeUids;
+    const TArray<VRM::ETextureUsage> Usages = VRM::ComputeTextureUsages(Parsed);
+    TArray<TMap<VRM::ETextureUsage, FString>> TextureNodeUids; // per image: use -> texture node uid
     TextureNodeUids.SetNum(Parsed.Images.Num());
+    const VRM::ETextureUsage AllUsages[] = { VRM::ETextureUsage::Color, VRM::ETextureUsage::Normal, VRM::ETextureUsage::Data };
     for (int32 ti = 0; ti < Parsed.Images.Num(); ++ti)
+    for (const VRM::ETextureUsage Usage : AllUsages)
     {
-        const FString TextureKey = FString::Printf(TEXT("Tex_%d"), ti);
+        // An unused image is still imported, as colour.
+        const VRM::ETextureUsage ImageUsages = Usages[ti] == VRM::ETextureUsage::None ? VRM::ETextureUsage::Color : Usages[ti];
+        if (!EnumHasAnyFlags(ImageUsages, Usage))
+        {
+            continue;
+        }
+        const TCHAR* UsageSuffix = Usage == VRM::ETextureUsage::Normal ? TEXT("_Normal") : (Usage == VRM::ETextureUsage::Data ? TEXT("_Data") : TEXT(""));
+        const FString TextureKey = FString::Printf(TEXT("Tex_%d%s"), ti, UsageSuffix);
         TexturePayloadKeys.Add(TextureKey);
         UInterchangeTexture2DNode* TexNode = NewObject<UInterchangeTexture2DNode>(&NodeContainer);
         const FString TexUid = MakeNodeUid(*TextureKey);
-        TextureNodeUids[ti] = TexUid;
-        NodeContainer.SetupNode(TexNode, TexUid, *FString::Printf(TEXT("VRM_Tex_%d"), ti), EInterchangeNodeContainerType::TranslatedAsset);
+        TextureNodeUids[ti].Add(Usage, TexUid);
+        NodeContainer.SetupNode(TexNode, TexUid, *FString::Printf(TEXT("VRM_Tex_%d%s"), ti, UsageSuffix), EInterchangeNodeContainerType::TranslatedAsset);
         TexNode->SetPayLoadKey(TextureKey);
 
 #if WITH_EDITORONLY_DATA
@@ -253,27 +265,22 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         UInterchangeMaterialInstanceNode* MatMINode = NewObject<UInterchangeMaterialInstanceNode>(&NodeContainer);
         NodeContainer.SetupNode(MatMINode, MatMIUid, *PerMIDisplayName, EInterchangeNodeContainerType::TranslatedAsset);
 
-        // Assign texture parameters
-        if (M.BaseColorTexture != INDEX_NONE && Parsed.Images.IsValidIndex(M.BaseColorTexture))
+        // Assign texture parameters, each to the texture made for that use
+        auto BindTexture = [&](const TCHAR* Parameter, int32 ImageIndex, VRM::ETextureUsage Usage)
         {
-            MatMINode->AddTextureParameterValue(TEXT("BaseColorTexture"), TextureNodeUids[M.BaseColorTexture]);
-        }
-        if (M.NormalTexture != INDEX_NONE && Parsed.Images.IsValidIndex(M.NormalTexture))
-        {
-            MatMINode->AddTextureParameterValue(TEXT("NormalTexture"), TextureNodeUids[M.NormalTexture]);
-        }
-        if (M.MetallicRoughnessTexture != INDEX_NONE && Parsed.Images.IsValidIndex(M.MetallicRoughnessTexture))
-        {
-            MatMINode->AddTextureParameterValue(TEXT("ORMTexture"), TextureNodeUids[M.MetallicRoughnessTexture]);
-        }
-        if (M.OcclusionTexture != INDEX_NONE && Parsed.Images.IsValidIndex(M.OcclusionTexture))
-        {
-            MatMINode->AddTextureParameterValue(TEXT("OcclusionTexture"), TextureNodeUids[M.OcclusionTexture]);
-        }
-        if (M.EmissiveTexture != INDEX_NONE && Parsed.Images.IsValidIndex(M.EmissiveTexture))
-        {
-            MatMINode->AddTextureParameterValue(TEXT("EmissiveTexture"), TextureNodeUids[M.EmissiveTexture]);
-        }
+            if (TextureNodeUids.IsValidIndex(ImageIndex))
+            {
+                if (const FString* Uid = TextureNodeUids[ImageIndex].Find(Usage))
+                {
+                    MatMINode->AddTextureParameterValue(Parameter, *Uid);
+                }
+            }
+        };
+        BindTexture(TEXT("BaseColorTexture"), M.BaseColorTexture, VRM::ETextureUsage::Color);
+        BindTexture(TEXT("NormalTexture"), M.NormalTexture, VRM::ETextureUsage::Normal);
+        BindTexture(TEXT("ORMTexture"), M.MetallicRoughnessTexture, VRM::ETextureUsage::Data);
+        BindTexture(TEXT("OcclusionTexture"), M.OcclusionTexture, VRM::ETextureUsage::Data);
+        BindTexture(TEXT("EmissiveTexture"), M.EmissiveTexture, VRM::ETextureUsage::Color);
         // Set "Has ORM Texture?" boolean based on presence of ORM (MetallicRoughness) texture
         {
             const bool bHasORM = (M.MetallicRoughnessTexture != INDEX_NONE);
@@ -306,10 +313,12 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
 
     // Name base color textures after their material (suffix _DIFFUSE)
 #if WITH_EDITORONLY_DATA
-    auto SetTexName = [&](int32 ImageIndex, const FString& Base, const TCHAR* Suffix)
+    auto SetTexName = [&](int32 ImageIndex, VRM::ETextureUsage Usage, const FString& Base, const TCHAR* Suffix)
     {
-        if (!Parsed.Images.IsValidIndex(ImageIndex)) return;
-        const FString TexUid = TextureNodeUids[ImageIndex];
+        if (!TextureNodeUids.IsValidIndex(ImageIndex)) return;
+        const FString* FoundUid = TextureNodeUids[ImageIndex].Find(Usage);
+        if (!FoundUid) return;
+        const FString TexUid = *FoundUid;
         const FString TexFactoryUid = UInterchangeTexture2DFactoryNode::GetTextureFactoryNodeUidFromTextureNodeUid(TexUid);
         if (UInterchangeTexture2DFactoryNode* TexFactory = Cast<UInterchangeTexture2DFactoryNode>(NodeContainer.GetFactoryNode(TexFactoryUid)))
         {
@@ -321,11 +330,11 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     {
         const auto& M = Parsed.Materials[mi];
         const FString MatName = M.Name.IsEmpty() ? FString::Printf(TEXT("VRM_Mat_%d"), mi) : M.Name;
-        SetTexName(M.BaseColorTexture, MatName, TEXT("_DIFFUSE"));
-        SetTexName(M.NormalTexture, MatName, TEXT("_NORMAL"));
-        SetTexName(M.MetallicRoughnessTexture, MatName, TEXT("_ORM"));
-        SetTexName(M.OcclusionTexture, MatName, TEXT("_AO"));
-        SetTexName(M.EmissiveTexture, MatName, TEXT("_EMISSIVE"));
+        SetTexName(M.BaseColorTexture, VRM::ETextureUsage::Color, MatName, TEXT("_DIFFUSE"));
+        SetTexName(M.NormalTexture, VRM::ETextureUsage::Normal, MatName, TEXT("_NORMAL"));
+        SetTexName(M.MetallicRoughnessTexture, VRM::ETextureUsage::Data, MatName, TEXT("_ORM"));
+        SetTexName(M.OcclusionTexture, VRM::ETextureUsage::Data, MatName, TEXT("_AO"));
+        SetTexName(M.EmissiveTexture, VRM::ETextureUsage::Color, MatName, TEXT("_EMISSIVE"));
     }
 #endif
 
@@ -658,82 +667,117 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
 // ===== Texture Payload Interface (UE 5.6) =====
 TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& /*AlternateTexturePath*/) const
 {
-    using namespace UE::Interchange;
-
-    // Expect keys like "Tex_0"
+    // Keys are "Tex_<image>" (colour), "Tex_<image>_Normal" or "Tex_<image>_Data"; see Translate.
+    FString Rest;
     if (!PayloadKey.StartsWith(TEXT("Tex_")))
     {
         UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Unexpected texture payload key '%s'"), *PayloadKey);
         return {};
     }
+    Rest = PayloadKey.Mid(4);
 
-    int32 TextureIndex = INDEX_NONE;
+    VRM::ETextureUsage Usage = VRM::ETextureUsage::Color;
+    if (Rest.RemoveFromEnd(TEXT("_Normal")))
     {
-        const FString IndexStr = PayloadKey.Mid(4);
-        if (!IndexStr.IsNumeric())
-        {
-            UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Invalid texture payload key '%s'"), *PayloadKey);
-            return {};
-        }
-        TextureIndex = FCString::Atoi(*IndexStr);
+        Usage = VRM::ETextureUsage::Normal;
     }
-
+    else if (Rest.RemoveFromEnd(TEXT("_Data")))
+    {
+        Usage = VRM::ETextureUsage::Data;
+    }
+    if (!Rest.IsNumeric())
+    {
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Invalid texture payload key '%s'"), *PayloadKey);
+        return {};
+    }
+    const int32 TextureIndex = FCString::Atoi(*Rest);
     if (!Parsed.Images.IsValidIndex(TextureIndex))
     {
         UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Texture index %d out of range for payload '%s'"), TextureIndex, *PayloadKey);
         return {};
     }
 
-    const TArray64<uint8>& CompressedBytes64 = Parsed.Images[TextureIndex].PNGOrJPEGBytes;
-    if (CompressedBytes64.Num() == 0)
+    TOptional<UE::Interchange::FImportImage> Image = VRM::DecodeTextureImage(Parsed.Images[TextureIndex].PNGOrJPEGBytes, Usage);
+    if (!Image.IsSet())
     {
-        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] No image bytes for texture index %d"), TextureIndex);
-        return {};
+        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not decode texture index %d ('%s')"), TextureIndex, *PayloadKey);
+    }
+    return Image;
+}
+
+namespace VRM
+{
+    TArray<ETextureUsage> ComputeTextureUsages(const FVRMParsedModel& Model)
+    {
+        TArray<ETextureUsage> Usages;
+        Usages.Init(ETextureUsage::None, Model.Images.Num());
+        auto Mark = [&Usages](int32 ImageIndex, ETextureUsage Usage)
+        {
+            if (Usages.IsValidIndex(ImageIndex))
+            {
+                Usages[ImageIndex] |= Usage;
+            }
+        };
+        for (const FVRMParsedModel::FMat& M : Model.Materials)
+        {
+            Mark(M.BaseColorTexture, ETextureUsage::Color);
+            Mark(M.EmissiveTexture, ETextureUsage::Color);
+            Mark(M.NormalTexture, ETextureUsage::Normal);
+            Mark(M.MetallicRoughnessTexture, ETextureUsage::Data);
+            Mark(M.OcclusionTexture, ETextureUsage::Data);
+        }
+        return Usages;
     }
 
-    const uint8* CompressedPtr = CompressedBytes64.GetData();
-    const int64  CompressedSize = CompressedBytes64.Num();
-
-    IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-    EImageFormat ImageFormat = ImageWrapperModule.DetectImageFormat(CompressedPtr, CompressedSize);
-
-    if (ImageFormat == EImageFormat::Invalid)
+    TOptional<UE::Interchange::FImportImage> DecodeTextureImage(const TArray64<uint8>& CompressedBytes, ETextureUsage Usage)
     {
-        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Unknown image format for texture index %d"), TextureIndex);
-        return {};
+        using namespace UE::Interchange;
+        if (CompressedBytes.Num() == 0)
+        {
+            return {};
+        }
+
+        IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+        const EImageFormat ImageFormat = ImageWrapperModule.DetectImageFormat(CompressedBytes.GetData(), CompressedBytes.Num());
+        if (ImageFormat == EImageFormat::Invalid)
+        {
+            return {};
+        }
+        TSharedPtr<IImageWrapper> Wrapper = ImageWrapperModule.CreateImageWrapper(ImageFormat);
+        if (!Wrapper.IsValid() || !Wrapper->SetCompressed(CompressedBytes.GetData(), CompressedBytes.Num()))
+        {
+            return {};
+        }
+
+        TArray<uint8> BGRA8;
+        if (!Wrapper->GetRaw(ERGBFormat::BGRA, 8, BGRA8))
+        {
+            return {};
+        }
+
+        const bool bNormal = EnumHasAnyFlags(Usage, ETextureUsage::Normal);
+        const bool bData = EnumHasAnyFlags(Usage, ETextureUsage::Data);
+        if (bNormal)
+        {
+            // glTF normal maps are +Y (OpenGL); Unreal expects -Y (DirectX).
+            for (int32 i = 1; i < BGRA8.Num(); i += 4)
+            {
+                BGRA8[i] = 255 - BGRA8[i];
+            }
+        }
+
+        FImportImage Image;
+        Image.Init2DWithParams(Wrapper->GetWidth(), Wrapper->GetHeight(), /*NumMips*/ 1, ETextureSourceFormat::TSF_BGRA8, /*bSRGB*/ !(bNormal || bData));
+        Image.CompressionSettings = bNormal ? TC_Normalmap : (bData ? TC_Masks : TC_Default);
+
+        TArrayView64<uint8> Dest = Image.GetArrayViewOfRawData();
+        if (Dest.Num() != BGRA8.Num())
+        {
+            return {};
+        }
+        FMemory::Memcpy(Dest.GetData(), BGRA8.GetData(), BGRA8.Num());
+        return Image;
     }
-
-    TSharedPtr<IImageWrapper> Wrapper = ImageWrapperModule.CreateImageWrapper(ImageFormat);
-    if (!Wrapper.IsValid() || !Wrapper->SetCompressed(CompressedPtr, CompressedSize))
-    {
-        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to decode image for texture index %d"), TextureIndex);
-        return {};
-    }
-
-    const int32 SizeX = Wrapper->GetWidth();
-    const int32 SizeY = Wrapper->GetHeight();
-
-    TArray<uint8> RGBA8;
-    if (!Wrapper->GetRaw(ERGBFormat::RGBA, 8, RGBA8))
-    {
-        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] GetRaw RGBA8 failed for texture index %d"), TextureIndex);
-        return {};
-    }
-
-    // Convert RGBA8 -> BGRA8 in-place
-    for (int32 i = 0; i + 3 < RGBA8.Num(); i += 4)
-    {
-        Swap(RGBA8[i + 0], RGBA8[i + 2]); // R <-> B
-    }
-
-    FImportImage ImportImage;
-    ImportImage.Init2DWithParams(SizeX, SizeY, /*NumMips*/ 1, ETextureSourceFormat::TSF_BGRA8, /*bSRGB*/ true);
-
-    TArrayView64<uint8> Dest = ImportImage.GetArrayViewOfRawData();
-    check(Dest.Num() == RGBA8.Num());
-    FMemory::Memcpy(Dest.GetData(), RGBA8.GetData(), RGBA8.Num());
-
-    return ImportImage;
 }
 
 // ===== Helpers =====
