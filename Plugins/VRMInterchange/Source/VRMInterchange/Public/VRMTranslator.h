@@ -3,7 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "InterchangeTranslatorBase.h"
-#include "VRMCoordinateConversion.h"
+#include "VRMParsedModel.h"
 
 #if __has_include("Mesh/InterchangeMeshPayloadInterface.h")
   #include "Mesh/InterchangeMeshPayloadInterface.h"
@@ -26,93 +26,8 @@ namespace UE::Interchange
 }
 struct FInterchangeMeshPayLoadKey;
 
-// ---- Minimal parsed model data (fill from cgltf) ----
-struct FVRMParsedImage
-{
-    FString Name;
-    TArray64<uint8> PNGOrJPEGBytes; // decoded later through ImageWrapper
-};
-
-struct FVRMParsedMorph
-{
-    FString Name;
-    TArray<FVector3f> DeltaPositions;
-};
-
-struct FVRMParsedMesh
-{
-    TArray<FVector3f> Positions;
-    TArray<FVector3f> Normals;
-    TArray<FVector2f> UV0;
-    TArray<uint32> Indices;
-
-    // Per-triangle material index (Indices.Num()/3 entries). Refers to FVRMParsedModel::Materials index.
-    TArray<int32> TriMaterialIndex;
-
-    struct FWeight
-    {
-        uint16 BoneIndex[4] = { 0,0,0,0 };
-        float  Weight[4] = { 1,0,0,0 };
-    };
-    TArray<FWeight> SkinWeights;
-
-    TArray<FVRMParsedMorph> Morphs;
-
-    int32 MaterialIndex = 0;
-};
-
-struct FVRMParsedBone
-{
-    FString Name;           // unique among the model's bones
-    int32 Parent = INDEX_NONE;
-    int32 NodeIndex = INDEX_NONE; // glTF node this bone was created from
-    FTransform LocalBind;
-};
-
-struct FVRMParsedModel
-{
-    TArray<FVRMParsedBone> Bones;
-    TArray<FVRMParsedImage> Images;
-
-    struct FMat
-    {
-        FString Name;
-        int32 BaseColorTexture = INDEX_NONE;
-        int32 NormalTexture = INDEX_NONE;
-        int32 MetallicRoughnessTexture = INDEX_NONE; // G=Roughness, B=Metallic
-        int32 OcclusionTexture = INDEX_NONE; // R channel
-        int32 EmissiveTexture = INDEX_NONE;
-        bool bDoubleSided = false;
-        int32 AlphaMode = 0; // 0 Opaque, 1 Mask, 2 Blend
-        float AlphaCutoff = 0.5f;
-    };
-    TArray<FMat> Materials;
-
-    // Single merged mesh for now
-    FVRMParsedMesh Mesh;
-
-    // glTF node index -> bone name, for every joint (populated during LoadVRM)
-    TMap<int32, FName> NodeToBoneMap;
-
-    float GlobalScale = 100.f;
-
-    // VRM version, from the file's top-level extensions. Decides the facing (see VRMCoordinateConversion.h).
-    VRM::Coord::EVRMVersion Version = VRM::Coord::EVRMVersion::Unknown;
-
-    VRM::Coord::FVRMAxisConvention Convention() const { return VRM::Coord::FVRMAxisConvention::ForVersion(Version, GlobalScale); }
-};
-
 namespace VRM
 {
-    /** Parses a .vrm file into Out (what UVRMTranslator translates). Exposed for tests. */
-    VRMINTERCHANGE_API bool LoadVRMFile(const FString& Filename, FVRMParsedModel& Out);
-
-    /** The importer's glTF-to-UE position conversion (axes and GlobalScale) for a VRM 1.0 or generic glTF file. Exposed for tests. */
-    VRMINTERCHANGE_API FVector GltfPositionToUE(const FVector& GltfPosition, float GlobalScale);
-
-    /** The same for a file of the given version (VRM 0.x adds a 180-degree yaw). */
-    VRMINTERCHANGE_API FVector GltfPositionToUE(const FVector& GltfPosition, float GlobalScale, VRM::Coord::EVRMVersion Version);
-
     /** What a material uses an image for; decides colour space and compression (T-06). */
     enum class ETextureUsage : uint8
     {
@@ -159,8 +74,6 @@ public:
     virtual TOptional<UE::Interchange::FImportImage> GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& AlternateTexturePath) const override;
 
 private:
-    bool LoadVRM(FVRMParsedModel& Out) const;
-
     // cache payloads after load
     mutable FVRMParsedModel Parsed;
     mutable TArray<FString> TexturePayloadKeys;

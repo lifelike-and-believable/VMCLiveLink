@@ -2,71 +2,13 @@
 #include "VRMSpringBonesParser.h"
 #include "VRMInterchangeLog.h"
 #include "VRMCoordinateConversion.h"
+#include "VRMDocument.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonReader.h"
-#include "Misc/Paths.h"
-#include "Misc/FileHelper.h"
 #include "HAL/IConsoleManager.h"
 
 namespace
 {
-    static bool ExtractTopLevelJsonString(const FString& Filename, FString& OutJson)
-    {
-        OutJson.Empty();
-
-        const FString Ext = FPaths::GetExtension(Filename).ToLower();
-        if (Ext == TEXT("gltf"))
-        {
-            return FFileHelper::LoadFileToString(OutJson, *Filename);
-        }
-
-        TArray<uint8> Bytes;
-        if (!FFileHelper::LoadFileToArray(Bytes, *Filename) || Bytes.Num() < 20)
-        {
-            return false;
-        }
-
-        auto ReadLE32 = [](const uint8* p)->uint32
-        {
-            return (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
-        };
-
-        const uint8* Ptr = Bytes.GetData();
-        const uint32 Magic = ReadLE32(Ptr + 0);
-        const uint32 Version = ReadLE32(Ptr + 4);
-        const uint32 Length = ReadLE32(Ptr + 8);
-        if (Magic != 0x46546C67 || Version != 2 || Length != (uint32)Bytes.Num())
-        {
-            return false;
-        }
-
-        const uint32 Chunk0Len = ReadLE32(Ptr + 12);
-        const uint32 Chunk0Type = ReadLE32(Ptr + 16);
-        if (Bytes.Num() < 20 + (int64)Chunk0Len || Chunk0Type != 0x4E4F534A /*JSON*/)
-        {
-            return false;
-        }
-
-        const uint8* JsonStart = Ptr + 20;
-        int32 JsonLen = (int32)Chunk0Len;
-
-        while (JsonLen > 0 && (JsonStart[JsonLen - 1] == 0 || JsonStart[JsonLen - 1] == ' ' || JsonStart[JsonLen - 1] == '\n' || JsonStart[JsonLen - 1] == '\r' || JsonStart[JsonLen - 1] == '\t'))
-        {
-            --JsonLen;
-        }
-        if (JsonLen <= 0) return false;
-
-        if (JsonLen >= 3 && JsonStart[0] == 0xEF && JsonStart[1] == 0xBB && JsonStart[2] == 0xBF)
-        {
-            JsonStart += 3;
-            JsonLen -= 3;
-        }
-
-        FUTF8ToTCHAR Conv((const ANSICHAR*)JsonStart, JsonLen);
-        OutJson = FString(Conv.Length(), Conv.Get());
-        return !OutJson.IsEmpty();
-    }
-
     // Reads a vector in either form VRM uses: an array [x, y, z] (VRM 1.0) or an object
     // {"x": .., "y": .., "z": ..} (VRM 0.x secondaryAnimation). Missing object members read as 0.
     static FVector ReadVec3(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field, const FVector& Default = FVector::ZeroVector)
@@ -979,6 +921,51 @@ namespace
     }
 }
 
+namespace
+{
+    // Spring bones from an already parsed top-level JSON object.
+    bool ParseSpringBonesFromRoot(const TSharedPtr<FJsonObject>& Root, const FString& Json, FVRMSpringConfig& OutConfig, FString& OutError)
+    {
+        OutConfig = FVRMSpringConfig();
+        OutError.Empty();
+        if (ParseVRM1(Root, OutConfig, OutError)) { ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM1: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
+        FString Err0; FVRMSpringConfig As0; if (ParseVRM0(Root, As0, Err0)) { OutConfig = MoveTemp(As0); ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; OutError.Reset(); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM0: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
+        OutError = TEXT("No VRM spring bone data detected."); return false;
+    }
+
+    // glTF node index -> node name, for the nodes that have a name.
+    void ReadNodeNames(const TSharedPtr<FJsonObject>& Root, TMap<int32, FName>& OutNodeMap)
+    {
+        const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
+        if (Root.IsValid() && Root->TryGetArrayField(TEXT("nodes"), Nodes) && Nodes)
+        {
+            for (int32 i = 0; i < Nodes->Num(); ++i)
+            {
+                const TSharedPtr<FJsonValue>& V = (*Nodes)[i];
+                const TSharedPtr<FJsonObject>* NObj = nullptr;
+                if (V.IsValid() && V->TryGetObject(NObj) && NObj && NObj->IsValid())
+                {
+                    FString NameStr;
+                    if ((*NObj)->TryGetStringField(TEXT("name"), NameStr) && !NameStr.IsEmpty())
+                    {
+                        OutNodeMap.Add(i, FName(*NameStr));
+                    }
+                }
+            }
+        }
+    }
+
+    TSharedPtr<FJsonObject> DeserializeJson(const FString& Json)
+    {
+        TSharedPtr<FJsonObject> Root;
+        if (Json.IsEmpty() || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root))
+        {
+            return nullptr;
+        }
+        return Root;
+    }
+}
+
 namespace VRM
 {
     bool ParseSpringBonesFromJson(const FString& Json, FVRMSpringConfig& OutConfig, FString& OutError)
@@ -986,15 +973,9 @@ namespace VRM
         OutConfig = FVRMSpringConfig();
         OutError.Empty();
         if (Json.IsEmpty()) { OutError = TEXT("Empty JSON."); return false; }
-        TSharedPtr<FJsonObject> Root; const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-        if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) { OutError = TEXT("Failed to parse JSON."); return false; }
-        if (ParseVRM1(Root, OutConfig, OutError)) { ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM1: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
-        FString Err0; FVRMSpringConfig As0; if (ParseVRM0(Root, As0, Err0)) { OutConfig = MoveTemp(As0); ConvertSpringConfigToUE(Root, OutConfig); OutConfig.RawJson = Json; OutError.Reset(); UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] Parsed VRM spring bones as VRM0: Springs=%d Colliders=%d Joints=%d ColliderGroups=%d"), OutConfig.Springs.Num(), OutConfig.Colliders.Num(), OutConfig.Joints.Num(), OutConfig.ColliderGroups.Num()); return true; }
-        OutError = TEXT("No VRM spring bone data detected."); return false;
-    }
-    bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, FString& OutError)
-    {
-        FString Json; if (!ExtractTopLevelJsonString(Filename, Json)) { OutError = TEXT("Could not extract top-level JSON from file."); return false; } return ParseSpringBonesFromJson(Json, OutConfig, OutError);
+        const TSharedPtr<FJsonObject> Root = DeserializeJson(Json);
+        if (!Root.IsValid()) { OutError = TEXT("Failed to parse JSON."); return false; }
+        return ParseSpringBonesFromRoot(Root, Json, OutConfig, OutError);
     }
 
     bool ParseSpringBonesFromJson(const FString& Json, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError)
@@ -1004,63 +985,51 @@ namespace VRM
         {
             return false;
         }
-        // Extract node names for mapping
-        TSharedPtr<FJsonObject> Root; const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-        if (FJsonSerializer::Deserialize(Reader, Root) && Root.IsValid())
-        {
-            const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
-            if (Root->TryGetArrayField(TEXT("nodes"), Nodes) && Nodes)
-            {
-                for (int32 i = 0; i < Nodes->Num(); ++i)
-                {
-                    const TSharedPtr<FJsonValue>& V = (*Nodes)[i];
-                    const TSharedPtr<FJsonObject>* NObj = nullptr;
-                    if (V.IsValid() && V->TryGetObject(NObj) && NObj && NObj->IsValid())
-                    {
-                        FString NameStr;
-                        if ((*NObj)->TryGetStringField(TEXT("name"), NameStr) && !NameStr.IsEmpty())
-                        {
-                            OutNodeMap.Add(i, FName(*NameStr));
-                        }
-                    }
-                }
-            }
-        }
+        ReadNodeNames(DeserializeJson(Json), OutNodeMap);
         return true;
     }
 
-    bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError)
+    bool ParseSpringBonesFromDocument(const FVRMDocument& Document, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, TMap<int32, int32>& OutNodeParent, TMap<int32, FVRMNodeChildren>& OutNodeChildren, FString& OutError)
     {
-        FString Json;
-        if (!ExtractTopLevelJsonString(Filename, Json))
+        OutNodeMap.Reset();
+        OutNodeParent.Reset();
+        OutNodeChildren.Reset();
+        const TSharedPtr<FJsonObject> Root = Document.GetJsonRoot();
+        if (!ParseSpringBonesFromRoot(Root, Document.GetJson(), OutConfig, OutError))
         {
-            OutError = TEXT("Could not extract top-level JSON from file.");
             return false;
         }
-        return ParseSpringBonesFromJson(Json, OutConfig, OutNodeMap, OutError);
+        ReadNodeNames(Root, OutNodeMap);
+        FNodeHierarchy Hierarchy = BuildNodeHierarchy(Root);
+        OutNodeParent = MoveTemp(Hierarchy.Parent);
+        OutNodeChildren = MoveTemp(Hierarchy.Children);
+        return true;
     }
 
     bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, TMap<int32, int32>& OutNodeParent, TMap<int32, FVRMNodeChildren>& OutNodeChildren, FString& OutError)
     {
-        OutNodeParent.Reset();
-        OutNodeChildren.Reset();
-        FString Json;
-        if (!ExtractTopLevelJsonString(Filename, Json))
+        const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(Filename, OutError);
+        if (!Document.IsValid())
         {
-            OutError = TEXT("Could not extract top-level JSON from file.");
+            OutConfig = FVRMSpringConfig();
+            OutNodeMap.Reset();
+            OutNodeParent.Reset();
+            OutNodeChildren.Reset();
             return false;
         }
-        if (!ParseSpringBonesFromJson(Json, OutConfig, OutNodeMap, OutError))
-        {
-            return false;
-        }
-        TSharedPtr<FJsonObject> Root;
-        if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) && Root.IsValid())
-        {
-            FNodeHierarchy Hierarchy = BuildNodeHierarchy(Root);
-            OutNodeParent = MoveTemp(Hierarchy.Parent);
-            OutNodeChildren = MoveTemp(Hierarchy.Children);
-        }
-        return true;
+        return ParseSpringBonesFromDocument(*Document, OutConfig, OutNodeMap, OutNodeParent, OutNodeChildren, OutError);
+    }
+
+    bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError)
+    {
+        TMap<int32, int32> NodeParent;
+        TMap<int32, FVRMNodeChildren> NodeChildren;
+        return ParseSpringBonesFromFile(Filename, OutConfig, OutNodeMap, NodeParent, NodeChildren, OutError);
+    }
+
+    bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, FString& OutError)
+    {
+        TMap<int32, FName> NodeMap;
+        return ParseSpringBonesFromFile(Filename, OutConfig, NodeMap, OutError);
     }
 }

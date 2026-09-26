@@ -47,6 +47,7 @@ public class VRMInterchangeEditor : ModuleRules
 
             // Runtime plugin module this editor module depends on
             "VRMInterchange",
+            "VRMCore",
             "VRMSpringBonesRuntime",
             "AnimGraphRuntime", // spring anim node base class, used by the node tests
             "ImageWrapper",     // texture tests build PNGs in memory
@@ -62,13 +63,6 @@ public class VRMInterchangeEditor : ModuleRules
             Path.Combine(ModuleDirectory, "..", "VRMInterchange", "Public"),
             Path.Combine(ModuleDirectory, "Private")
         });
-
-        // Add ThirdParty include path for cgltf (put cgltf.h into Plugins/VRMInterchange/ThirdParty/cgltf/)
-        string ThirdPartyCgltf = Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "cgltf");
-        if (Directory.Exists(ThirdPartyCgltf))
-        {
-            PrivateIncludePaths.Add(ThirdPartyCgltf);
-        }
     }
 
 }

@@ -18,6 +18,7 @@
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
 #include "Misc/SecureHash.h"
+#include "VRMDocument.h"
 #include "VRMSpringBonesParser.h"
 #include "VRMSpringBonesValidation.h"
 #include "VRMInterchangeLog.h"
@@ -27,21 +28,6 @@
 #if WITH_EDITOR
 #include "UnrealEdGlobals.h"
 #include "Subsystems/ImportSubsystem.h"
-#endif
-
-/// cgltf
-#if !defined(VRM_HAS_CGLTF)
-#  if defined(__has_include)
-#    if __has_include("cgltf.h")
-#      define CGLTF_IMPLEMENTATION
-#      include "cgltf.h"
-#      define VRM_HAS_CGLTF 1
-#    else
-#      define VRM_HAS_CGLTF 0
-#    endif
-#  else
-#    define VRM_HAS_CGLTF 0
-#  endif
 #endif
 
 #include "Animation/Skeleton.h"
@@ -106,19 +92,25 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
     const FString PackagePath = VRMPipeline::MakeCharacterBasePath(Filename, ContentBasePath);
     const FString SkeletonSearchRoot = PackagePath;
 
-    // Early tombstone check
+    // The file is read once here, for its hash and its spring data (P3.3).
+    FString LoadError;
+    const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(Filename, LoadError);
     FString SourceHash;
-    if (FPaths::FileExists(Filename))
+    if (Document.IsValid())
     {
-        SourceHash = LexToString(FMD5Hash::HashFile(*Filename));
+        SourceHash = LexToString(Document->GetSourceHash());
+    }
+    else
+    {
+        UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: %s"), *LoadError);
     }
 
     // Prepare transient spring data (no assets created on disk)
     UVRMSpringBoneData* TransientSpringData = nullptr;
-    if (bWantsSpringData)
+    if (bWantsSpringData && Document.IsValid())
     {
         TransientSpringData = NewObject<UVRMSpringBoneData>(GetTransientPackage(), NAME_None);
-        if (!ParseAndFillDataAssetFromFile(Filename, TransientSpringData))
+        if (!ParseAndFillDataAsset(*Document, TransientSpringData))
         {
             UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: No spring data found in '%s'."), *Filename);
             TransientSpringData = nullptr;
@@ -126,7 +118,7 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
         else
         {
             int32 ResolvedC=0, ResolvedJ=0, ResolvedCenters=0;
-            ResolveBoneNamesFromFile(Filename, TransientSpringData->SpringConfig, ResolvedC, ResolvedJ, ResolvedCenters);
+            ResolveBoneNames(*Document, TransientSpringData->SpringConfig, ResolvedC, ResolvedJ, ResolvedCenters);
 
             // The parser already returns Unreal axes and centimetres (VRMCoordinateConversion.h).
             ValidateBoneNamesAgainstSkeleton(SkeletonSearchRoot, TransientSpringData->SpringConfig);
@@ -171,24 +163,20 @@ void UVRMSpringBonesPostImportPipeline::BeginDestroy()
 }
 #endif
 
-// ParseAndFillDataAssetFromFile
-// - Parses spring config from the source file into a runtime asset container
+// ParseAndFillDataAsset
+// - Parses the document's spring config into a runtime asset container
 // - The container is transient here; materialization happens in OnAssetPostImport
-bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAssetFromFile(const FString& Filename, UVRMSpringBoneData* Dest) const
+bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest) const
 {
     if (!Dest) return false;
-    FVRMSpringConfig Config; 
+    const FString& Filename = Document.GetFilename();
+    FVRMSpringConfig Config;
     TMap<int32, int32> NodeParent;
     TMap<int32, FVRMNodeChildren> NodeChildren;
     FString Err;
     TMap<int32, FName> NodeMap;
 
-    bool bParsed =
-        VRM::ParseSpringBonesFromFile(Filename, Config, NodeMap, NodeParent, NodeChildren, Err) ||
-        VRM::ParseSpringBonesFromFile(Filename, Config, NodeMap, Err) ||
-        VRM::ParseSpringBonesFromFile(Filename, Config, Err);
-
-    if (!bParsed)
+    if (!VRM::ParseSpringBonesFromDocument(Document, Config, NodeMap, NodeParent, NodeChildren, Err))
     {
         return false;
     }
@@ -225,30 +213,14 @@ bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAssetFromFile(const FStr
     return Dest->SpringConfig.IsValid();
 }
 
-bool UVRMSpringBonesPostImportPipeline::ResolveBoneNamesFromFile(const FString& Filename, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const
+bool UVRMSpringBonesPostImportPipeline::ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const
 {
-#if VRM_HAS_CGLTF
     OutResolvedColliders = OutResolvedJoints = OutResolvedCenters = 0;
     if (!InOut.IsValid()) return false;
-    FTCHARToUTF8 PathUtf8(*Filename);
-    cgltf_options Options = {}; cgltf_data* Data = nullptr;
-    const cgltf_result Res = cgltf_parse_file(&Options, PathUtf8.Get(), &Data);
-    if (Res != cgltf_result_success || !Data) { return false; }
-    struct FScopedCgltf { cgltf_data* D; ~FScopedCgltf(){ if (D) cgltf_free(D); } } Scoped{ Data };
-    const int32 NodesCount = static_cast<int32>(Data->nodes_count);
-    auto GetNodeName = [&](int32 NodeIndex)->FName
-    {
-        if(NodeIndex<0||NodeIndex>=NodesCount) return NAME_None;
-        const cgltf_node* N=&Data->nodes[NodeIndex];
-        return (N&&N->name&&N->name[0])?FName(UTF8_TO_TCHAR(N->name)):NAME_None;
-    };
-    for (FVRMSpringCollider& C : InOut.Colliders) if (C.BoneName.IsNone() && C.NodeIndex!=INDEX_NONE){ if(FName Nm=GetNodeName(C.NodeIndex); !Nm.IsNone()){ C.BoneName=Nm; ++OutResolvedColliders; }}
-    for (FVRMSpringJoint& J : InOut.Joints)    if (J.BoneName.IsNone() && J.NodeIndex!=INDEX_NONE){ if(FName Nm=GetNodeName(J.NodeIndex); !Nm.IsNone()){ J.BoneName=Nm; ++OutResolvedJoints; }}
-    for (FVRMSpring& S : InOut.Springs)        if (S.CenterBoneName.IsNone() && S.CenterNodeIndex!=INDEX_NONE){ if(FName Nm=GetNodeName(S.CenterNodeIndex); !Nm.IsNone()){ S.CenterBoneName=Nm; ++OutResolvedCenters; }}
+    for (FVRMSpringCollider& C : InOut.Colliders) if (C.BoneName.IsNone() && C.NodeIndex!=INDEX_NONE){ if(FName Nm=Document.GetNodeName(C.NodeIndex); !Nm.IsNone()){ C.BoneName=Nm; ++OutResolvedColliders; }}
+    for (FVRMSpringJoint& J : InOut.Joints)    if (J.BoneName.IsNone() && J.NodeIndex!=INDEX_NONE){ if(FName Nm=Document.GetNodeName(J.NodeIndex); !Nm.IsNone()){ J.BoneName=Nm; ++OutResolvedJoints; }}
+    for (FVRMSpring& S : InOut.Springs)        if (S.CenterBoneName.IsNone() && S.CenterNodeIndex!=INDEX_NONE){ if(FName Nm=Document.GetNodeName(S.CenterNodeIndex); !Nm.IsNone()){ S.CenterBoneName=Nm; ++OutResolvedCenters; }}
     return (OutResolvedColliders+OutResolvedJoints+OutResolvedCenters)>0;
-#else
-    OutResolvedColliders = OutResolvedJoints = OutResolvedCenters = 0; return false;
-#endif
 }
 
 void UVRMSpringBonesPostImportPipeline::ValidateBoneNamesAgainstSkeleton(const FString& SearchRootPackagePath, const FVRMSpringConfig& Config) const

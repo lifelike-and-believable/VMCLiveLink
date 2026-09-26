@@ -1,59 +1,13 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+#include "Misc/AutomationTest.h"
+
 #if WITH_DEV_AUTOMATION_TESTS
 
-#if !__has_include("cgltf.h")
-// cgltf is not available in this environment; compile a stub test.
-#include "Misc/AutomationTest.h"
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringBonesNameResolveTests_Skipped, "VRM.SpringBones.NameResolve.SkippedNoCgltf", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FVRMSpringBonesNameResolveTests_Skipped::RunTest(const FString& Parameters)
-{
-    // Skipped due to missing cgltf.h
-    return true;
-}
-
-#else
-
-#include "Misc/AutomationTest.h"
-#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "VRMDocument.h"
 #include "VRMSpringBonesTypes.h"
-
-// Local cgltf include (editor module has ThirdParty include path)
-#include "cgltf.h"
-
-static bool LocalResolveNamesFromGltf(const FString& Filename, FVRMSpringConfig& InOut)
-{
-    FTCHARToUTF8 PathUtf8(*Filename);
-    cgltf_options Options = {};
-    cgltf_data* Data = nullptr;
-    const cgltf_result Res = cgltf_parse_file(&Options, PathUtf8.Get(), &Data);
-    if (Res != cgltf_result_success || !Data) return false;
-    struct FScoped { cgltf_data* D; ~FScoped(){ if (D) cgltf_free(D); } } Scoped{ Data };
-
-    const int32 NodesCount = static_cast<int32>(Data->nodes_count);
-    auto GetNodeName = [&](int32 NodeIndex)->FName
-    {
-        if (NodeIndex < 0 || NodeIndex >= NodesCount) return NAME_None;
-        const cgltf_node* N = &Data->nodes[NodeIndex];
-        return (N && N->name && N->name[0] != '\0') ? FName(UTF8_TO_TCHAR(N->name)) : NAME_None;
-    };
-
-    for (auto& C : InOut.Colliders)
-        if (C.BoneName.IsNone() && C.NodeIndex != INDEX_NONE)
-            C.BoneName = GetNodeName(C.NodeIndex);
-
-    for (auto& J : InOut.Joints)
-        if (J.BoneName.IsNone() && J.NodeIndex != INDEX_NONE)
-            J.BoneName = GetNodeName(J.NodeIndex);
-
-    for (auto& S : InOut.Springs)
-        if (S.CenterBoneName.IsNone() && S.CenterNodeIndex != INDEX_NONE)
-            S.CenterBoneName = GetNodeName(S.CenterNodeIndex);
-
-    return true;
-}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMResolveNamesFromGltf, "VRM.SpringBones.ResolveNamesFromGltf",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -68,8 +22,8 @@ bool FVRMResolveNamesFromGltf::RunTest(const FString& Parameters)
     {
       "asset": {"version":"2.0"},
       "nodes": [
-        { "name":"Center" },
-        { "name":"Head" },
+        { "name":"Center", "children":[1] },
+        { "name":"Head", "children":[2] },
         { "name":"Hair_01" }
       ]
     })JSON");
@@ -79,7 +33,21 @@ bool FVRMResolveNamesFromGltf::RunTest(const FString& Parameters)
         return false;
     }
 
-    // Build a config that references those node indices
+    FString Error;
+    const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(GltfPath, Error);
+    if (!TestTrue(FString::Printf(TEXT("Document loads (%s)"), *Error), Document.IsValid()))
+    {
+        return false;
+    }
+    TestEqual(TEXT("Three nodes"), Document->GetNodes().Num(), 3);
+    TestEqual(TEXT("Head's parent"), Document->GetNodes()[1].Parent, 0);
+    TestTrue(TEXT("Head's children"), Document->GetNodes()[1].Children == TArray<int32>{ 2 });
+    TestEqual(TEXT("Center is a root"), Document->GetNodes()[0].Parent, int32(INDEX_NONE));
+    TestEqual(TEXT("Out of range"), Document->GetNodeName(3), FName(NAME_None));
+    TestTrue(TEXT("Not a VRM file"), Document->GetVersion() == VRM::Coord::EVRMVersion::Unknown);
+
+    // A config that references those node indices resolves to the node names, as the spring
+    // pipeline does.
     FVRMSpringConfig Cfg;
     Cfg.Spec = EVRMSpringSpec::VRM1;
 
@@ -96,15 +64,14 @@ bool FVRMResolveNamesFromGltf::RunTest(const FString& Parameters)
     Spring.JointIndices = { 0 }; // references Cfg.Joints[0]
     Cfg.Springs.Add(Spring);
 
-    const bool bResolved = LocalResolveNamesFromGltf(GltfPath, Cfg);
-    TestTrue(TEXT("ResolveNames succeeded"), bResolved);
+    for (FVRMSpringCollider& C : Cfg.Colliders) { C.BoneName = Document->GetNodeName(C.NodeIndex); }
+    for (FVRMSpringJoint& J : Cfg.Joints) { J.BoneName = Document->GetNodeName(J.NodeIndex); }
+    for (FVRMSpring& S : Cfg.Springs) { S.CenterBoneName = Document->GetNodeName(S.CenterNodeIndex); }
     TestEqual(TEXT("Collider BoneName == Head"), Cfg.Colliders[0].BoneName, FName(TEXT("Head")));
     TestEqual(TEXT("Joint BoneName == Hair_01"), Cfg.Joints[0].BoneName, FName(TEXT("Hair_01")));
     TestEqual(TEXT("Spring CenterBoneName == Center"), Cfg.Springs[0].CenterBoneName, FName(TEXT("Center")));
 
     return true;
 }
-
-#endif // !__has_include("cgltf.h")
 
 #endif // WITH_DEV_AUTOMATION_TESTS

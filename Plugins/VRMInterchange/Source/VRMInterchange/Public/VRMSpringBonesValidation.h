@@ -42,9 +42,4 @@ namespace VRM
      * Generate a diagnostic report for a VRM spring bone configuration
      */
     VRMINTERCHANGE_API FString GenerateDiagnosticReport(const FVRMSpringConfig& Config);
-    
-    /**
-     * Check if a VRM file contains spring bone data without full parsing
-     */
-    VRMINTERCHANGE_API bool HasSpringBoneData(const FString& Filename);
 }

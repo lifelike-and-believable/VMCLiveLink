@@ -270,24 +270,29 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 
 ### Architecture
 
-The plugin consists of four modules:
+The plugin consists of five modules:
 
-1. **VRMInterchange** (Runtime)
+1. **VRMCore** (Runtime)
+   - `FVRMDocument`: a .vrm/.glb/.gltf file read and parsed once (JSON, nodes, version, and geometry through cgltf); an import reads the file from this document instead of opening it again
+   - `VRM::BuildParsedModel`: skeleton, mesh, morph targets, images and materials in Unreal space
+   - The glTF to Unreal coordinate conversion; the only module that uses cgltf
+
+2. **VRMInterchange** (Runtime)
    - `UVRMTranslator`: Interchange translator for .vrm files
-   - Parses VRM/glTF data using cgltf library
-   - Generates Interchange node graphs
+   - Generates Interchange node graphs from the parsed model
+   - Spring bone parser
 
-2. **VRMInterchangeEditor** (Editor)
+3. **VRMInterchangeEditor** (Editor)
    - Post-import pipelines for Spring Bones, IK Rig, and Live Link
    - Project settings integration
    - Asset generation and wiring
 
-3. **VRMSpringBonesRuntime** (Runtime)
+4. **VRMSpringBonesRuntime** (Runtime)
    - `FAnimNode_VRMSpringBones`: Animation node for spring simulation
    - `UVRMSpringBoneData`: Data asset for spring configuration
    - Physics solver implementation
 
-4. **VRMSpringBonesEditor** (Editor)
+5. **VRMSpringBonesEditor** (Editor)
    - `UAnimGraphNode_VRMSpringBones`: AnimGraph node wrapper
    - Editor customizations and debugging tools
 
