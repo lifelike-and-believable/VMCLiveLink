@@ -120,7 +120,7 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 			else if (Key.Equals(TEXT("thread"), ESearchCase::IgnoreCase))      Flag = &Out.bReceiveThread;
 			if (Flag && !ParseBool(Trimmed, *Flag))
 			{
-				Error(FString::Printf(TEXT("%s '%s' is not 1 or 0"), *Key, *Trimmed));
+				Error(FString::Printf(TEXT("%s '%s' is not a yes/no value (1/0, true/false, yes/no, on/off)"), *Key, *Trimmed));
 			}
 		}
 	}

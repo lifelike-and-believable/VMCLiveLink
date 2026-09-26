@@ -91,14 +91,24 @@ void UVMCLiveLinkMappingAsset::UpdateSignaturesIfOld()
 	}
 	// Signatures from before version 2 used a different hash; rebuild them from the example meshes.
 	SkeletonSignatures.Reset();
+	bool bAllLoaded = true;
 	for (const TSoftObjectPtr<USkeletalMesh>& Soft : ExampleReferenceMeshes)
 	{
 		if (const USkeletalMesh* Mesh = Soft.LoadSynchronous())
 		{
 			SkeletonSignatures.AddUnique(ComputeSignature(Mesh));
 		}
+		else if (!Soft.IsNull())
+		{
+			bAllLoaded = false;
+		}
 	}
-	SignatureVersion = CurrentSignatureVersion;
+	// Only a complete rebuild counts: if an example mesh didn't load (missing, or not yet
+	// available), the version stays old so the next match or edit tries again.
+	if (bAllLoaded)
+	{
+		SignatureVersion = CurrentSignatureVersion;
+	}
 	RefreshSignatureTag();
 }
 
