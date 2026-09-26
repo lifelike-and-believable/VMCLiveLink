@@ -61,6 +61,7 @@ namespace VRMSpringNodeTests
 		}
 	};
 
+	/** A VRM 1.0 spring over Hair1..Hair3. Hair3 only marks the tail, so Hair1 and Hair2 are simulated. */
 	UVRMSpringBoneData* MakeHair(float Stiffness = 0.2f)
 	{
 		UVRMSpringBoneData* Data = NewObject<UVRMSpringBoneData>(GetTransientPackage());
@@ -120,7 +121,7 @@ bool FVRMSpringNodeEvaluateTwice::RunTest(const FString& Parameters)
 	Pose.Reset();
 	Node.EvaluateInternal(nullptr, Pose.CS, FTransform::Identity, Second); // same frame again
 
-	TestEqual(TEXT("All three joints are written"), First.Num(), 3);
+	TestEqual(TEXT("Both simulated joints are written"), First.Num(), 2);
 	TestTrue(TEXT("A second evaluation in the same frame gives the same pose"), SameTransforms(First, Second));
 	return true;
 }
@@ -189,7 +190,7 @@ bool FVRMSpringNodeSwapData::RunTest(const FString& Parameters)
 	// Back to good data: the chain simulates again.
 	Node.SpringData = MakeHair();
 	Step(Node, Pose, Out);
-	TestEqual(TEXT("Good data after bad data writes all three joints"), Out.Num(), 3);
+	TestEqual(TEXT("Good data after bad data writes both joints"), Out.Num(), 2);
 	return true;
 }
 
@@ -226,7 +227,7 @@ bool FVRMSpringNodeReset::RunTest(const FString& Parameters)
 	TestTrue(TEXT("After a reset the node matches a new node"), SameTransforms(Out, FreshOut));
 
 	// And the chain isn't stretched: consecutive joints stay a bone length (10 cm) apart.
-	if (TestEqual(TEXT("Three joints"), Out.Num(), 3))
+	if (TestEqual(TEXT("Two joints"), Out.Num(), 2))
 	{
 		for (int32 i = 1; i < Out.Num(); ++i)
 		{
@@ -253,11 +254,11 @@ bool FVRMSpringNodeLOD::RunTest(const FString& Parameters)
 
 	Node.RebuildForBones(Full.Bones);
 	Step(Node, Full, Out);
-	TestEqual(TEXT("Full LOD writes three joints"), Out.Num(), 3);
+	TestEqual(TEXT("Full LOD writes two joints"), Out.Num(), 2);
 
 	Node.RebuildForBones(Reduced.Bones);
 	Step(Node, Reduced, Out);
-	TestEqual(TEXT("Reduced LOD writes the two joints it has"), Out.Num(), 2);
+	TestEqual(TEXT("Reduced LOD writes only Hair1 (Hair2 has lost its tail)"), Out.Num(), 1);
 
 	// Hair3 comes back: its state must be set up before it is simulated, so it matches a new node.
 	Node.RebuildForBones(Full.Bones);

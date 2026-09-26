@@ -204,16 +204,16 @@ Spring data assets record the version of the importer that wrote them. After a p
 
 ### Spring Bone Simulation Details
 
-The spring bone solver:
-- Integrates each joint's tail position with Verlet-style inertia, stiffness toward the animated pose, and gravity
-- Keeps each segment at its rest length
-- Resolves collisions against sphere, capsule and plane colliders in the spring's collider groups
+The spring bone solver follows the VRM 1.0 reference (UniVRM, three-vrm):
+- Each joint's tail moves with inertia (reduced by drag), stiffness back toward the animated pose, gravity and the node's **External Velocity**, then is held at the bone's length and pushed out of the spring's sphere, capsule and plane colliders
+- Joints are solved root to tip, and each joint's head follows its parent's simulated rotation
+- Tails live in world space, so moving or turning the character adds inertia. A spring with a `center` bone keeps its tails in that bone's space instead, so the center's motion adds none
+- The simulation runs in fixed 60 Hz steps, so it behaves the same at any frame rate. A frame longer than 0.1 s is simulated as 0.1 s
+- In VRM 1.0 the last joint of a spring only marks the tail and isn't rotated. VRM 0.x chains end in a 7 cm virtual tail
+- Only rotations are written, so bone lengths never change
+- A collider on a bone the skeleton doesn't have is ignored
 
-Current limitations, tracked in `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` (Phase 2):
-- Simulation runs in component space, so moving or turning the character does not add inertia. Use the node's **External Velocity** input as a workaround.
-- There is no fixed-rate sub-stepping, so behaviour varies with frame rate.
-- Each joint follows the animated rotation of its parent rather than the parent's simulated rotation.
-- The spring `center` setting is ignored.
+The solver itself (`FVRMSpringSolver`) has no anim graph dependencies and is tested on its own.
 
 Debug visualization is available via console commands:
 
@@ -307,11 +307,9 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 
 ## Known Limitations
 
-- **VRM Version**: Supports VRM 0.x and VRM 1.0 files. VRM 0.x and 1.0 files face opposite directions in glTF space, and the importer does not yet correct for this, so one of the two may import rotated 180°.
-- **Skinning**: Only the first skin in the file is used. Files with several skins (common in UniVRM/VRoid exports) or with joint order that differs from node order may bind vertices to the wrong bones.
+- **VRM Version**: Supports VRM 0.x and VRM 1.0 files.
 - **Materials**: MToon and glTF material factors (base colour, emissive, alpha mode, double-sided) are not applied.
 - **Expressions**: VRM expressions (blend shape groups) are not imported. Morph targets are imported individually by name.
-- **Spring bones**: VRM 0.x bone groups simulate only the listed root bones, not their descendants. Collider offsets are not converted to UE axes. VRM 1.0 per-joint parameters are reduced to one set per spring.
 - **Texture Formats**: Embedded textures must be PNG or JPEG
 
 See `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` for the plan that addresses these.
