@@ -198,6 +198,8 @@ When re-importing:
 3. Manual edits to generated blueprints are preserved
 4. Texture and material updates are applied
 
+Spring data assets record the version of the importer that wrote them. After a plugin update that changes how spring data is converted, older assets are flagged **Needs Reimport** (shown in the asset's details, logged when the asset loads, and reported as a warning when an AnimBlueprint that uses it compiles). The springs still run, but may not match a fresh import. Reimport the VRM file to regenerate them. Re-saving an old asset does not clear the flag.
+
 ### Spring Bone Simulation Details
 
 The spring bone solver:
@@ -236,6 +238,7 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 - Verify the Spring Data asset is assigned
 - Ensure the Spring Data asset is not empty (check SpringConfig)
 - Confirm bone names in Spring Data match your skeleton
+- If the Spring Data asset shows **Needs Reimport**, it was made by an older plugin version and its colliders and gravity are in the old axes. Reimport the VRM file
 
 ### IK Rig Not Generated
 - Enable **Generate IK Rig Assets** in project settings
@@ -298,7 +301,7 @@ glTF (and so VRM) uses Y-up, right-handed coordinates in metres. UE uses Z-up, l
 UE (X, Y, Z) = glTF (X, Z, Y) * 100
 ```
 
-This swaps Y and Z, which also converts handedness. Bone rest rotations are then reset to identity, so each bone's local transform is a pure translation. This matches how VMC streams local rotations, but it means bone orientations differ from the source file.
+This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in glTF, which becomes +Y in UE, the direction the UE mannequin faces. VRM 0.x models face −Z, so they also get a 180° turn about UE Z and face +Y too. Files without VRM extensions import as generic glTF with the VRM 1.0 facing. Spring colliders and gravity use the same conversion as the mesh. Bone rest rotations are then reset to identity, so each bone's local transform is a pure translation. This matches how VMC streams local rotations, but it means bone orientations differ from the source file.
 
 ## Known Limitations
 

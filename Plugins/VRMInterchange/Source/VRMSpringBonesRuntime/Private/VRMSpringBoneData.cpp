@@ -1,8 +1,48 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMSpringBoneData.h"
+#include "Serialization/Archive.h"
 #if WITH_EDITOR
 #include "UObject/UnrealType.h"
 #endif
+
+DEFINE_LOG_CATEGORY_STATIC(LogVRMSpringData, Log, All);
+
+void UVRMSpringBoneData::Serialize(FArchive& Ar)
+{
+    Ar.UsingCustomVersion(FVRMSpringDataCustomVersion::GUID);
+    Super::Serialize(Ar);
+
+    // Only a real load says which version the data was saved with. Undo/redo and duplication
+    // also load, but from data this plugin version wrote.
+    if (Ar.IsLoading() && Ar.IsPersistent() && !Ar.IsTransacting())
+    {
+        // CustomVer is -1 for packages saved before the version was registered.
+        LoadedDataVersion = FMath::Max(Ar.CustomVer(FVRMSpringDataCustomVersion::GUID),
+            static_cast<int32>(FVRMSpringDataCustomVersion::BeforeCustomVersionWasAdded));
+    }
+}
+
+bool UVRMSpringBoneData::RequiresReimport(int32 DataVersion, const FVRMSpringConfig& Config)
+{
+    // Empty data has nothing in the wrong axes.
+    const bool bHasGeometry = Config.Springs.Num() > 0 || Config.Colliders.Num() > 0;
+    return bHasGeometry && DataVersion < FVRMSpringDataCustomVersion::ConvertedColliderAxes;
+}
+
+void UVRMSpringBoneData::PostLoad()
+{
+    Super::PostLoad();
+
+    // Once set, the flag stays until a reimport replaces the asset: saving an old asset stamps
+    // the latest version on it without changing its data.
+    bNeedsReimport = bNeedsReimport || RequiresReimport(LoadedDataVersion, SpringConfig);
+    if (bNeedsReimport)
+    {
+        UE_LOG(LogVRMSpringData, Warning,
+            TEXT("%s holds spring data from an older VRMInterchange version. Its collider offsets and gravity are in the old axes, so spring bones won't match a fresh import. Reimport '%s' to update it."),
+            *GetPathName(), SourceFilename.IsEmpty() ? TEXT("the source VRM file") : *SourceFilename);
+    }
+}
 
 #if WITH_EDITOR
 void UVRMSpringBoneData::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
