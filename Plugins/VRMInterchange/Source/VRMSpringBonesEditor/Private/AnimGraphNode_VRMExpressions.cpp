@@ -21,16 +21,17 @@ void UAnimGraphNode_VRMExpressions::ValidateAnimNodeDuringCompilation(USkeleton*
 {
 	Super::ValidateAnimNodeDuringCompilation(ForSkeleton, MessageLog);
 
-	// With the pin shown, the asset is the pin's default or comes from the graph (a link or a
-	// binding), which can't be checked here.
+	// With the pin shown, the asset is the pin's default, or comes from the graph through a link or
+	// a property binding, which can't be checked here. A shown pin with none of these is unset.
+	const FName PinName = GET_MEMBER_NAME_CHECKED(FAnimNode_VRMExpressions, AvatarDescription);
 	const UVRMAvatarDescription* Description = Node.AvatarDescription.Get();
 	bool bFromGraph = false;
 	if (!Description)
 	{
-		if (const UEdGraphPin* Pin = FindPin(GET_MEMBER_NAME_CHECKED(FAnimNode_VRMExpressions, AvatarDescription)))
+		if (const UEdGraphPin* Pin = FindPin(PinName))
 		{
 			Description = Cast<UVRMAvatarDescription>(Pin->DefaultObject);
-			bFromGraph = Description == nullptr;
+			bFromGraph = !Description && (Pin->LinkedTo.Num() > 0 || HasBinding(PinName));
 		}
 	}
 	if (!Description)
