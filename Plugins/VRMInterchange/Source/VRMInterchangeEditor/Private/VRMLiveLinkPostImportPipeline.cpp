@@ -18,6 +18,8 @@
 #include "Engine/Blueprint.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "VRMInterchangeSettings.h"
+#include "VRMActorBlueprintWiring.h"
+#include "Animation/AnimInstance.h"
 
 #if WITH_EDITOR
 void UVRMLiveLinkPostImportPipeline::PostInitProperties()
@@ -62,16 +64,12 @@ void UVRMLiveLinkPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh,
 			LiveLinkFolder / AnimationSubFolder, FString::Printf(TEXT("ABP_LL_VRM_%s"), *CharacterName), bOverwriteExisting, bAnimReused));
 		if (AnimBP)
 		{
-			SetPreviewMeshOnAnimBP(AnimBP, Mesh);
+			AnimBP->SetPreviewMesh(Mesh);
+			AnimBP->MarkPackageDirty();
 		}
 		if (ActorBP)
 		{
-			AssignSkeletalMeshToActorBP(ActorBP, Mesh);
-			if (AnimBP)
-			{
-				AssignAnimBPToActorBP(ActorBP, AnimBP);
-			}
-			ActorBP->MarkPackageDirty();
+			VRMPipeline::SetActorBlueprintMesh(ActorBP, Mesh, AnimBP ? TSubclassOf<UAnimInstance>(AnimBP->GeneratedClass) : TSubclassOf<UAnimInstance>());
 		}
 	}
 
@@ -82,58 +80,8 @@ void UVRMLiveLinkPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh,
 			LiveLinkFolder, FString::Printf(TEXT("BP_LL_VRM_To_UE5_%s"), *CharacterName), bOverwriteExisting, bReused));
 		if (RetargetActorBP)
 		{
-			AssignSkeletalMeshToActorBPProperty(RetargetActorBP, Mesh);
-			RetargetActorBP->MarkPackageDirty();
+			// The template retargets the pose of the mesh in its "VRM Character" variable.
+			VRMPipeline::SetBlueprintObjectVariable(RetargetActorBP, TEXT("VRM Character"), Mesh);
 		}
 	}
 }
-
-bool UVRMLiveLinkPostImportPipeline::AssignSkeletalMeshToActorBP(UObject* ActorBlueprintObj, USkeletalMesh* SkeletalMesh) const
-{
-	UBlueprint* BP = Cast<UBlueprint>(ActorBlueprintObj);
-	if (!BP || !SkeletalMesh) return false;
-	if (!BP->GeneratedClass) {
-		FKismetEditorUtilities::CompileBlueprint(BP);
-	} UClass* GenClass = BP->GeneratedClass;
-	if (!GenClass) return false;
-	UObject* CDO = GenClass->GetDefaultObject();
-	if (!CDO) return false;
-	USkeletalMeshComponent* FoundComp = nullptr;
-	for (TObjectPtr<UActorComponent> Comp : CastChecked<AActor>(CDO)->GetComponents()) {
-		if (USkeletalMeshComponent* SKC = Cast<USkeletalMeshComponent>(Comp)) {
-			FoundComp = SKC; break;
-		}
-	}
-	if (!FoundComp) { return false; }
-	FoundComp->SetSkeletalMesh(SkeletalMesh);
-	FoundComp->MarkPackageDirty();
-	BP->MarkPackageDirty();
-	return true;
-}
-
-bool UVRMLiveLinkPostImportPipeline::AssignSkeletalMeshToActorBPProperty(UObject* ActorBlueprintObj, USkeletalMesh* SkeletalMesh) const
-{
-	UBlueprint* BP = Cast<UBlueprint>(ActorBlueprintObj);
-	if (!BP || !SkeletalMesh) return false;
-	if (!BP->GeneratedClass) {
-		FKismetEditorUtilities::CompileBlueprint(BP);
-	} UClass* GenClass = BP->GeneratedClass;
-	if (!GenClass) return false;
-	UObject* CDO = GenClass->GetDefaultObject();
-	if (!CDO) return false;
-	if (FObjectProperty* ObjProp = FindFProperty<FObjectProperty>(GenClass, TEXT("VRM Character")))
-	{
-		ObjProp->SetObjectPropertyValue_InContainer(CDO, SkeletalMesh);
-	}
-
-	BP->MarkPackageDirty();
-	return true;
-}
-
-bool UVRMLiveLinkPostImportPipeline::AssignAnimBPToActorBP(UObject* ActorBlueprintObj, UAnimBlueprint* AnimBP) const
-{
-	if(!ActorBlueprintObj||!AnimBP) return false; if(!AnimBP->GeneratedClass){ FKismetEditorUtilities::CompileBlueprint(AnimBP);} UClass* AnimClass=AnimBP->GeneratedClass; if(!AnimClass) return false; UBlueprint* BP=Cast<UBlueprint>(ActorBlueprintObj); if(!BP||!BP->GeneratedClass){ return false; } UObject* CDO=BP->GeneratedClass->GetDefaultObject(); if(!CDO) return false; USkeletalMeshComponent* FoundComp=nullptr; for (TObjectPtr<UActorComponent> Comp : CastChecked<AActor>(CDO)->GetComponents()) { if(USkeletalMeshComponent* SKC = Cast<USkeletalMeshComponent>(Comp)) { FoundComp = SKC; break; }} if(!FoundComp) return false; FoundComp->SetAnimInstanceClass(AnimClass); FoundComp->MarkPackageDirty(); BP->MarkPackageDirty(); AnimBP->MarkPackageDirty(); return true; }
-
-bool UVRMLiveLinkPostImportPipeline::SetPreviewMeshOnAnimBP(UAnimBlueprint* AnimBP, USkeletalMesh* SkeletalMesh) const
-{
-	if(!AnimBP||!SkeletalMesh) return false; AnimBP->SetPreviewMesh(SkeletalMesh); AnimBP->MarkPackageDirty(); return true; }
