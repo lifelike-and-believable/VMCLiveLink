@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/StringView.h"
 
 struct FOSCMessage;
 
@@ -26,6 +27,7 @@ namespace VMCProtocol
 
 	/** Which VMC message an OSC address is. Case-sensitive, as OSC addresses are. */
 	EAddress ClassifyAddress(FStringView Address);
+	EAddress ClassifyAddress(FAnsiStringView Address);
 
 	/** One OSC argument, reduced to the types VMC uses. */
 	struct FArg
@@ -34,7 +36,15 @@ namespace VMCProtocol
 
 		EType Type = EType::Other;
 		float Number = 0.f; // Float and Int (converted)
-		FString String;
+		FString String;     // String, from the OSC plugin's messages
+		FUtf8StringView Utf8; // String, from VMCOscParser: points into the packet, no copy
+
+		static FArg MakeUtf8(FUtf8StringView V) { FArg A; A.Type = EType::String; A.Utf8 = V; return A; }
+
+		bool IsNonEmptyString() const { return Type == EType::String && (!String.IsEmpty() || !Utf8.IsEmpty()); }
+
+		/** The string as a name. Decodes UTF-8 without a heap allocation for names up to 128 characters. */
+		FName ToName() const;
 
 		static FArg MakeFloat(float V) { FArg A; A.Type = EType::Float; A.Number = V; return A; }
 		static FArg MakeInt(int32 V) { FArg A; A.Type = EType::Int; A.Number = float(V); return A; }
@@ -51,7 +61,7 @@ namespace VMCProtocol
 	/** A transform as sent: Unity space (left-handed, Y up), metres, quaternion x y z w. */
 	struct FPose
 	{
-		FString Name;
+		FName Name;
 		FVector3f Position = FVector3f::ZeroVector;
 		FQuat4f Rotation = FQuat4f::Identity;
 
@@ -72,7 +82,10 @@ namespace VMCProtocol
 	bool ParseRootPos(TConstArrayView<FArg> Args, FPose& Out, bool& bOutLegacyForm);
 
 	/** /VMC/Ext/Blend/Val: (string name, float value). */
-	bool ParseBlendVal(TConstArrayView<FArg> Args, FString& OutName, float& OutValue);
+	bool ParseBlendVal(TConstArrayView<FArg> Args, FName& OutName, float& OutValue);
+
+	/** /VMC/Ext/T: (float time), the sender's clock in seconds. */
+	bool ParseTime(TConstArrayView<FArg> Args, float& OutSeconds);
 
 	/** Unity position (metres) to UE, optionally converting the basis and scaling to centimetres. */
 	FVector ToUEPosition(const FVector3f& UnityPosition, bool bUnityToUE, bool bMetersToCm);

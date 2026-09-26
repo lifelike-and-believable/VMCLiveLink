@@ -7,6 +7,7 @@ Modes
   record   Listen on a UDP port and record another sender's packets (e.g. VSeeFace) to a file.
   replay   Send a recorded file, preserving timing.
   dump     Decode and print a recorded file, or the packets `send` would produce.
+  write    Write the generated stream to a recording file without sending it (test captures).
 
 Generated stream (per frame, as one OSC bundle, following https://protocol.vmc.info):
   /VMC/Ext/OK        int loaded(1), int calibrationState(3), int calibrationMode(0), int trackingStatus(1)
@@ -27,6 +28,7 @@ Examples
   python scripts/vmc_sender.py replay capture.vmcrec --port 39539
   python scripts/vmc_sender.py dump capture.vmcrec --limit 3
   python scripts/vmc_sender.py dump --generate --v21 --limit 1
+  python scripts/vmc_sender.py write --frames 10 --out Plugins/VMCLiveLink/Tests/Captures/synthetic.vmcrec
   python scripts/vmc_sender.py selftest
 
 Recording format (.vmcrec): repeated records of <float64 seconds since start><uint32 length><packet bytes>,
@@ -262,6 +264,17 @@ def cmd_replay(opts):
     print(f"Replayed {count} packets to {opts.host}:{opts.port}")
 
 
+def cmd_write(opts):
+    count = 0
+    with open(opts.out, "wb") as f:
+        for frame in range(opts.frames):
+            t = frame / opts.fps
+            for data in frame_packets(frame, t, opts):
+                f.write(struct.pack("<dI", t, len(data)) + data)
+                count += 1
+    print(f"Wrote {opts.frames} frames ({count} packets) to {opts.out}")
+
+
 def cmd_dump(opts):
     if opts.generate:
         packets = ((f / opts.fps, p) for f in range(opts.limit) for p in frame_packets(f, f / opts.fps, opts))
@@ -334,6 +347,11 @@ def main():
     p.add_argument("--limit", type=int, default=5, help="frames (generate) or packets (file) to show")
     stream_opts(p)
 
+    p = sub.add_parser("write")
+    p.add_argument("--out", required=True)
+    p.add_argument("--frames", type=int, default=10)
+    stream_opts(p)
+
     sub.add_parser("selftest")
 
     opts = ap.parse_args()
@@ -342,7 +360,7 @@ def main():
         opts = ap.parse_args(["send"] + sys.argv[1:])
     if mode == "dump" and not opts.generate and not opts.file:
         ap.error("dump needs a file or --generate")
-    {"send": cmd_send, "record": cmd_record, "replay": cmd_replay, "dump": cmd_dump, "selftest": cmd_selftest}[mode](opts)
+    {"send": cmd_send, "record": cmd_record, "replay": cmd_replay, "dump": cmd_dump, "write": cmd_write, "selftest": cmd_selftest}[mode](opts)
 
 
 if __name__ == "__main__":

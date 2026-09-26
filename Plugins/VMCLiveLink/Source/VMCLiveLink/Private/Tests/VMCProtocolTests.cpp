@@ -38,7 +38,7 @@ bool FVMCProtocolRootPosTest::RunTest(const FString& Parameters)
 	// Spec form: name + 7 floats
 	TestTrue(TEXT("8 arguments parse"), VMCProtocol::ParseRootPos(Floats({ 1, 2, 3, 0, 0, 0, 1 }, TEXT("root")), Pose, bLegacy));
 	TestFalse(TEXT("8 arguments are not the legacy form"), bLegacy);
-	TestEqual(TEXT("name"), Pose.Name, FString(TEXT("root")));
+	TestEqual(TEXT("name"), Pose.Name, FName(TEXT("root")));
 	TestTrue(TEXT("position"), Pose.Position.Equals(FVector3f(1, 2, 3)));
 	TestFalse(TEXT("no scale/offset"), Pose.bHasScaleAndOffset);
 
@@ -70,17 +70,17 @@ bool FVMCProtocolBoneAndBlendTest::RunTest(const FString& Parameters)
 	using namespace VMCProtocolTests;
 	VMCProtocol::FPose Pose;
 	TestTrue(TEXT("Bone/Pos parses"), VMCProtocol::ParseBonePos(Floats({ 0, 1, 0, 0, 0, 0, 1 }, TEXT("Hips")), Pose));
-	TestEqual(TEXT("bone name"), Pose.Name, FString(TEXT("Hips")));
+	TestEqual(TEXT("bone name"), Pose.Name, FName(TEXT("Hips")));
 	TestFalse(TEXT("Bone/Pos without a name rejected"), VMCProtocol::ParseBonePos(Floats({ 0, 1, 0, 0, 0, 0, 1, 0 }), Pose));
 	TestFalse(TEXT("Bone/Pos with 6 floats rejected"), VMCProtocol::ParseBonePos(Floats({ 0, 1, 0, 0, 0, 1 }, TEXT("Hips")), Pose));
 
-	FString Name;
+	FName Name;
 	float Value = 0.f;
 	FArgs Blend;
 	Blend.Add(FArg::MakeString(TEXT("Joy")));
 	Blend.Add(FArg::MakeFloat(0.25f));
 	TestTrue(TEXT("Blend/Val parses"), VMCProtocol::ParseBlendVal(Blend, Name, Value));
-	TestEqual(TEXT("blend name"), Name, FString(TEXT("Joy")));
+	TestEqual(TEXT("blend name"), Name, FName(TEXT("Joy")));
 	TestEqual(TEXT("blend value"), Value, 0.25f);
 
 	Blend[1] = FArg::MakeInt(1);

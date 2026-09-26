@@ -4,6 +4,8 @@
 #include "VMCHumanoid.h"
 #include "VMCProtocol.h"
 #include "VMCFrameAssembler.h"
+#include "VMCOscParser.h"
+#include "VMCUdpReceiver.h"
 
 // Live Link
 #include "ILiveLinkClient.h"
@@ -22,16 +24,15 @@
 #include "OSCMessage.h"
 #include "OSCTypes.h"
 
-// Math
-#include "Math/RotationMatrix.h"
 #include "Engine/SkeletalMesh.h" // for BuildRefOffsetsFromMesh
 
-// ---------------- Ctors & status ----------------
+// ---------------- Ctors ----------------
 
 FVMCLiveLinkSource::FVMCLiveLinkSource(const FVMCConnectionSettings& InSettings, const FString& InSourceName)
     : SourceName(InSourceName), Settings(InSettings)
 {
     InitSkeleton();
+    PublishSnapshot();
 }
 
 namespace
@@ -46,6 +47,12 @@ namespace
         Out.SubjectName = Subject;
         return Out;
     }
+
+    // Frame timing averages: about the last 20 frames.
+    constexpr double StatsSmoothing = 0.05;
+
+    // Scene time rate for /VMC/Ext/T (the sender's clock carries no rate of its own).
+    const FFrameRate SenderTimeRate(60, 1);
 }
 
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
@@ -75,57 +82,155 @@ void FVMCLiveLinkSource::InitSkeleton()
     Assembler = MakeUnique<FVMCFrameAssembler>();
 }
 
+// ---------------- Lifecycle (game thread) ----------------
+
 void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid)
 {
     Client = InClient;
     SourceGuid = InSourceGuid;
-    bIsValid = StartOSC();
+
     // Subject settings are bootstrapped on the first /VMC/Ext/Blend/Apply (before anything is
     // pushed), not here. Deferring lets a Live Link preset, which adds its sources before its
     // subjects, create the subject with its saved settings first; EnsureSubjectSettingsWithDefaults
     // then leaves those settings alone.
-    // Warm caches and republish static once with mapped names
     RefreshStaticMapsFromSettings();
-    bForceStaticNext = true;
+    PublishSnapshot();
 
-    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %d (valid=%d, unity2ue=%d, m_to_cm=%d, yaw=%.1f)"),
-        *SourceName, Settings.Port, bIsValid ? 1 : 0, Settings.bUnityToUE ? 1 : 0, Settings.bMetersToCm ? 1 : 0, Settings.YawOffsetDeg);
+    TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FVMCLiveLinkSource::Tick));
+    bIsValid = StartReceiving();
+
+    UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s' listening on %s:%d (valid=%d, %s)"),
+        *SourceName, *Settings.BindAddress, Settings.Port, bIsValid ? 1 : 0, *Settings.ToString());
 }
 
 FVMCLiveLinkSource::~FVMCLiveLinkSource()
 {
-    // The OSC delegate is bound with AddRaw(this), so it must be removed even if Live Link
-    // never called RequestSourceShutdown. Skip this if the UObject system is already gone
-    // (very late teardown), since the OSC server is a UObject.
+    // Callbacks are bound to this (the OSC delegate with AddRaw, the receive thread and the ticker),
+    // so they must be removed even if Live Link never called RequestSourceShutdown. The OSC server
+    // is a UObject, so skip it if the UObject system is already gone (very late teardown).
+    Receiver.Reset();
     if (UObjectInitialized())
     {
         StopOSC();
+    }
+    if (TickerHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
     }
 }
 
 bool FVMCLiveLinkSource::RequestSourceShutdown()
 {
-    StopOSC();
+    StopReceiving();
+    if (TickerHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+        TickerHandle.Reset();
+    }
     bIsValid = false;
     Client = nullptr;
     return true;
 }
 
+bool FVMCLiveLinkSource::StartReceiving()
+{
+    if (!Settings.bReceiveThread)
+    {
+        return StartOSC();
+    }
+    FString Error;
+    Receiver = FVMCUdpReceiver::Start(Settings.BindAddress, Settings.Port,
+        [this](TConstArrayView<uint8> Packet, double ArrivalSeconds) { OnPacket(Packet, ArrivalSeconds); },
+        FString::Printf(TEXT("VMC receive %s:%d"), *Settings.BindAddress, Settings.Port), Error);
+    bListening = Receiver.IsValid();
+    if (!bListening)
+    {
+        UE_LOG(LogVMCLiveLink, Error, TEXT("VMC source '%s': %s"), *SourceName, *Error);
+    }
+    return bListening;
+}
+
+void FVMCLiveLinkSource::StopReceiving()
+{
+    Receiver.Reset(); // joins the receive thread
+    StopOSC();
+    bListening = false;
+}
+
 FText FVMCLiveLinkSource::GetSourceStatus() const
 {
-    if (bIsValid && !bListening)
+    if (!bIsValid)
+    {
+        return NSLOCTEXT("VMCLiveLink", "Status_Stopped", "Stopped");
+    }
+    if (!bListening)
     {
         return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_NotListening", "Can't listen on port {0}"), FText::AsNumber(Settings.Port, &FNumberFormattingOptions::DefaultNoGrouping()));
     }
-    const bool bReady = bIsValid && bStaticSent;
-    return bIsValid
-        ? (bReady
-            ? NSLOCTEXT("VMCLiveLink", "Status_Receiving", "Receiving data")
-            : NSLOCTEXT("VMCLiveLink", "Status_Waiting", "Waiting for first frame"))
-        : NSLOCTEXT("VMCLiveLink", "Status_Stopped", "Stopped");
+    if (!bStaticSent)
+    {
+        return NSLOCTEXT("VMCLiveLink", "Status_Waiting", "Waiting for first frame");
+    }
+
+    double Last = 0.0, Interval = 0.0, Jitter = 0.0;
+    {
+        FScopeLock Lock(&StatsLock);
+        Last = LastFrameSeconds;
+        Interval = MeanFrameInterval;
+        Jitter = MeanIntervalDeviation;
+    }
+    const double Silent = FPlatformTime::Seconds() - Last;
+    if (Silent > 1.0)
+    {
+        return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_NoData", "No data for {0} s"), FText::AsNumber(FMath::FloorToInt(Silent)));
+    }
+    FNumberFormattingOptions OneDecimal;
+    OneDecimal.SetMinimumFractionalDigits(1).SetMaximumFractionalDigits(1);
+    return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_Receiving", "Receiving: {0} fps, jitter {1} ms ({2})"),
+        FText::AsNumber(Interval > 0.0 ? 1.0 / Interval : 0.0, &OneDecimal),
+        FText::AsNumber(Jitter * 1000.0, &OneDecimal),
+        Settings.bReceiveThread ? NSLOCTEXT("VMCLiveLink", "Path_Thread", "receive thread") : NSLOCTEXT("VMCLiveLink", "Path_Game", "game thread"));
 }
 
-// ---------------- Settings ----------------
+bool FVMCLiveLinkSource::Tick(float DeltaTime)
+{
+    // The receive thread can't touch UObjects: it asks for the subject bootstrap, and the maps are
+    // refreshed here (on the game-thread path they are refreshed at each Blend/Apply, as before).
+    if (bBootstrapRequested && !bEnsuredDefaults)
+    {
+        EnsureSubjectSettingsWithDefaults();
+    }
+    const double Now = FPlatformTime::Seconds();
+    if (Settings.bReceiveThread && bEnsuredDefaults && Now - LastRefreshSeconds > 0.1)
+    {
+        LastRefreshSeconds = Now;
+        RefreshStaticMapsFromSettings();
+    }
+    return true;
+}
+
+TSharedPtr<const FVMCLiveLinkSource::FSnapshot> FVMCLiveLinkSource::GetSnapshot() const
+{
+    FScopeLock Lock(&SnapshotLock);
+    return Snapshot;
+}
+
+void FVMCLiveLinkSource::PublishSnapshot()
+{
+    TSharedRef<FSnapshot> New = MakeShared<FSnapshot>();
+    New->Settings = Settings;
+    New->BoneMap = CachedBoneMap;
+    New->CurveMap = CachedCurveMap;
+    if (bHaveRefOffsets)
+    {
+        New->RefOffsets = RefLocalTranslationByName;
+    }
+    New->Version = ++SnapshotVersion;
+    FScopeLock Lock(&SnapshotLock);
+    Snapshot = MoveTemp(New);
+}
+
+// ---------------- Settings (game thread) ----------------
 
 TSubclassOf<ULiveLinkSourceSettings> FVMCLiveLinkSource::GetSettingsClass() const
 {
@@ -162,35 +267,45 @@ void FVMCLiveLinkSource::OnSettingsChanged(ULiveLinkSourceSettings* InSettings, 
         return;
     }
 
-    const bool bRestart = New.Port != Settings.Port || New.BindAddress != Settings.BindAddress;
+    // A new port, address, path or subject restarts receiving, so no frame is being built while
+    // the subject changes. Other settings only need a new snapshot.
     const bool bNewSubject = New.SubjectName != Settings.SubjectName;
+    const bool bRestart = bNewSubject || New.Port != Settings.Port || New.BindAddress != Settings.BindAddress
+        || New.bReceiveThread != Settings.bReceiveThread;
+    if (bRestart)
+    {
+        StopReceiving();
+    }
     if (bNewSubject && Client)
     {
         // Move to the new subject: remove the old one and bootstrap the new one on the next frame.
         Client->RemoveSubject_AnyThread({ SourceGuid, Settings.SubjectName });
         bEnsuredDefaults = false;
+        bBootstrapRequested = false;
         bStaticSent = false;
         LastSeenRemapper.Reset();
         CachedMapsHash = 0;
     }
     Settings = New;
     VMCSettings->ConnectionString = Settings.ToString();
+    PublishSnapshot();
 
-    if (bRestart)
+    if (bRestart && Client)
     {
-        StopOSC();
         // Stays a valid source if the new port can't be opened; the status says why it's silent.
-        StartOSC();
+        StartReceiving();
     }
     UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': settings changed (%s)."), *SourceName, *Settings.ToString());
 }
 
-// ---------------- OSC lifecycle ----------------
+// ---------------- Game-thread path: the OSC plugin ----------------
 
 bool FVMCLiveLinkSource::StartOSC()
 {
     if (OscServer.IsValid())
+    {
         return true;
+    }
 
     OscServer = TStrongObjectPtr<UOSCServer>(NewObject<UOSCServer>());
     if (!OscServer.IsValid())
@@ -223,115 +338,85 @@ void FVMCLiveLinkSource::StopOSC()
         OscServer->Stop();
         OscServer.Reset();
     }
-    bListening = false;
 }
-
-// ---------------- OSC message handler ----------------
 
 void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FString& FromIP, uint16 FromPort)
 {
-    const FString Addr = Msg.GetAddress().GetFullPath();
-    const VMCProtocol::EAddress Kind = VMCProtocol::ClassifyAddress(Addr);
-    if (Kind != VMCProtocol::EAddress::BonePos && Kind != VMCProtocol::EAddress::RootPos
-        && Kind != VMCProtocol::EAddress::BlendVal && Kind != VMCProtocol::EAddress::BlendApply)
-    {
-        return; // not used (yet): time, availability, devices, camera, ...
-    }
-
-    auto WarnMalformed = [this, &Addr]()
-    {
-        if (!bWarnedMalformed)
-        {
-            UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC source '%s': ignoring malformed %s message (unexpected argument count or types). Further malformed messages are ignored silently."),
-                *SourceName, *Addr);
-            bWarnedMalformed = true;
-        }
-    };
-
+    // Dispatched on the game thread (UOSCServer::PumpPacketQueue), once per engine frame for
+    // everything that arrived since the last one.
+    const VMCProtocol::EAddress Kind = VMCProtocol::ClassifyAddress(Msg.GetAddress().GetFullPath());
     VMCProtocol::FArgs Args;
-    if (Kind != VMCProtocol::EAddress::BlendApply)
+    VMCProtocol::ReadArgs(Msg, Args);
+    if (const TSharedPtr<const FSnapshot> Snap = GetSnapshot())
     {
-        VMCProtocol::ReadArgs(Msg, Args);
+        ProcessMessage(Kind, Args, FPlatformTime::Seconds(), *Snap);
+    }
+}
+
+// ---------------- Receive-thread path ----------------
+
+void FVMCLiveLinkSource::OnPacket(TConstArrayView<uint8> Packet, double ArrivalSeconds)
+{
+    const TSharedPtr<const FSnapshot> Snap = GetSnapshot();
+    if (!Snap)
+    {
+        return;
+    }
+    const bool bOk = VMCOscParser::ParsePacket(Packet, [this, ArrivalSeconds, &Snap](FAnsiStringView Address, TConstArrayView<VMCProtocol::FArg> Args)
+    {
+        ProcessMessage(VMCProtocol::ClassifyAddress(Address), Args, ArrivalSeconds, *Snap);
+    });
+    if (!bOk && !bWarnedMalformed)
+    {
+        UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC source '%s': ignoring a malformed OSC packet (%d bytes). Further malformed input is ignored silently."),
+            *SourceName, Packet.Num());
+        bWarnedMalformed = true;
+    }
+}
+
+// ---------------- Frame building (receive thread, or game thread) ----------------
+
+void FVMCLiveLinkSource::ProcessMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, double ArrivalSeconds, const FSnapshot& Snap)
+{
+    const FVMCFrameAssembler::FMessageResult Result = Assembler->ApplyMessage(Kind, Args, Snap.Settings);
+
+    if (Result.bMalformed && !bWarnedMalformed)
+    {
+        UE_LOG(LogVMCLiveLink, Warning, TEXT("VMC source '%s': ignoring a malformed VMC message (unexpected argument count or types). Further malformed input is ignored silently."),
+            *SourceName);
+        bWarnedMalformed = true;
+    }
+    if (Result.bLegacyRoot && !bWarnedLegacyRoot)
+    {
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': /VMC/Ext/Root/Pos arrived without a name (7 floats). Accepting it, but the VMC protocol sends a name first."),
+            *SourceName);
+        bWarnedLegacyRoot = true;
+    }
+    if (Result.bRootScaleOffset && !bWarnedRootScaleOffset)
+    {
+        // VMC v2.1 scale/offset is for mixed-reality calibration; not applied yet.
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': sender provides VMC v2.1 root scale and offset; they are currently ignored."),
+            *SourceName);
+        bWarnedRootScaleOffset = true;
+    }
+    if (!Result.NewBone.IsNone())
+    {
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': bone '%s' is not a Unity humanoid bone; parenting it to Hips."),
+            *SourceName, *Result.NewBone.ToString());
+    }
+    bStaticDirty |= Result.bStaticChanged;
+
+    if (!Result.bApply)
+    {
+        return;
     }
 
-    switch (Kind)
+    // The subject is bootstrapped before anything is pushed. On the game thread that happens here,
+    // as before; the receive thread asks the game thread and drops frames until it's done.
+    const FSnapshot* Current = &Snap;
+    TSharedPtr<const FSnapshot> Refreshed;
+    if (IsInGameThread())
     {
-    case VMCProtocol::EAddress::BonePos:
-    {
-        VMCProtocol::FPose Pose;
-        if (!VMCProtocol::ParseBonePos(Args, Pose))
-        {
-            WarnMalformed();
-            return;
-        }
-        const FName BoneName(*Pose.Name);
-        const FTransform Xf(
-            VMCProtocol::ToUERotation(Pose.Rotation, Settings.bUnityToUE),
-            VMCProtocol::ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm),
-            FVector::OneVector);
-        if (Assembler->SetBone(BoneName, Xf))
-        {
-            UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': bone '%s' is not a Unity humanoid bone; parenting it to Hips."),
-                *SourceName, *BoneName.ToString());
-            bStaticDirty = true;
-        }
-        break;
-    }
-    case VMCProtocol::EAddress::RootPos:
-    {
-        VMCProtocol::FPose Pose;
-        bool bLegacyForm = false;
-        if (!VMCProtocol::ParseRootPos(Args, Pose, bLegacyForm))
-        {
-            WarnMalformed();
-            return;
-        }
-        if (bLegacyForm && !bWarnedLegacyRoot)
-        {
-            UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': /VMC/Ext/Root/Pos arrived without a name (7 floats). Accepting it, but the VMC protocol sends a name first."),
-                *SourceName);
-            bWarnedLegacyRoot = true;
-        }
-        if (Pose.bHasScaleAndOffset && !bWarnedRootScaleOffset)
-        {
-            // VMC v2.1 scale/offset is for mixed-reality calibration; not applied yet.
-            UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': sender provides VMC v2.1 root scale and offset; they are currently ignored."),
-                *SourceName);
-            bWarnedRootScaleOffset = true;
-        }
-
-        FVector PR = VMCProtocol::ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm);
-        FQuat   QR = VMCProtocol::ToUERotation(Pose.Rotation, Settings.bUnityToUE);
-
-        // Apply extra yaw offset about UE Z
-        if (!FMath::IsNearlyZero(Settings.YawOffsetDeg))
-        {
-            const FQuat YawDelta(FVector::UpVector, FMath::DegreesToRadians(Settings.YawOffsetDeg));
-            QR = YawDelta * QR;
-            PR = YawDelta.RotateVector(PR);
-        }
-        Assembler->SetRoot(FTransform(QR, PR, FVector::OneVector));
-        break;
-    }
-    case VMCProtocol::EAddress::BlendVal:
-    {
-        FString Name;
-        float Val = 0.f;
-        if (!VMCProtocol::ParseBlendVal(Args, Name, Val))
-        {
-            WarnMalformed();
-            return;
-        }
-        if (Assembler->SetCurve(FName(*Name), Val))
-        {
-            bStaticDirty = true; // advertise this name in static data
-        }
-        break;
-    }
-    case VMCProtocol::EAddress::BlendApply:
-    {
-        // Dispatched on the game thread (see the class comment), so the subject bootstrap can run
-        // synchronously here, before anything is pushed.
         if (!bEnsuredDefaults)
         {
             EnsureSubjectSettingsWithDefaults(); // also refreshes the cached maps
@@ -340,50 +425,72 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
         {
             RefreshStaticMapsFromSettings();
         }
+        Refreshed = GetSnapshot();
+        Current = Refreshed.Get();
+    }
+    else if (!bEnsuredDefaults)
+    {
+        bBootstrapRequested = true;
+        Assembler->EndFrame(Snap.Settings.bZeroMissingCurves);
+        return;
+    }
 
-        // Static data before the frame, so a frame never carries more curve values than the
-        // static data it is validated against.
-        if (!bStaticSent || bForceStaticNext || bStaticDirty)
-        {
-            bForceStaticNext = false;
-            bStaticDirty = false;
-            PushStaticData();
-        }
-        PushFrame();
-        Assembler->EndFrame(Settings.bZeroMissingCurves);
-        break;
+    // Static data before the frame, so a frame never carries more curve values than the static
+    // data it is validated against.
+    if (!bStaticSent || bStaticDirty || Current->Version != PublishedStaticVersion)
+    {
+        bStaticDirty = false;
+        PushStaticData(*Current);
     }
-    default:
-        break;
-    }
+    PushFrame(*Current, ArrivalSeconds);
+    Assembler->EndFrame(Current->Settings.bZeroMissingCurves);
 }
 
-// ---------------- Live Link data push ----------------
-
-void FVMCLiveLinkSource::PushStaticData()
+void FVMCLiveLinkSource::PushStaticData(const FSnapshot& Snap)
 {
     if (!Client)
     {
         return;
     }
-    Client->PushSubjectStaticData_AnyThread({ SourceGuid, Settings.SubjectName },
-        ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(&CachedBoneMap, &CachedCurveMap));
+    Client->PushSubjectStaticData_AnyThread({ SourceGuid, Snap.Settings.SubjectName },
+        ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(&Snap.BoneMap, &Snap.CurveMap));
+    PublishedStaticVersion = Snap.Version;
     bStaticSent = true;
 }
 
-void FVMCLiveLinkSource::PushFrame()
+void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
 {
     if (!Client)
     {
         return;
     }
     FVMCFrameAssembler::FFrameOptions Options;
-    Options.bPreferIncomingTranslations = Settings.bPreferIncomingTranslations;
-    Options.bUseRefOffsets = Settings.bUseRefOffsets && bHaveRefOffsets;
-    Options.RefOffsets = &RefLocalTranslationByName;
-    Options.BoneMap = &CachedBoneMap;
-    Client->PushSubjectFrameData_AnyThread({ SourceGuid, Settings.SubjectName }, Assembler->MakeFrameData(Options));
+    Options.bPreferIncomingTranslations = Snap.Settings.bPreferIncomingTranslations;
+    Options.bUseRefOffsets = Snap.Settings.bUseRefOffsets;
+    Options.RefOffsets = &Snap.RefOffsets;
+    Options.BoneMap = &Snap.BoneMap;
+
+    FLiveLinkFrameDataStruct Frame = Assembler->MakeFrameData(Options);
+    FLiveLinkBaseFrameData& Base = *Frame.Cast<FLiveLinkAnimationFrameData>();
+    // When the packet arrived (receive thread), or when the game thread got to it.
+    Base.WorldTime = FLiveLinkWorldTime(ArrivalSeconds);
+    if (const TOptional<float> SenderTime = Assembler->GetSenderTime())
+    {
+        Base.MetaData.SceneTime = FQualifiedFrameTime(FFrameTime::FromDecimal(double(*SenderTime) * SenderTimeRate.AsDecimal()), SenderTimeRate);
+    }
+    Client->PushSubjectFrameData_AnyThread({ SourceGuid, Snap.Settings.SubjectName }, MoveTemp(Frame));
+
+    FScopeLock Lock(&StatsLock);
+    if (LastFrameSeconds > 0.0)
+    {
+        const double Interval = ArrivalSeconds - LastFrameSeconds;
+        MeanFrameInterval = MeanFrameInterval > 0.0 ? FMath::Lerp(MeanFrameInterval, Interval, StatsSmoothing) : Interval;
+        MeanIntervalDeviation = FMath::Lerp(MeanIntervalDeviation, FMath::Abs(Interval - MeanFrameInterval), StatsSmoothing);
+    }
+    LastFrameSeconds = ArrivalSeconds;
 }
+
+// ---------------- Maps and subject (game thread) ----------------
 
 uint32 FVMCLiveLinkSource::HashMaps(const TMap<FName, FName>& A, const TMap<FName, FName>& B)
 {
@@ -426,11 +533,12 @@ void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
     ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(SettingsObj);
     ULiveLinkSubjectRemapper* NowRemapper = SubjectSettings ? SubjectSettings->Remapper : nullptr;
 
+    bool bChanged = false;
     const bool bRemapperChanged = (LastSeenRemapper.Get() != NowRemapper);
     if (bRemapperChanged)
     {
         LastSeenRemapper = NowRemapper;
-        bForceStaticNext = true; // names may change
+        bChanged = true; // names may change
     }
 
     // Maps + reference mesh. Runs every Apply, so the maps are hashed in place and only copied
@@ -460,6 +568,7 @@ void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
     {
         BuildRefOffsetsFromMesh(RefMesh);
         LastRefMeshBuiltFrom = RefMesh;
+        bChanged = true;
     }
 
     const uint32 NewHash = HashMaps(*NewBone, *NewCurve);
@@ -468,7 +577,11 @@ void FVMCLiveLinkSource::RefreshStaticMapsFromSettings()
         CachedMapsHash = NewHash;
         CachedBoneMap = *NewBone;
         CachedCurveMap = *NewCurve;
-        bForceStaticNext = true; // names changed → republish once
+        bChanged = true; // names changed: republish once
+    }
+    if (bChanged)
+    {
+        PublishSnapshot();
     }
 }
 
@@ -513,8 +626,8 @@ void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
         Client->SetSubjectEnabled(Preset.Key, true);
     }
 
-    // Warm caches and make sure the next Apply publishes remapped names
+    // Warm caches and make sure the next frame publishes remapped names
     RefreshStaticMapsFromSettings();
-    bForceStaticNext = true;
+    PublishSnapshot();
     bEnsuredDefaults = true;
 }

@@ -6,29 +6,86 @@
 
 namespace VMCProtocol
 {
-	EAddress ClassifyAddress(FStringView Address)
+	namespace
 	{
-		static const FStringView Prefix = TEXTVIEW("/VMC/Ext/");
-		if (!Address.StartsWith(Prefix, ESearchCase::CaseSensitive))
+		/** Compares a TCHAR or ANSI address with an ASCII literal, character by character. */
+		template <typename CharType>
+		bool EqualsAscii(TStringView<CharType> A, const char* B, int32 BLen)
 		{
+			if (A.Len() != BLen)
+			{
+				return false;
+			}
+			for (int32 i = 0; i < BLen; ++i)
+			{
+				if (A[i] != CharType(B[i]))
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		template <typename CharType>
+		EAddress Classify(TStringView<CharType> Address)
+		{
+			static const char Prefix[] = "/VMC/Ext/";
+			constexpr int32 PrefixLen = UE_ARRAY_COUNT(Prefix) - 1;
+			if (Address.Len() < PrefixLen || !EqualsAscii(Address.Left(PrefixLen), Prefix, PrefixLen))
+			{
+				return EAddress::Other;
+			}
+			const TStringView<CharType> Rest = Address.RightChop(PrefixLen);
+			auto Is = [&Rest](const char* Name) { return EqualsAscii(Rest, Name, int32(FCStringAnsi::Strlen(Name))); };
+
+			// Most frequent first: a frame is ~55 Bone/Pos, a few dozen Blend/Val, one of the rest.
+			if (Is("Bone/Pos"))    return EAddress::BonePos;
+			if (Is("Blend/Val"))   return EAddress::BlendVal;
+			if (Is("Blend/Apply")) return EAddress::BlendApply;
+			if (Is("Root/Pos"))    return EAddress::RootPos;
+			if (Is("T"))           return EAddress::Time;
+			if (Is("OK"))          return EAddress::Available;
+			for (const char* Device : { "Hmd/Pos", "Con/Pos", "Tra/Pos", "Hmd/Pos/Local", "Con/Pos/Local", "Tra/Pos/Local" })
+			{
+				if (Is(Device)) return EAddress::DevicePos;
+			}
 			return EAddress::Other;
 		}
-		const FStringView Rest = Address.RightChop(Prefix.Len());
-		auto Is = [&Rest](FStringView Name) { return Rest.Equals(Name, ESearchCase::CaseSensitive); };
+	}
 
-		// Most frequent first: a frame is ~55 Bone/Pos, a few dozen Blend/Val, one of the rest.
-		if (Is(TEXTVIEW("Bone/Pos")))    return EAddress::BonePos;
-		if (Is(TEXTVIEW("Blend/Val")))   return EAddress::BlendVal;
-		if (Is(TEXTVIEW("Blend/Apply"))) return EAddress::BlendApply;
-		if (Is(TEXTVIEW("Root/Pos")))    return EAddress::RootPos;
-		if (Is(TEXTVIEW("T")))           return EAddress::Time;
-		if (Is(TEXTVIEW("OK")))          return EAddress::Available;
-		for (const FStringView Device : { TEXTVIEW("Hmd/Pos"), TEXTVIEW("Con/Pos"), TEXTVIEW("Tra/Pos"),
-			TEXTVIEW("Hmd/Pos/Local"), TEXTVIEW("Con/Pos/Local"), TEXTVIEW("Tra/Pos/Local") })
+	EAddress ClassifyAddress(FStringView Address)
+	{
+		return Classify(Address);
+	}
+
+	EAddress ClassifyAddress(FAnsiStringView Address)
+	{
+		return Classify(Address);
+	}
+
+	FName FArg::ToName() const
+	{
+		if (Utf8.IsEmpty())
 		{
-			if (Is(Device)) return EAddress::DevicePos;
+			return String.Len() < NAME_SIZE ? FName(*String) : NAME_None;
 		}
-		return EAddress::Other;
+		if (Utf8.Len() >= NAME_SIZE)
+		{
+			return NAME_None; // longer than any name can be; treated as malformed
+		}
+		// Pure ASCII (every bone name, most blend shapes): straight to FName.
+		bool bAscii = true;
+		for (UTF8CHAR C : Utf8)
+		{
+			if (uint8(C) >= 0x80) { bAscii = false; break; }
+		}
+		if (bAscii)
+		{
+			return FName(Utf8.Len(), reinterpret_cast<const ANSICHAR*>(Utf8.GetData()));
+		}
+		// Anything else (Japanese blend shape names, say) is UTF-8.
+		const auto Converted = StringCast<TCHAR>(Utf8.GetData(), Utf8.Len());
+		return FName(Converted.Length(), Converted.Get());
 	}
 
 	void ReadArgs(const FOSCMessage& Message, FArgs& OutArgs)
@@ -91,13 +148,13 @@ namespace VMCProtocol
 
 	bool ParseBonePos(TConstArrayView<FArg> Args, FPose& Out)
 	{
-		if (Args.Num() != 8 || Args[0].Type != FArg::EType::String || Args[0].String.IsEmpty())
+		if (Args.Num() != 8 || !Args[0].IsNonEmptyString())
 		{
 			return false;
 		}
 		Out = FPose();
-		Out.Name = Args[0].String;
-		return ReadPose7(Args, 1, Out);
+		Out.Name = Args[0].ToName();
+		return !Out.Name.IsNone() && ReadPose7(Args, 1, Out);
 	}
 
 	bool ParseRootPos(TConstArrayView<FArg> Args, FPose& Out, bool& bOutLegacyForm)
@@ -116,7 +173,7 @@ namespace VMCProtocol
 		{
 			return false;
 		}
-		Out.Name = Args[0].String;
+		Out.Name = Args[0].ToName();
 		if (!ReadPose7(Args, 1, Out))
 		{
 			return false;
@@ -135,14 +192,24 @@ namespace VMCProtocol
 		return true;
 	}
 
-	bool ParseBlendVal(TConstArrayView<FArg> Args, FString& OutName, float& OutValue)
+	bool ParseBlendVal(TConstArrayView<FArg> Args, FName& OutName, float& OutValue)
 	{
-		if (Args.Num() != 2 || Args[0].Type != FArg::EType::String || Args[0].String.IsEmpty() || !Args[1].IsNumber())
+		if (Args.Num() != 2 || !Args[0].IsNonEmptyString() || !Args[1].IsNumber())
 		{
 			return false;
 		}
-		OutName = Args[0].String;
+		OutName = Args[0].ToName();
 		OutValue = Args[1].Number;
+		return !OutName.IsNone();
+	}
+
+	bool ParseTime(TConstArrayView<FArg> Args, float& OutSeconds)
+	{
+		if (Args.Num() != 1 || !Args[0].IsNumber())
+		{
+			return false;
+		}
+		OutSeconds = Args[0].Number;
 		return true;
 	}
 
