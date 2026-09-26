@@ -70,6 +70,18 @@ bool FVRMSpringDataVersionRule::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Data at the latest version doesn't need a reimport"),
 		UVRMSpringBoneData::RequiresReimport(FVRMSpringDataCustomVersion::LatestVersion, WithCollider));
 
+	// VRM 0.x chains saved before ExpandedVRM0Chains lack their descendant bones.
+	FVRMSpringConfig VRM0Springs = WithSpring;
+	VRM0Springs.Spec = EVRMSpringSpec::VRM0;
+	FVRMSpringConfig VRM1Springs = WithSpring;
+	VRM1Springs.Spec = EVRMSpringSpec::VRM1;
+	TestTrue(TEXT("VRM 0.x springs before chain expansion need a reimport"),
+		UVRMSpringBoneData::RequiresReimport(FVRMSpringDataCustomVersion::PerJointParameters, VRM0Springs));
+	TestFalse(TEXT("VRM 0.x springs after chain expansion don't"),
+		UVRMSpringBoneData::RequiresReimport(FVRMSpringDataCustomVersion::ExpandedVRM0Chains, VRM0Springs));
+	TestFalse(TEXT("VRM 1.0 springs aren't affected by chain expansion"),
+		UVRMSpringBoneData::RequiresReimport(FVRMSpringDataCustomVersion::PerJointParameters, VRM1Springs));
+
 	const UVRMSpringBoneData* Fresh = NewObject<UVRMSpringBoneData>();
 	TestEqual(TEXT("A new asset is at the latest version"), Fresh->GetLoadedDataVersion(),
 		static_cast<int32>(FVRMSpringDataCustomVersion::LatestVersion));

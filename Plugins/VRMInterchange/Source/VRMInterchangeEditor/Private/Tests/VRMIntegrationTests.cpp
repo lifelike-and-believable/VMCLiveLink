@@ -141,7 +141,7 @@ bool FVRMIntegrationTestVRM0x::RunTest(const FString& Parameters)
   "nodes": [
     {"name": "Root"},
     {"name": "Head", "translation": [0, 1.6, 0]},
-    {"name": "Hair_01", "translation": [0, 1.8, 0]},
+    {"name": "Hair_01", "translation": [0, 1.8, 0], "children": [3]},
     {"name": "Hair_02", "translation": [0, 1.9, 0]}
   ],
   "extensions": {
@@ -157,7 +157,7 @@ bool FVRMIntegrationTestVRM0x::RunTest(const FString& Parameters)
             "dragForce": 0.2,
             "center": 0,
             "hitRadius": 0.02,
-            "bones": [2, 3],
+            "bones": [2],
             "colliderGroups": [0]
           }
         ],
@@ -200,8 +200,8 @@ bool FVRMIntegrationTestVRM0x::RunTest(const FString& Parameters)
             TestEqual(TEXT("Spring gravity power (UE units)"), Spring.GravityPower, 10.0f); // 0.1, scaled like a length
             TestEqual(TEXT("Spring hit radius (cm)"), Spring.HitRadius, 2.0f);
 
-            // VRM 0.x parameters belong to the bone group; every joint gets them.
-            TestEqual(TEXT("Both bones became joints"), Spring.JointIndices.Num(), 2);
+            // "bones" lists the chain root; its child joins the chain. The group's parameters go to every joint.
+            TestEqual(TEXT("Root and its child became joints"), Spring.JointIndices.Num(), 2);
             for (const int32 JointIndex : Spring.JointIndices)
             {
                 if (!TestTrue(TEXT("Joint index valid"), Config.Joints.IsValidIndex(JointIndex))) continue;

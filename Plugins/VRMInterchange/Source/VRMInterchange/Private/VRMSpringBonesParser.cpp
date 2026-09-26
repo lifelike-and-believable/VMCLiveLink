@@ -594,6 +594,49 @@ namespace
         return true;
     }
 
+    // glTF node hierarchy from nodes[].children, plus which nodes carry a mesh (not bones).
+    struct FNodeHierarchy
+    {
+        TMap<int32, int32> Parent;
+        TMap<int32, FVRMNodeChildren> Children;
+        TSet<int32> MeshNodes;
+    };
+
+    static FNodeHierarchy BuildNodeHierarchy(const TSharedPtr<FJsonObject>& Root)
+    {
+        FNodeHierarchy H;
+        const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
+        if (!Root.IsValid() || !Root->TryGetArrayField(TEXT("nodes"), Nodes) || !Nodes)
+        {
+            return H;
+        }
+        const int32 Num = Nodes->Num();
+        for (int32 i = 0; i < Num; ++i)
+        {
+            const TSharedPtr<FJsonObject>* Node = nullptr;
+            if (!(*Nodes)[i].IsValid() || !(*Nodes)[i]->TryGetObject(Node) || !Node || !Node->IsValid()) continue;
+            if ((*Node)->HasField(TEXT("mesh")))
+            {
+                H.MeshNodes.Add(i);
+            }
+            const TArray<TSharedPtr<FJsonValue>>* Children = nullptr;
+            if ((*Node)->TryGetArrayField(TEXT("children"), Children) && Children)
+            {
+                for (const TSharedPtr<FJsonValue>& Child : *Children)
+                {
+                    double ChildIndex = -1.0;
+                    if (Child.IsValid() && Child->TryGetNumber(ChildIndex) && ChildIndex >= 0.0 && ChildIndex < Num && int32(ChildIndex) != i
+                        && !H.Parent.Contains(int32(ChildIndex)))
+                    {
+                        H.Parent.Add(int32(ChildIndex), i);
+                        H.Children.FindOrAdd(i).Children.Add(int32(ChildIndex));
+                    }
+                }
+            }
+        }
+        return H;
+    }
+
     // VRM 0.x (secondaryAnimation; no plane shapes)
     static bool ParseVRM0(const TSharedPtr<FJsonObject>& Root, FVRMSpringConfig& Out, FString& OutError)
     {
@@ -619,6 +662,7 @@ namespace
         }
 
         Out.Spec = EVRMSpringSpec::VRM0;
+        const FNodeHierarchy Hierarchy = BuildNodeHierarchy(Root);
 
         const TArray<TSharedPtr<FJsonValue>>* ColliderGroups = nullptr;
         TArray<int32> GroupIndexToFirstCollider;
@@ -693,37 +737,75 @@ namespace
                     UE_LOG(LogVRMSpring, Log, TEXT("[VRMSpring Parser] VRM0: Mapped legacy 'stiffiness' to 'stiffness' for spring '%s'"), *Spring.Name);
                 }
 
+                const TArray<TSharedPtr<FJsonValue>>* CG = nullptr;
+                if ((*BObj)->TryGetArrayField(TEXT("colliderGroups"), CG) && CG)
+                {
+                    for (const TSharedPtr<FJsonValue>& Gv : *CG)
+                    {
+                        double Index = -1.0;
+                        if (Gv.IsValid() && Gv->TryGetNumber(Index)) { Spring.ColliderGroupIndices.Add((int32)Index); }
+                    }
+                }
+
+                // "bones" lists only the root of each chain; the whole subtree below it moves (UniVRM,
+                // three-vrm). Each chain follows the first child down to a leaf, and every other child
+                // starts a chain of its own, so no joint is simulated twice. All chains of the group
+                // share its parameters and colliders. Nodes carrying a mesh are not bones and stop the walk.
+                // A root's branches are finished before the next listed root, so a listed bone that is
+                // already below an earlier root joins that root's chains rather than starting its own.
+                TArray<int32> Roots;
                 const TArray<TSharedPtr<FJsonValue>>* Bones = nullptr;
                 if ((*BObj)->TryGetArrayField(TEXT("bones"), Bones) && Bones)
                 {
                     for (const TSharedPtr<FJsonValue>& BVV : *Bones)
                     {
                         double NodeIndex = -1.0;
-                        if (!BVV.IsValid() || !BVV->TryGetNumber(NodeIndex)) continue;
-
-                        // VRM 0.x parameters belong to the bone group; every joint gets a copy.
-                        FVRMSpringJoint J;
-                        J.NodeIndex = (int32)NodeIndex;
-                        J.Stiffness = Spring.Stiffness;
-                        J.Drag = Spring.Drag;
-                        J.GravityDir = Spring.GravityDir;
-                        J.GravityPower = Spring.GravityPower;
-                        J.HitRadius = Spring.HitRadius;
-                        const int32 JIndex = Out.Joints.Add(J);
-                        Spring.JointIndices.Add(JIndex);
+                        if (BVV.IsValid() && BVV->TryGetNumber(NodeIndex) && NodeIndex >= 0.0) { Roots.Add((int32)NodeIndex); }
                     }
                 }
 
-                const TArray<TSharedPtr<FJsonValue>>* CG = nullptr;
-                if ((*BObj)->TryGetArrayField(TEXT("colliderGroups"), CG) && CG)
+                // Nodes the listed roots cover, so a later listed root inside an earlier subtree is skipped.
+                TSet<int32> InGroup;
+                TArray<int32> ChainStarts; // stack; the next branch on top
+                for (const int32 ListedRoot : Roots)
                 {
-                    for (const TSharedPtr<FJsonValue>& Gv : *CG)
+                    ChainStarts.Reset();
+                    ChainStarts.Push(ListedRoot);
+                    while (ChainStarts.Num() > 0)
                     {
-                        Spring.ColliderGroupIndices.Add((int32)Gv->AsNumber());
+                        FVRMSpring Chain = Spring; // name, center, parameters and collider groups
+                        for (int32 Node = ChainStarts.Pop(); Node != INDEX_NONE && !InGroup.Contains(Node) && !Hierarchy.MeshNodes.Contains(Node); )
+                        {
+                            InGroup.Add(Node);
+
+                            // VRM 0.x parameters belong to the bone group; every joint gets a copy.
+                            FVRMSpringJoint J;
+                            J.NodeIndex = Node;
+                            J.Stiffness = Spring.Stiffness;
+                            J.Drag = Spring.Drag;
+                            J.GravityDir = Spring.GravityDir;
+                            J.GravityPower = Spring.GravityPower;
+                            J.HitRadius = Spring.HitRadius;
+                            Chain.JointIndices.Add(Out.Joints.Add(J));
+
+                            const FVRMNodeChildren* Kids = Hierarchy.Children.Find(Node);
+                            if (!Kids || Kids->Children.Num() == 0)
+                            {
+                                break;
+                            }
+                            for (int32 k = Kids->Children.Num() - 1; k >= 1; --k) // pushed in reverse: first branch on top
+                            {
+                                ChainStarts.Push(Kids->Children[k]);
+                            }
+                            Node = Kids->Children[0];
+                        }
+
+                        if (Chain.JointIndices.Num() > 0)
+                        {
+                            Out.Springs.Add(MoveTemp(Chain));
+                        }
                     }
                 }
-
-                Out.Springs.Add(MoveTemp(Spring));
             }
         }
 
@@ -958,16 +1040,27 @@ namespace VRM
         return ParseSpringBonesFromJson(Json, OutConfig, OutNodeMap, OutError);
     }
 
-    // Wrapper: richer overload returning parent/children maps. Not all callers need full graph; provide basic support by
-    // delegating to available overload and leaving parent/children empty when not available.
     bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, TMap<int32, int32>& OutNodeParent, TMap<int32, FVRMNodeChildren>& OutNodeChildren, FString& OutError)
     {
-        // Clear outputs
         OutNodeParent.Reset();
         OutNodeChildren.Reset();
-        // Try the overload that fills node map (best available). If successful, we still don't have parent/children info from simple parser.
-        bool b = ParseSpringBonesFromFile(Filename, OutConfig, OutNodeMap, OutError);
-        // No extra parent/children info available from this parser implementation; leave maps empty.
-        return b;
+        FString Json;
+        if (!ExtractTopLevelJsonString(Filename, Json))
+        {
+            OutError = TEXT("Could not extract top-level JSON from file.");
+            return false;
+        }
+        if (!ParseSpringBonesFromJson(Json, OutConfig, OutNodeMap, OutError))
+        {
+            return false;
+        }
+        TSharedPtr<FJsonObject> Root;
+        if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) && Root.IsValid())
+        {
+            FNodeHierarchy Hierarchy = BuildNodeHierarchy(Root);
+            OutNodeParent = MoveTemp(Hierarchy.Parent);
+            OutNodeChildren = MoveTemp(Hierarchy.Children);
+        }
+        return true;
     }
 }

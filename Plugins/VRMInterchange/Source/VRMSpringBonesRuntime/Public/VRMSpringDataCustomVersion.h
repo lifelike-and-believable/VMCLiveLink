@@ -26,6 +26,11 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringDataCustomVersion
 		// had them per spring; PostLoad copies each spring's values to its joints.
 		PerJointParameters,
 
+		// VRM 0.x bone groups are expanded to every descendant of each listed root, one chain per
+		// branch (P1.12). Older VRM 0.x data only has the listed roots and no node hierarchy, so it
+		// needs a reimport.
+		ExpandedVRM0Chains,
+
 		// -----<new versions go above this line>-----
 		VersionPlusOne,
 		LatestVersion = VersionPlusOne - 1

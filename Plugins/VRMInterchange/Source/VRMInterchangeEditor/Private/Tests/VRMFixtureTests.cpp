@@ -143,4 +143,78 @@ bool FVRMFixturesSpringJointParameters::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMFixturesSpringChains, "VRM.Fixtures.SpringChains",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMFixturesSpringChains::RunTest(const FString& Parameters)
+{
+	// Chains must match the sidecar's springs.chains[].joint_nodes. vrm0_minimal lists only the chain
+	// root, so its descendants have to be added (P1.12). Every joint must be a named node (a bone), and
+	// the file overload must report the node hierarchy.
+	const FString Dir = VRMFixtures::GetFixtureDir();
+	const TCHAR* const SpringFixtures[] = { TEXT("vrm0_minimal"), TEXT("vrm1_minimal") };
+	for (const TCHAR* Name : SpringFixtures)
+	{
+		FVRMSpringConfig Config;
+		TMap<int32, FName> NodeNames;
+		TMap<int32, int32> NodeParent;
+		TMap<int32, FVRMNodeChildren> NodeChildren;
+		FString Error;
+		FString ExpectedText;
+		TSharedPtr<FJsonObject> Expected;
+		if (!TestTrue(FString::Printf(TEXT("%s parses"), Name),
+				VRM::ParseSpringBonesFromFile(FPaths::Combine(Dir, FString(Name) + TEXT(".vrm")), Config, NodeNames, NodeParent, NodeChildren, Error))
+			|| !TestTrue(FString::Printf(TEXT("%s sidecar loads"), Name),
+				FFileHelper::LoadFileToString(ExpectedText, *FPaths::Combine(Dir, FString(Name) + TEXT(".expected.json")))
+				&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ExpectedText), Expected) && Expected.IsValid()))
+		{
+			continue;
+		}
+
+		const TSharedPtr<FJsonObject>* Springs = nullptr;
+		const TArray<TSharedPtr<FJsonValue>>* Chains = nullptr;
+		if (!TestTrue(TEXT("Sidecar has springs.chains"), Expected->TryGetObjectField(TEXT("springs"), Springs) && Springs
+			&& (*Springs)->TryGetArrayField(TEXT("chains"), Chains) && Chains))
+		{
+			continue;
+		}
+		if (!TestEqual(FString::Printf(TEXT("%s chain count"), Name), Config.Springs.Num(), Chains->Num()))
+		{
+			continue;
+		}
+
+		auto Join = [](const TArray<int32>& A) { return FString::JoinBy(A, TEXT(","), [](int32 V) { return FString::FromInt(V); }); };
+		for (int32 ChainIndex = 0; ChainIndex < Chains->Num(); ++ChainIndex)
+		{
+			TArray<int32> Want;
+			const TSharedPtr<FJsonObject>* Chain = nullptr;
+			const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
+			if ((*Chains)[ChainIndex].IsValid() && (*Chains)[ChainIndex]->TryGetObject(Chain) && Chain
+				&& (*Chain)->TryGetArrayField(TEXT("joint_nodes"), Nodes) && Nodes)
+			{
+				for (const TSharedPtr<FJsonValue>& N : *Nodes) { Want.Add(int32(N->AsNumber())); }
+			}
+
+			TArray<int32> Got;
+			for (const int32 J : Config.Springs[ChainIndex].JointIndices)
+			{
+				if (Config.Joints.IsValidIndex(J)) { Got.Add(Config.Joints[J].NodeIndex); }
+			}
+			TestTrue(FString::Printf(TEXT("%s chain %d: nodes [%s], expected [%s]"), Name, ChainIndex, *Join(Got), *Join(Want)), Got == Want);
+
+			for (int32 i = 1; i < Got.Num(); ++i)
+			{
+				const int32* Parent = NodeParent.Find(Got[i]);
+				TestTrue(FString::Printf(TEXT("%s: node %d's parent is %d"), Name, Got[i], Got[i - 1]), Parent && *Parent == Got[i - 1]);
+			}
+		}
+
+		for (const FVRMSpringJoint& Joint : Config.Joints)
+		{
+			TestTrue(FString::Printf(TEXT("%s: joint node %d is a named bone"), Name, Joint.NodeIndex), NodeNames.Contains(Joint.NodeIndex));
+		}
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
