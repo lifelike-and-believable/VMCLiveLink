@@ -788,7 +788,10 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - `FVMCLiveLinkSource`: lifecycle, settings, the OSC server, status and counters, and pushing to the client.
   - `Public/VMCLiveLinkSourceSettings.h`: a `ULiveLinkSourceSettings` subclass with port, bind address, `bUnityToUE`, `bMetersToCm`, yaw offset, `bZeroMissingCurves`, sender allowlist and timeout. Implement `GetSettingsClass()`/`InitializeSettings()`/`OnSettingsChanged()`. Changing the port restarts the listener.
   - A single connection-string codec (`FVMCConnectionSettings::FromString/ToString`) with validation and round-trip tests.
-- **Threading (per D-1):** recommended option is to receive on the OSC thread (confirm whether `UOSCServer` can dispatch off the game thread in 5.6 **[Verify]**; otherwise use `FUdpSocketReceiver` with the OSC plugin's packet parsing), assemble on that thread, and push with `_AnyThread` calls. That gives one writer, no `DataGuard`, and a game thread that is never involved.
+- **Order (D-1, decided):**
+  1. **Split, keeping game-thread dispatch.** Parser, frame assembler and source as below; remove `DataGuard` and the partial locking; add the golden-frame replay tests. No threading change, so no threading risk.
+  2. **Receive thread.** A receive-thread path that feeds the same parser and assembler and pushes with `_AnyThread` calls and arrival timestamps. Only subject bootstrap and settings changes go to the game thread; the receive thread reads a snapshot of the settings. Behind a source setting (**Receive Thread**, default on) so the game-thread path stays available as a fallback during a show. Compare latency and jitter of the two paths with `scripts/vmc_sender.py` and record them in the PR.
+- **Threading (per D-1):** receive on the OSC thread (confirm whether `UOSCServer` can dispatch off the game thread in 5.6 **[Verify]**; otherwise use `FUdpSocketReceiver` with the OSC plugin's packet parsing), assemble on that thread, and push with `_AnyThread` calls. That gives one writer, no `DataGuard`, and a game thread that is never involved.
 - **Timestamps:** set `WorldTime` from the receive time (`FPlatformTime::Seconds()`). If `/VMC/Ext/T` is present, map the sender clock to `MetaData.SceneTime` (frame rate from settings) so Live Link buffering and interpolation modes work.
 - **Acceptance:** replay tests (P0.3 captures) give identical output before and after the refactor (golden frames). Parser unit tests cover every address. There are no per-message heap allocations (checked with `LLM` or a counting allocator in a test).
 
@@ -982,7 +985,7 @@ Each item can be done alongside the phase that changes the behaviour it describe
 
 | ID | Decision | Recommendation |
 |---|---|---|
-| D-1 | VMCLiveLink threading: game-thread dispatch (simple) or receive-thread assembly (lower latency, frame-rate independent) | Receive thread (P3.1). It suits a live-performance tool. |
+| D-1 | VMCLiveLink threading: game-thread dispatch (simple) or receive-thread assembly (lower latency, frame-rate independent) | **Decided 2026-09-26: receive thread, in two steps** (see P3.1). The main gain is per-frame arrival timestamps, so Live Link can smooth jitter; latency improves by at most about one game frame, more when the editor is throttled. |
 | D-2 | Supported platforms and engine versions (5.6 only, or 5.5 to 5.7) | Editor: Win64, Mac, Linux. Runtime: all desktop. Support the current and previous engine version and add a CI matrix. |
 | D-3 | Keep the "identity bone rotation" reference pose, or preserve source bind rotations | Keep identity for now (it matches VMC local rotations and the VRM 1.0 normalized pose), but make it explicit and documented, and apply it consistently to spring data (P1.11). Revisit if non-VRM glTF support becomes a goal. |
 | D-4 | Dependency direction between the plugins for avatar-driven mapping (P4.4) | VRMInterchange's `VRMCore` stays independent. VMCLiveLink takes an **optional** plugin dependency, or a tiny third "VMC-VRM Bridge" plugin holds the integration. |
@@ -1052,8 +1055,8 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 **Not started:** Phases 3 to 7.
 
 **Recommended next:**
-1. Owner: decide D-1 (VMCLiveLink threading). P3.1 depends on it.
-2. Phase 3, starting with P3.1 (split VMCLiveLink into parser, state and source) once D-1 is decided. P3.3 (parse each VRM file once) doesn't depend on D-1 and could go first.
+1. P3.1 step 1: split VMCLiveLink into parser, frame assembler and source, keeping game-thread dispatch (D-1 decided: receive thread, in two steps).
+2. P3.1 step 2: the receive-thread path, behind a setting.
 3. Owner: fix the runner's Application Control block (X-07).
 4. The editor checks below, most of all the spring solver comparison: P2.1 changed how springs behave.
 
