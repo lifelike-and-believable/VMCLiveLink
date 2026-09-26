@@ -4,48 +4,12 @@
 #include "CoreMinimal.h"
 #include "BoneControllers/AnimNode_SkeletalControlBase.h"
 #include "VRMSpringBoneData.h"
+#include "VRMSpringSolver.h"
 #include "AnimNode_VRMSpringBones.generated.h"
 
-// Forward declarations (avoid heavy includes)
-struct FVRMSpringConfig;
-
 /**
- * Per-joint runtime simulation state (minimal set after dead-code removal).
- */
-struct FVRMSimJointState
-{
-	// Initialization flag
-	uint8 bInitialized = 0;
-
-	// Static (per rest pose) data
-	FVector BoneAxisLocal = FVector::ForwardVector;
-	FVector InitialLocalChildPos = FVector::ZeroVector;
-	float   WorldBoneLength = 0.f;
-
-	// Dynamic state
-	FVector CurrentTail = FVector::ZeroVector;
-	FVector PrevTail    = FVector::ZeroVector;
-	FVector PrevHeadCS  = FVector::ZeroVector;
-};
-
-/** Range info for a spring chain (indices into the spring's JointIndices array). */
-struct FSpringChainRange
-{
-	int32 First = 0;
-	int32 Num   = 0;
-};
-
-/** Deferred bone write after simulation. */
-struct FBoneWrite
-{
-	FCompactPoseBoneIndex BoneIndex;
-	FVector               NewPosition;
-	FQuat                 NewRotation;
-};
-
-/**
- * Spring bone solver anim node (VRM multi-chain).
- * Cleaned version without unused/dead code.
+ * Spring bone anim node (VRM multi-chain). An adapter over FVRMSpringSolver: it maps the spring data
+ * to pose bones, feeds the solver the animated pose, and writes back the joint rotations.
  */
 USTRUCT(BlueprintInternalUseOnly)
 struct VRMSPRINGBONESRUNTIME_API FAnimNode_VRMSpringBones : public FAnimNode_SkeletalControlBase
@@ -95,63 +59,28 @@ public:
 	void EvaluateInternal(FAnimInstanceProxy* Proxy, FCSPose<FCompactPose>& CSPose, const FTransform& ComponentTM, TArray<FBoneTransform>& OutBoneTransforms);
 
 private:
-	/* ---- Core helpers ---- */
-
-	// Maintain length constraint
-	static FVector ApplyLengthConstraint(const FVRMSimJointState& State, FVector TailWS, FVector HeadWS);
-
-	// One-time per joint (lazy) init
-	void InitializeState(FVRMSimJointState& JointState, const FTransform& ComponentTM, const FTransform& JointBoneCS);
-
-	// Build bone references & chain index ranges from config
+	// Build the solver's bones, chains and colliders from SpringData for these bones
 	void BuildMappings(const FBoneContainer& BoneContainer);
-
-	// Allocate & fill initial per-joint state
-	void EnsureStatesInitialized(const FBoneContainer& BoneContainer, FCSPose<FCompactPose>& CSPose);
 
 	// True when the mappings no longer describe SpringData (another asset, or the asset was edited)
 	bool MappingsAreStale() const;
 
-	// Simulation pass over all springs
-	void SimulateSpringsOnce(FAnimInstanceProxy* Proxy, FCSPose<FCompactPose>& CSPose, const FTransform& ComponentTM, float DeltaTime);
-
-	// Collision resolution against configured collider groups
-	void ResolveCollisions(FAnimInstanceProxy* Proxy,
-	                       FVector& NextTailWS,
-	                       float JointRadius,
-	                       const FVRMSpringConfig& SpringCfg,
-	                       FCSPose<FCompactPose>& CSPose,
-	                       const FTransform& ComponentTM,
-	                       const TArray<int32>& GroupIndices) const;
-
-	/* ---- Collision primitive helpers (signed distance; <0 = penetration) ---- */
-	float CollideSphere(const FTransform& NodeXf, const struct FVRMSpringColliderSphere& Sph, const FVector& TailWS, float JointRadius, FVector& OutPushDir) const;
-	float CollideInsideSphere(const FTransform& NodeXf, const struct FVRMSpringColliderSphere& Sph, const FVector& TailWS, float JointRadius, FVector& OutPushDir) const;
-	float CollideCapsule(const FTransform& NodeXf, const struct FVRMSpringColliderCapsule& Cap, const FVector& TailWS, float JointRadius, FVector& OutPushDir) const;
-	float CollideInsideCapsule(const FTransform& NodeXf, const struct FVRMSpringColliderCapsule& Cap, const FVector& TailWS, float JointRadius, FVector& OutPushDir) const;
-	float CollidePlane(const FTransform& NodeXf, const struct FVRMSpringColliderPlane& P, const FVector& TailWS, float JointRadius, FVector& OutPushDir) const;
-
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	// Debug draw helpers
-	void DrawCollisionSphere(FAnimInstanceProxy* Proxy, const FTransform& NodeXf, const struct FVRMSpringColliderSphere& S) const;
-	void DrawCollisionCapsule(FAnimInstanceProxy* Proxy, const FTransform& NodeXf, const struct FVRMSpringColliderCapsule& Cap) const;
-	void DrawCollisionPlane(FAnimInstanceProxy* Proxy, const FTransform& NodeXf, const struct FVRMSpringColliderPlane& P) const;
-	// Draw per-joint spring visuals: head, tail, optional velocity and animated-rest target
-	void DrawSpringJoint(FAnimInstanceProxy* Proxy, const FTransform& ComponentTM, const FVRMSimJointState& JointState, const FVector& HeadCS, const FVector& TailCS, float JointRadius, const FVector& RestTargetCS, float DeltaTime) const;
+	void DrawDebug(FAnimInstanceProxy* Proxy, const FTransform& ComponentTM, float DeltaTime) const;
 #endif
 
-private:
 	/* ---- Runtime data ---- */
-	TArray<FBoneReference>     JointBoneRefs;
-	TArray<FVRMSimJointState>  JointStates;
-	TArray<FSpringChainRange>  SpringChainRanges;
-	TArray<FBoneWrite>         PendingBoneWrites;
+	FVRMSpringSolver Solver;
+	TArray<FCompactPoseBoneIndex> SolverBones; // pose bone of each solver bone
+	TArray<FTransform> SolverBonesCS;           // per evaluation scratch
 
 	// What the mappings were built from, so a new asset or an edit rebuilds them (SR-05)
 	const UVRMSpringBoneData* BuiltForData = nullptr;
 	FString BuiltForSourceHash;
 	int32   BuiltForEditRevision = INDEX_NONE;
-	TArray<bool> BuiltBoneValid; // per joint, for spotting LOD changes
+	int32   BuiltForJointCount = 0;
+	int32   BuiltForSpringCount = 0;
+	TArray<bool> BuiltBoneValid; // which named bones this LOD has, for spotting LOD changes
 
 	// Output of the last evaluation this frame, re-emitted if the node is evaluated again (SR-04)
 	TArray<FBoneTransform> LastOutBoneTransforms;
