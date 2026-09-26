@@ -468,7 +468,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 - **One runner:** there is one self-hosted Windows runner (EIGHTYGEE-DT). Each PR build takes 3 to 5 minutes and they queue serially, so seven PRs take about 35 minutes.
 - **Spurious cancellation:** one run (36149565264, attempt 1) was cancelled by the runner itself 5 s into the Shipping build. There was no user, timeout or concurrency cancel, and the re-run passed. The likely cause is a console Ctrl+C on the runner machine.
 - **Stacked PRs get no CI:** `pr-build.yml` only triggers for PRs that target `main`, so stacked PRs are never built until they are retargeted.
-- **Deprecated Node:** the workflows use `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20.
+- **Deprecated Node (fixed in #112):** the workflows used `actions/checkout@v4` and `actions/upload-artifact@v4`, which run on the deprecated Node 20. They now use `actions/checkout@v5` and `actions/upload-artifact@v6`.
 - **Toolchain:** the runner's MSVC 14.51 is not UE 5.6's preferred toolchain (14.38), and UBT warns about it on every build.
 - **Application Control block (recurring, owner action needed):** Windows on the runner intermittently blocks files the build has just created, with error 4551 ("An Application Control policy has blocked this file", Smart App Control or WDAC). It hit #115 (a plugin DLL), #121 twice (the project DLL, then UnrealBuildTool's compiled `*ModuleRules.dll`, so nothing built) and #123 (`VRMSpringBonesEditor.dll`). Each time a re-run passed or the next push was clean. Nothing in the repository can fix it. The owner should add an exclusion for the runner's work folder (`C:\actions-runner\_work`) or an explicit WDAC allow rule for it. Turning off Smart App Control lowers the machine's protection as a whole, so keep it as a last resort for a dedicated CI machine. Until then, a 4551 failure gets one PR comment and one re-run.
 - **Superseded runs:** retargeting a PR, or pushing right after it, starts a new run and cancels the older one (job-level concurrency). The PR then shows cancelled runs next to the real one. Judge a PR by its newest `build-and-test` run on the head commit.
@@ -1071,7 +1071,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (afternoon).* Phases 1 and 2 are complete, and P3.1 to P3.4 are merged. `main` builds Editor, Game Development and Shipping on UE 5.6, and all 68 automation tests pass (50 VRM, 18 VMC).
+*Last updated 2026-09-26 (evening).* Phases 1 to 3 are complete, and P4.1 and P4.2 are merged. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 75 automation tests pass (57 VRM, 18 VMC).
 
 ### Status by task
 
