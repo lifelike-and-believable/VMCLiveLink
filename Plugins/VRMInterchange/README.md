@@ -101,8 +101,8 @@ Configure default import behavior in **Edit → Project Settings → Plugins →
 - **Generate Spring Bone Data**: Parse and create spring bone data assets during import (default: enabled)
 - **Generate Post Process AnimBP**: Create and assign an AnimBP for spring simulation (default: disabled)
 - **Assign Post Process ABP**: Automatically assign the generated AnimBP to the skeletal mesh (default: disabled)
-- **Overwrite Existing Spring Assets**: Replace existing assets on re-import (default: disabled)
-- **Overwrite Existing Post Process ABP**: Replace existing AnimBPs on re-import (default: disabled)
+- **Overwrite Existing Spring Assets**: On re-import, update the existing spring data asset in place, so AnimBlueprints that use it keep working (default: disabled; a new asset with a unique name is created)
+- **Overwrite Existing Post Process ABP**: On re-import, reuse the existing post-process AnimBP and give it the new spring data (default: disabled)
 - **Reuse Post Process ABP On Reimport**: Reuse existing AnimBP when re-importing (default: enabled)
 
 #### IK Rig Settings

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "InterchangePipelineBase.h"
+#include "VRMPipelineBase.h"
 #include "VRMIKRigPostImportPipeline.generated.h"
 
 class UInterchangeBaseNodeContainer;
@@ -15,13 +15,13 @@ class UFactory;
 /**
  * VRM IK Rig (Post-Import)
  *
- * - Runs after the user confirms the Interchange import dialog.
+ * - Runs once the import's skeletal mesh exists (UVRMPipelineBase).
  * - Duplicates an IK Rig asset from a template, targets the imported Skeleton/SkeletalMesh.
  * - Sets the preview mesh on the IK Rig when possible.
  * - Does NOT save packages during import; marks packages dirty so Save All/SCC handle persistence.
  */
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, ClassGroup=(Interchange), meta=(DisplayName="VRM IK Rig (Post-Import)"))
-class VRMINTERCHANGEEDITOR_API UVRMIKRigPostImportPipeline : public UInterchangePipelineBase
+class VRMINTERCHANGEEDITOR_API UVRMIKRigPostImportPipeline : public UVRMPipelineBase
 {
 	GENERATED_BODY()
 public:
@@ -36,7 +36,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
 	bool bGenerateIKRig = true;
 
-	/** If true, overwrite existing asset with same name; otherwise create a unique name */
+	/** If an IK Rig with this name exists, reuse it (its preview mesh is updated); otherwise the new one gets a unique name */
 	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
 	bool bOverwriteExisting = false;
 
@@ -54,34 +54,8 @@ public:
 
 #if WITH_EDITOR
 	virtual void PostInitProperties() override;
-	virtual void BeginDestroy() override;
-
-	/** True while this pipeline waits for its import's skeletal mesh to finish the job (tests use it). */
-	bool HasPendingPostImportWork() const { return ImportPostHandle.IsValid(); }
 #endif
 
-private:
-#if WITH_EDITOR
-	bool DuplicateTemplateIKRig(const FString& TargetPackagePath, const FString& BaseName, UIKRigDefinition*& OutIKRig, bool bOverwrite) const;
-
-	// Compute a robust character name using the imported mesh name if available, else the last segment of the package path
-	FString ResolveEffectiveCharacterName(USkeletalMesh* SkelMesh, const FString& PackagePath) const;
-
-	// Post-import deferral
-	void RegisterPostImportCommit();
-	void UnregisterPostImportCommit();
-	void OnAssetPostImport(class UFactory* InFactory, UObject* InCreatedObject);
-
-	// Deferred state for post-import commit
-	FDelegateHandle ImportPostHandle;
-	FString DeferredContentBasePath;
-	FString DeferredSourceFilename;
-	FString DeferredPackagePath; // <ContentBasePath>/<source file base name>
-	bool bDeferredCompleted = false;
-
-	// Naming/location
-	FString DeferredAnimFolder;
-	FString DeferredDesiredIKName;
-	bool bDeferredOverwriteIK = false;
-#endif
+protected:
+	virtual void OnSkeletalMeshImported(USkeletalMesh* Mesh, bool bIsAReimport) override;
 };
