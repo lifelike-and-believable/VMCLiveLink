@@ -27,21 +27,21 @@ TUniquePtr<FVMCUdpReceiver> FVMCUdpReceiver::Start(const FString& BindAddress, i
 	}
 
 	// Not reusable: a port another program already has is an error to report, not to share.
-	FSocket* Socket = FUdpSocketBuilder(ThreadName)
+	FSocket* NewSocket = FUdpSocketBuilder(ThreadName)
 		.AsNonBlocking()
 		.BoundToAddress(Address)
 		.BoundToPort(uint16(Port))
 		.WithReceiveBufferSize(4 * 1024 * 1024)
 		.Build();
-	if (!Socket)
+	if (!NewSocket)
 	{
 		OutError = FString::Printf(TEXT("can't bind %s:%d (address not on this machine, or port in use?)"), *BindAddress, Port);
 		return nullptr;
 	}
 
 	TUniquePtr<FVMCUdpReceiver> Receiver(new FVMCUdpReceiver());
-	Receiver->Socket = Socket;
-	Receiver->BoundPort = Socket->GetPortNo();
+	Receiver->Socket = NewSocket;
+	Receiver->BoundPort = NewSocket->GetPortNo();
 	Receiver->Sender = Subsystem->CreateInternetAddr();
 	Receiver->Buffer.SetNumUninitialized(65536); // the largest UDP payload
 	Receiver->OnPacket = MoveTemp(InOnPacket);

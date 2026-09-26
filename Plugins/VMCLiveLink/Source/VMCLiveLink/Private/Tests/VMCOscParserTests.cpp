@@ -183,7 +183,7 @@ bool FVMCOscParserMessagesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("... and the others are delivered"), Seen.Num() == 2 && Seen[0].Address == TEXT("/a") && Seen[1].Address == TEXT("/c"));
 
 	// UTF-8 strings (Japanese blend shape names) become the right names.
-	const char Utf8A[] = { char(0xE3), char(0x81), char(0x82), 0 }; // U+3042 HIRAGANA LETTER A
+	const char* Utf8A = "\xE3\x81\x82"; // U+3042 HIRAGANA LETTER A, as UTF-8
 	TestTrue(TEXT("UTF-8 string parses"), Parse(Message("/VMC/Ext/Blend/Val", { {'s', 0, 0, Utf8A}, {'f', 1.f} }), Seen));
 	TestTrue(TEXT("... decoded as UTF-8"), Seen.Num() == 1 && Seen[0].Names[0] == FName(*FString::Chr(TCHAR(0x3042))));
 
@@ -307,14 +307,14 @@ bool FVMCUdpReceiverLoopbackTest::RunTest(const FString& Parameters)
 {
 	using namespace VMCOscParserTests;
 	// Packets sent to 127.0.0.1 arrive on the receive thread, whole, in order, with rising arrival times.
-	FCriticalSection Lock;
+	FCriticalSection ReceivedLock;
 	TArray<TArray<uint8>> Received;
 	TArray<double> Times;
 	FString Error;
 	TUniquePtr<FVMCUdpReceiver> Receiver = FVMCUdpReceiver::Start(TEXT("127.0.0.1"), 0,
 		[&](TConstArrayView<uint8> Packet, double Arrival)
 		{
-			FScopeLock ScopeLock(&Lock);
+			FScopeLock ScopeLock(&ReceivedLock);
 			Received.Emplace(Packet.GetData(), Packet.Num());
 			Times.Add(Arrival);
 		},
@@ -339,7 +339,7 @@ bool FVMCUdpReceiverLoopbackTest::RunTest(const FString& Parameters)
 	while (FPlatformTime::Seconds() < Deadline)
 	{
 		{
-			FScopeLock ScopeLock(&Lock);
+			FScopeLock ScopeLock(&ReceivedLock);
 			if (Received.Num() >= Count) break;
 		}
 		FPlatformProcess::Sleep(0.01f);

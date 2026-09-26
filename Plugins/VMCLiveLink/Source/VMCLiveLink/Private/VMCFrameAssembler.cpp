@@ -23,35 +23,35 @@ FVMCFrameAssembler::FMessageResult FVMCFrameAssembler::ApplyMessage(VMCProtocol:
 	{
 	case EAddress::BonePos:
 	{
-		FPose Pose;
-		if (!ParseBonePos(Args, Pose))
+		FPose Parsed;
+		if (!ParseBonePos(Args, Parsed))
 		{
 			Result.bMalformed = true;
 			break;
 		}
 		const FTransform Xf(
-			ToUERotation(Pose.Rotation, Settings.bUnityToUE),
-			ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm),
+			ToUERotation(Parsed.Rotation, Settings.bUnityToUE),
+			ToUEPosition(Parsed.Position, Settings.bUnityToUE, Settings.bMetersToCm),
 			FVector::OneVector);
-		if (SetBone(Pose.Name, Xf))
+		if (SetBone(Parsed.Name, Xf))
 		{
 			Result.bStaticChanged = true;
-			Result.NewBone = Pose.Name;
+			Result.NewBone = Parsed.Name;
 		}
 		break;
 	}
 	case EAddress::RootPos:
 	{
-		FPose Pose;
-		if (!ParseRootPos(Args, Pose, Result.bLegacyRoot))
+		FPose Parsed;
+		if (!ParseRootPos(Args, Parsed, Result.bLegacyRoot))
 		{
 			Result.bMalformed = true;
 			break;
 		}
-		Result.bRootScaleOffset = Pose.bHasScaleAndOffset;
+		Result.bRootScaleOffset = Parsed.bHasScaleAndOffset;
 
-		FVector Position = ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm);
-		FQuat Rotation = ToUERotation(Pose.Rotation, Settings.bUnityToUE);
+		FVector Position = ToUEPosition(Parsed.Position, Settings.bUnityToUE, Settings.bMetersToCm);
+		FQuat Rotation = ToUERotation(Parsed.Rotation, Settings.bUnityToUE);
 		if (!FMath::IsNearlyZero(Settings.YawOffsetDeg))
 		{
 			// Extra yaw about UE Z
