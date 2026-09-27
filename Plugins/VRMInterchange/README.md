@@ -21,9 +21,9 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 - **Customizable Parameters**: Stiffness, gravity, damping, and more
 
 ### IK Rig Integration
-- **Automatic IK Rig Setup**: Generates IK Rig assets by duplicating a template
+- **IK Rig from the humanoid map**: The retarget root and chains come from the VRM's humanoid bone map, so they fit whatever the bones are called
+- **Mannequin chain names**: Chains are named like the UE5 mannequin's IK Rig (Spine, Neck, Head, LeftArm, LeftLeg, LeftIndex, ...), so an IK Retargeter maps them automatically
 - **Preview Mesh Assignment**: Automatically configures preview meshes
-- **VRM-to-UE5 Bone Mapping**: The template's retarget chains assume VRoid-style bone names (`J_Bip_*`)
 
 ### Live Link Support
 - **Character Scaffold Generation**: Creates ready-to-use Actor and AnimBP blueprints
@@ -164,9 +164,11 @@ The generated IK Rig assets enable:
 ### Basic Usage
 
 1. Open the generated `IK_Rig_VRM_YourCharacterName` asset
-2. The rig is pre-configured with VRM bone chains
-3. Use with IK Retargeter assets to transfer animations
+2. The retarget root is the hips, and there is one chain per limb, finger, spine, neck and head that the VRM's humanoid map covers. Chains whose bones the file doesn't map (no fingers, say) are left out, and a chain whose bones the skeleton lacks is skipped with a warning in the Output Log.
+3. Create an IK Retargeter from this rig to the UE5 mannequin's IK Rig: the chain names match, so the chains map automatically
 4. Reference in your Animation Blueprints for IK control
+
+The rig has retarget chains only, no IK goals or solvers. A file without a humanoid map, or an import with **Build From Humanoid** unticked, gets a copy of the template IK Rig instead, whose chains assume VRoid bone names (`J_Bip_*`).
 
 ## Using Live Link
 
@@ -260,7 +262,8 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 ### IK Rig Not Generated
 - Enable **Generate IK Rig Assets** in project settings
 - Ensure IKRig plugin is enabled in your project
-- Check that the template IK Rig asset exists in the plugin content
+- Check the Output Log for `IK Rig for '<mesh>'` warnings (a missing hips bone, or chains whose bones aren't in the skeleton)
+- With **Build From Humanoid** off, or for a file without a humanoid map, check that the template IK Rig asset exists in the plugin content
 
 ### Live Link Actor Missing Components
 - Verify LiveLink plugin is enabled

@@ -53,8 +53,9 @@ public class VRMInterchangeEditor : ModuleRules
             "ImageWrapper",     // texture tests build PNGs in memory
             "InterchangeImport", // FImportImage, which the texture tests inspect
 
-            // For IKRigDefinition asset
+            // For IKRigDefinition asset, and UIKRigController to build it from the humanoid map (P4.3)
             "IKRig",
+            "IKRigEditor",
 
             // UEdGraphSchema_K2 pin types, for the actor wiring tests
             "BlueprintGraph",
