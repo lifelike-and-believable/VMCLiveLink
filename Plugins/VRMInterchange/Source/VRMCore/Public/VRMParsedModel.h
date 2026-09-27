@@ -17,6 +17,9 @@ struct FVRMParsedMorph
 {
     FString Name;
     TArray<FVector3f> DeltaPositions;
+    // Change of each vertex's (unit) normal, in Unreal space. Empty when the file gives no NORMAL
+    // deltas for this target; the morph then keeps the base normals.
+    TArray<FVector3f> DeltaNormals;
 };
 
 struct FVRMParsedMesh

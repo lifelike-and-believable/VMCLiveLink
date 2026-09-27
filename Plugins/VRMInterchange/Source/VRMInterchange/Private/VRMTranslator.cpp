@@ -404,6 +404,19 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
         Vertices.Reserve(PMesh.Positions.Num());
 
         const bool bHaveDeltas = PMorph.DeltaPositions.Num() == PMesh.Positions.Num();
+        // Without NORMAL deltas in the file the morph keeps the base normals (no shading change).
+        // With them, each vertex's morphed normal is worked out once, not per triangle corner.
+        TArray<FVector3f> MorphedNormals;
+        if (PMorph.DeltaNormals.Num() == PMesh.Normals.Num())
+        {
+            MorphedNormals.SetNumUninitialized(PMesh.Normals.Num());
+            for (int32 n = 0; n < PMesh.Normals.Num(); ++n)
+            {
+                MorphedNormals[n] = (PMesh.Normals[n] + PMorph.DeltaNormals[n]).GetSafeNormal(UE_SMALL_NUMBER, PMesh.Normals[n]);
+            }
+        }
+        const TArray<FVector3f>& FinalNormals = MorphedNormals.Num() > 0 ? MorphedNormals : PMesh.Normals;
+        auto MorphedNormal = [&FinalNormals](int32 Index) { return FinalNormals[Index]; };
 
         for (int32 vi = 0; vi < PMesh.Positions.Num(); ++vi)
         {
@@ -436,9 +449,9 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
             const FVertexInstanceID VI1 = MD.CreateVertexInstance(Vertices[i1]);
             const FVertexInstanceID VI2 = MD.CreateVertexInstance(Vertices[i2]);
 
-            if (PMesh.Normals.IsValidIndex(i0)) VertexInstanceNormals[VI0] = PMesh.Normals[i0];
-            if (PMesh.Normals.IsValidIndex(i1)) VertexInstanceNormals[VI1] = PMesh.Normals[i1];
-            if (PMesh.Normals.IsValidIndex(i2)) VertexInstanceNormals[VI2] = PMesh.Normals[i2];
+            if (PMesh.Normals.IsValidIndex(i0)) VertexInstanceNormals[VI0] = MorphedNormal(i0);
+            if (PMesh.Normals.IsValidIndex(i1)) VertexInstanceNormals[VI1] = MorphedNormal(i1);
+            if (PMesh.Normals.IsValidIndex(i2)) VertexInstanceNormals[VI2] = MorphedNormal(i2);
 
             if (PMesh.UV0.IsValidIndex(i0)) VertexInstanceUVs.Set(VI0, 0, PMesh.UV0[i0]);
             if (PMesh.UV0.IsValidIndex(i1)) VertexInstanceUVs.Set(VI1, 0, PMesh.UV0[i1]);

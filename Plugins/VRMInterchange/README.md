@@ -344,7 +344,7 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 
 - **VRM Version**: Supports VRM 0.x and VRM 1.0 files.
 - **Materials**: MToon and glTF material factors (base colour, emissive, alpha mode, double-sided) are not applied.
-- **Expressions**: VRM expressions (blend shape groups) are not imported. Morph targets are imported individually by name.
+- **Morph Targets**: Morph targets are imported by name. Targets with the same name are one morph target: a mesh's primitives share them, and two meshes that use the same name are merged, with a warning, because an expression bound to either would move both. An unnamed target is named `<MeshName>_morph_<index>` and kept to its own mesh. A target's NORMAL deltas, when the file has them, turn its normals; a target without them keeps the base normals, so it changes shape but not shading.
 - **Texture Formats**: Embedded textures must be PNG or JPEG
 
 See `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` for the plan that addresses these.
