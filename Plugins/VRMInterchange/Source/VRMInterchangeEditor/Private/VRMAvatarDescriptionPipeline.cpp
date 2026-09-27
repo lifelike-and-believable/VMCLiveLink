@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMAvatarDescriptionPipeline.h"
 
+#include "Editor.h"
 #include "Engine/SkeletalMesh.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -13,7 +14,35 @@
 #include "VRMInterchangeLog.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMParsedModel.h"
+#include "Subsystems/EditorAssetSubsystem.h"
 #include "Widgets/Notifications/SNotificationList.h"
+
+namespace
+{
+	/** Writes the humanoid map onto the mesh as metadata for VMCLiveLink (P4.4, D-4), replacing any
+	 *  left by an earlier import. Editor only; a no-op outside the editor. */
+	void WriteHumanoidMetadata(USkeletalMesh* Mesh, const FVRMAvatarData& Avatar)
+	{
+		UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr;
+		if (!Assets || !Mesh)
+		{
+			return;
+		}
+		const FString Prefix = VRM::HumanoidMetadataPrefix;
+		for (const TPair<FName, FString>& Old : Assets->GetMetadataTagValues(Mesh))
+		{
+			const FString Key = Old.Key.ToString();
+			if (Key.StartsWith(Prefix) || Key == VRM::HumanoidMetadataVersionKey)
+			{
+				Assets->RemoveMetadataTag(Mesh, Old.Key);
+			}
+		}
+		for (const TPair<FName, FString>& Tag : VRM::MakeHumanoidMetadata(Avatar))
+		{
+			Assets->SetMetadataTag(Mesh, Tag.Key, Tag.Value);
+		}
+	}
+}
 
 void UVRMAvatarDescriptionPipeline::PostInitProperties()
 {
@@ -99,6 +128,10 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	}
 	Description->MarkPackageDirty();
 	LastDescription = Description;
+
+	// The humanoid map, on the mesh itself, for VMCLiveLink's "Create Mapping" (no plugin dependency).
+	WriteHumanoidMetadata(Mesh, StagedAvatar);
+	Mesh->MarkPackageDirty();
 
 	const FString License = VRM::DescribeLicense(StagedAvatar.Meta);
 	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] %s: %s"), *Description->GetPathName(), *License);

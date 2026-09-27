@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Editor.h"
 #include "Interfaces/IPluginManager.h"
 #include "Engine/SkeletalMesh.h"
 #include "InterchangeSourceData.h"
@@ -16,6 +17,7 @@
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Subsystems/EditorAssetSubsystem.h"
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
 #include "VRMParsedModel.h"
@@ -274,10 +276,22 @@ bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Happy expression"), Description->FindExpression(EVRMExpressionPreset::Happy));
 	TestFalse(TEXT("Source hash"), Description->SourceHash.IsEmpty());
 
+	// The humanoid map is on the mesh as metadata, in Unity names, for VMCLiveLink (P4.4).
+	if (UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr)
+	{
+		TestEqual(TEXT("Hips metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.Hips")), Description->GetBone(EVRMHumanBone::Hips).ToString());
+		TestEqual(TEXT("Version metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.HumanoidVersion")), FString(TEXT("1")));
+		Assets->SetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand"), TEXT("Stale"));
+	}
+
 	// Reimport with overwrite updates the same asset.
 	Description->Avatar.Expressions.Reset();
 	TestTrue(TEXT("Overwrite keeps the asset"), Run(true, true) == Description);
 	TestEqual(TEXT("... with fresh data"), Description->Avatar.Expressions.Num(), 1);
+	if (UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr)
+	{
+		TestEqual(TEXT("A reimport drops keys the avatar no longer has"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand")), FString());
+	}
 
 	// Turned off, nothing is staged.
 	UVRMAvatarDescriptionPipeline* Off = NewObject<UVRMAvatarDescriptionPipeline>();
@@ -287,4 +301,32 @@ bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMAvatarHumanoidMetadataTest, "VRM.Avatar.HumanoidMetadata",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMAvatarHumanoidMetadataTest::RunTest(const FString& Parameters)
+{
+	// Unity names (what VMC streams): VRM 1.0's thumb is one joint off.
+	TestEqual(TEXT("Hips"), VRM::UnityHumanBoneName(EVRMHumanBone::Hips), FString(TEXT("Hips")));
+	TestEqual(TEXT("LeftUpperArm"), VRM::UnityHumanBoneName(EVRMHumanBone::LeftUpperArm), FString(TEXT("LeftUpperArm")));
+	TestEqual(TEXT("Thumb metacarpal"), VRM::UnityHumanBoneName(EVRMHumanBone::LeftThumbMetacarpal), FString(TEXT("LeftThumbProximal")));
+	TestEqual(TEXT("Thumb proximal"), VRM::UnityHumanBoneName(EVRMHumanBone::RightThumbProximal), FString(TEXT("RightThumbIntermediate")));
+	TestEqual(TEXT("Thumb distal"), VRM::UnityHumanBoneName(EVRMHumanBone::LeftThumbDistal), FString(TEXT("LeftThumbDistal")));
+	TestEqual(TEXT("Index intermediate"), VRM::UnityHumanBoneName(EVRMHumanBone::LeftIndexIntermediate), FString(TEXT("LeftIndexIntermediate")));
+	TestEqual(TEXT("None"), VRM::UnityHumanBoneName(EVRMHumanBone::None), FString());
+
+	FVRMAvatarData Avatar;
+	TestEqual(TEXT("No humanoid, no metadata"), VRM::MakeHumanoidMetadata(Avatar).Num(), 0);
+	Avatar.HumanoidToBone.Add(EVRMHumanBone::Hips, TEXT("J_Bip_C_Hips"));
+	Avatar.HumanoidToBone.Add(EVRMHumanBone::LeftThumbMetacarpal, TEXT("J_Bip_L_Thumb1"));
+	Avatar.HumanoidToBone.Add(EVRMHumanBone::Head, NAME_None); // unmapped: left out
+	const TMap<FName, FString> Tags = VRM::MakeHumanoidMetadata(Avatar);
+	TestEqual(TEXT("Two bones and the version"), Tags.Num(), 3);
+	TestEqual(TEXT("Hips key"), Tags.FindRef(TEXT("VRM.Humanoid.Hips")), FString(TEXT("J_Bip_C_Hips")));
+	TestEqual(TEXT("Thumb key in Unity's name"), Tags.FindRef(TEXT("VRM.Humanoid.LeftThumbProximal")), FString(TEXT("J_Bip_L_Thumb1")));
+	TestEqual(TEXT("Version"), Tags.FindRef(TEXT("VRM.HumanoidVersion")), FString(TEXT("1")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
+

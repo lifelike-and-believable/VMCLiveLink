@@ -24,6 +24,25 @@ namespace VRM
 	/** The VRM 1.0 name of a humanoid bone (hips, leftThumbMetacarpal, ...). */
 	VRMCORE_API FString HumanBoneName(EVRMHumanBone Bone);
 
+	/**
+	 * The Unity HumanBodyBones name of a humanoid bone (Hips, LeftUpperArm, ...), which is what VMC
+	 * senders stream. VRM 1.0's thumb is one joint off from Unity's: leftThumbMetacarpal is
+	 * LeftThumbProximal, leftThumbProximal is LeftThumbIntermediate. Empty for None.
+	 */
+	VRMCORE_API FString UnityHumanBoneName(EVRMHumanBone Bone);
+
+	/**
+	 * The humanoid map as metadata for the imported skeletal mesh (P4.4, decision D-4): the
+	 * convention VMCLiveLink reads to map a VMC stream onto the mesh without depending on this
+	 * plugin. One key per mapped bone, "VRM.Humanoid.<UnityBoneName>" = the skeleton bone's name,
+	 * plus "VRM.HumanoidVersion" = "1". Documented in both plugins' READMEs; keep them in step.
+	 */
+	VRMCORE_API TMap<FName, FString> MakeHumanoidMetadata(const FVRMAvatarData& Avatar);
+
+	/** The metadata keys' prefix and the version key (see MakeHumanoidMetadata). */
+	inline const TCHAR* const HumanoidMetadataPrefix = TEXT("VRM.Humanoid.");
+	inline const TCHAR* const HumanoidMetadataVersionKey = TEXT("VRM.HumanoidVersion");
+
 	/** An expression preset from its name in a file of the given version (VRM 0.x joy is happy, a is aa, ...). */
 	VRMCORE_API EVRMExpressionPreset ExpressionPresetFromName(const FString& Name, EVRMAvatarVersion Version);
 
