@@ -928,11 +928,12 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
 
 ### P4.4 Creating a VMCLiveLink mapping from a VRM avatar
 - **Resolves:** X-01 (VMCLiveLink side) · **Depends on:** P4.1, P3.2, D-4
-- **Steps:** (per D-4) add an optional plugin dependency from VMCLiveLink to VRMInterchange's `VRMCore`, or put the integration in a small third plugin. Features:
-  - Remapper field `AvatarDescription`. When set, `BoneNameMap` = Unity `HumanBodyBones` name → skeleton bone from `HumanoidToBone` (case-insensitive humanoid match), and the reference skeleton comes from the avatar's mesh.
-  - Curve handling: pass expression names through (P4.2 expands them), or optionally expand into morph curves in the remapper for users who don't use the AnimGraph node.
-  - Editor button "Create Mapping Asset from VRM Avatar".
-- **Acceptance:** with a VRM imported and a VMC stream running, choosing the avatar description is the only setup step needed for correct body and face.
+- **Steps:** (per D-4: no dependency either way; the plugins share a documented data convention on an engine type)
+  1. **VRMInterchange writes** the humanoid map onto the imported skeletal mesh as package metadata (`UMetaData`, editor only): one key per mapped bone, `VRM.Humanoid.<UnityBoneName>` = skeleton bone name, plus `VRM.Humanoid.Version` = 1. Keys use Unity `HumanBodyBones` names (what VMC streams), so VRMInterchange does the VRM-to-Unity translation. VRM 1.0's thumb is one joint off from Unity's, on both sides: `leftThumbMetacarpal` → `LeftThumbProximal`, `leftThumbProximal` → `LeftThumbIntermediate`, `leftThumbDistal` → `LeftThumbDistal` (and `right...` → `Right...` likewise).
+  2. **VMCLiveLink reads** those keys from any skeletal mesh. It needs no VRM types: the editor action "Create Mapping from Skeletal Mesh" (and the remapper's reference-skeleton pick) fills `BoneNameMap` from the keys when they are present, falling back to today's name matching otherwise. The mapping asset stores the result, so nothing is read at runtime.
+  3. Curves pass through unchanged: expression names from VMC reach the AnimBP, where P4.2's VRM Expressions node expands them. Expanding curves inside the remapper would need expression binds in the convention too; not planned.
+  4. Document the keys in both READMEs; a test on each side (VRMInterchange writes them from a fixture, VMCLiveLink reads them from a mesh built in code).
+- **Acceptance:** with a VRM imported (by this plugin or any tool that writes the keys) and a VMC stream running, picking the skeletal mesh is the only setup step needed for a correct body. Either plugin works when installed alone.
 
 ### P4.5 Materials
 - **Resolves:** T-07 · **Depends on:** P3.3, D-7
@@ -1052,7 +1053,7 @@ Each item can be done alongside the phase that changes the behaviour it describe
 | D-1 | VMCLiveLink threading: game-thread dispatch (simple) or receive-thread assembly (lower latency, frame-rate independent) | **Decided 2026-09-26: receive thread, in two steps** (see P3.1). The main gain is per-frame arrival timestamps, so Live Link can smooth jitter; latency improves by at most about one game frame, more when the editor is throttled. |
 | D-2 | Supported platforms and engine versions (5.6 only, or 5.5 to 5.7) | **Decided 2026-09-26: Win64 only for now** (P3.5). It is the only platform built and tested (the CI runner is Windows); the READMEs say so. Revisit when Mac or Linux can be built and tested. Engine versions stay 5.6. |
 | D-3 | Keep the "identity bone rotation" reference pose, or preserve source bind rotations | Keep identity for now (it matches VMC local rotations and the VRM 1.0 normalized pose), but make it explicit and documented, and apply it consistently to spring data (P1.11). Revisit if non-VRM glTF support becomes a goal. |
-| D-4 | Dependency direction between the plugins for avatar-driven mapping (P4.4) | VRMInterchange's `VRMCore` stays independent. VMCLiveLink takes an **optional** plugin dependency, or a tiny third "VMC-VRM Bridge" plugin holds the integration. |
+| D-4 | Dependency direction between the plugins for avatar-driven mapping (P4.4) | **Decided 2026-09-27: no dependency either way.** The two plugins ship separately on Fab and may depend only on plugins that ship with Unreal, which rules out an optional dependency and a third bridge plugin. They share a documented metadata convention on the skeletal mesh instead (P4.4). |
 | D-5 | Apply VMC v2.1 root scale and offset | Parse always. Apply scale to root translation behind a setting (default on) because senders use it for avatar height calibration. |
 | D-6 | Keep lenient, non-spec spring schema parsing | Keep for one release behind a setting that logs when used, then remove. |
 | D-7 | Material fidelity target: PBR approximation or MToon parity | Basic MToon (shade colour and ramp, rim, outline) on a dedicated master material. Full parity is a separate project. |
@@ -1128,7 +1129,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 **Not started:** P4.4 to P4.7, and Phases 5 to 7.
 
 **Recommended next:**
-1. Decisions D-4 (for P4.4) and D-7 (for P4.5).
+1. P4.4 per D-4 (the metadata convention), and decision D-7 (for P4.5).
 2. P4.6 (morph targets) and P4.7 (VMC protocol coverage), which need no decision.
 3. Owner: fix the runner's Application Control block (X-07).
 4. The editor checks below.
