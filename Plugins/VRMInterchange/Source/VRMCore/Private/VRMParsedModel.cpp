@@ -1018,18 +1018,14 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
                         {
                             const int32 GlobalIndex = VertexBase2 + v;
                             // Every non-zero delta counts, however small; zero leaves the normal as it is.
-                            if (NormalDeltaLocal[v] == FVector3f::ZeroVector || !VertexRest.IsValidIndex(GlobalIndex))
+                            if (NormalDeltaLocal[v] == FVector3f::ZeroVector || !VertexRest.IsValidIndex(GlobalIndex) || !Out.Mesh.Normals.IsValidIndex(GlobalIndex))
                             {
                                 continue;
                             }
-                            // Base and morphed normal through the same transform, so the delta is only the morph's.
+                            // Relative to the stored base normal, so base + delta is exactly the morphed normal.
                             const FVRMVertexRest& Rest = VertexRest[GlobalIndex];
-                            auto ToUE = [&Rest, &Convention](const FVector3f& Local)
-                            {
-                                const FVector3f N = FVector3f(Rest.Normal.TransformVector(Local)).GetSafeNormal(UE_SMALL_NUMBER, FVector3f(0, 0, 1));
-                                return Convention.Direction(N);
-                            };
-                            Morph.DeltaNormals[GlobalIndex] = ToUE(Rest.LocalNormal + NormalDeltaLocal[v]) - ToUE(Rest.LocalNormal);
+                            const FVector3f Morphed = Convention.Direction(FVector3f(Rest.Normal.TransformVector(Rest.LocalNormal + NormalDeltaLocal[v])).GetSafeNormal(UE_SMALL_NUMBER, FVector3f(0, 0, 1)));
+                            Morph.DeltaNormals[GlobalIndex] = Morphed - Out.Mesh.Normals[GlobalIndex];
                         }
                     }
                 }
