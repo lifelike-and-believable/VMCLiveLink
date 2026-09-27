@@ -87,6 +87,33 @@ namespace VMCProtocol
 	/** /VMC/Ext/T: (float time), the sender's clock in seconds. */
 	bool ParseTime(TConstArrayView<FArg> Args, float& OutSeconds);
 
+	/** What /VMC/Ext/OK says about the sender. Fields the sender didn't send are unset. */
+	struct FSenderState
+	{
+		bool bLoaded = false;              // an avatar is loaded
+		TOptional<int32> Calibration;      // 0 uncalibrated, 1 waiting for calibration, 2 calibrating, 3 calibrated
+		TOptional<int32> CalibrationMode;  // 0 normal, 1 mixed reality (hand), 2 mixed reality (floor)
+		TOptional<int32> Tracking;         // 0 tracking lost, 1 tracking
+
+		bool operator==(const FSenderState& Other) const
+		{
+			return bLoaded == Other.bLoaded && Calibration == Other.Calibration
+				&& CalibrationMode == Other.CalibrationMode && Tracking == Other.Tracking;
+		}
+		bool operator!=(const FSenderState& Other) const { return !(*this == Other); }
+	};
+
+	/** /VMC/Ext/OK: (int loaded), (int loaded, int calibrationState, int calibrationMode) or v2.5's
+	 *  (..., int trackingStatus). */
+	bool ParseAvailable(TConstArrayView<FArg> Args, FSenderState& Out);
+
+	/**
+	 * The parts of a sender state worth showing in the source status, comma-separated ("no avatar
+	 * loaded", "calibrating", "tracking lost", ...). Empty when the sender is loaded, calibrated (or
+	 * doesn't say) and tracking (or doesn't say).
+	 */
+	FString DescribeSenderState(const FSenderState& State);
+
 	/** Unity position (metres) to UE, optionally converting the basis and scaling to centimetres. */
 	FVector ToUEPosition(const FVector3f& UnityPosition, bool bUnityToUE, bool bMetersToCm);
 

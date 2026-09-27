@@ -8,7 +8,7 @@
  * reads and writes it (P3.1, VMC-17).
  *
  * Format: "key=value" pairs separated by ';', keys case-insensitive, unknown keys ignored, e.g.
- *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;thread=1;subject=VMC_Subject
+ *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;thread=1;senders=;lockfirst=0;subject=VMC_Subject
  * Booleans accept 1/0, true/false, yes/no, on/off. Strings saved by earlier versions (port,
  * unity2ue, meters2cm, subject) read the same.
  */
@@ -35,6 +35,12 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	/** Receive and build frames on a thread of their own, timestamped on arrival (D-1). Off: the OSC
 	 *  plugin delivers messages on the game thread, as before P3.1 step 2. */
 	bool bReceiveThread = true;
+	/** IPv4 addresses whose packets are used; packets from anyone else are ignored. Empty: any
+	 *  sender. Written as "senders=a.b.c.d,e.f.g.h". */
+	TArray<FString> AllowedSenders;
+	/** Use only the first sender heard from (after AllowedSenders) until receiving restarts, so a
+	 *  second sender on the network can't take over the subject. */
+	bool bLockToFirstSender = false;
 
 	/**
 	 * Reads a connection string. Keys that are missing keep their defaults. Returns false if any
@@ -45,7 +51,11 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	/** Writes every setting. FromString(ToString()) gives the same settings. */
 	FString ToString() const;
 
-	/** Checks port, bind address and subject name. */
+	/** Parses a list of IPv4 addresses separated by commas or spaces. False if any entry isn't one
+	 *  (OutBad, if given, gets the first); Out then holds the valid ones. */
+	static bool ParseSenderList(const FString& Text, TArray<FString>& Out, FString* OutBad = nullptr);
+
+	/** Checks port, bind address, subject name and allowed senders. */
 	bool Validate(TArray<FString>* OutErrors = nullptr) const;
 
 	bool operator==(const FVMCConnectionSettings& Other) const;

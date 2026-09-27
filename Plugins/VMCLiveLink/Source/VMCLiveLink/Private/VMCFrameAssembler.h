@@ -44,6 +44,7 @@ public:
 		bool bApply = false;           // /VMC/Ext/Blend/Apply: the frame is complete
 		bool bLegacyRoot = false;      // Root/Pos without a name (accepted)
 		bool bRootScaleOffset = false; // VMC v2.1 root scale and offset (not applied)
+		bool bSenderStateChanged = false; // /VMC/Ext/OK said something different from the last one
 		FName NewBone;                 // set with bStaticChanged when the new entry is a non-humanoid bone
 	};
 
@@ -56,6 +57,9 @@ public:
 
 	/** The sender's clock from the last /VMC/Ext/T, in seconds, if it sends one. */
 	TOptional<float> GetSenderTime() const { return SenderTime; }
+
+	/** The last /VMC/Ext/OK, if the sender sends one. */
+	const TOptional<VMCProtocol::FSenderState>& GetSenderState() const { return SenderState; }
 
 	/** A /VMC/Ext/Bone/Pos transform (already in UE space). Returns true if the bone is new, in
 	 *  which case the static data must be published again. */
@@ -92,6 +96,7 @@ private:
 	FTransform Root = FTransform::Identity;
 
 	TOptional<float> SenderTime;
+	TOptional<VMCProtocol::FSenderState> SenderState;
 
 	TArray<FName> CurveNames;
 	TMap<FName, int32> CurveIndexByName;

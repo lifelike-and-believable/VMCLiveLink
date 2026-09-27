@@ -11,14 +11,14 @@ class FInternetAddr;
 
 /**
  * A UDP socket read on its own thread (P3.1 step 2). Each packet is handed to the callback on that
- * thread, with the time it was read (FPlatformTime::Seconds). The receive buffer is reused, so
- * reading allocates nothing.
+ * thread, with the time it was read (FPlatformTime::Seconds) and who sent it. The receive buffer is
+ * reused, so reading allocates nothing.
  */
 class FVMCUdpReceiver : public FRunnable
 {
 public:
-	/** Called on the receive thread. The data is only valid during the call. */
-	using FOnPacket = TFunction<void(TConstArrayView<uint8> Packet, double ArrivalSeconds)>;
+	/** Called on the receive thread. The data and the sender's address are only valid during the call. */
+	using FOnPacket = TFunction<void(TConstArrayView<uint8> Packet, double ArrivalSeconds, const FInternetAddr& Sender)>;
 
 	/** Binds and starts the thread. Returns null, with a reason in OutError, if the socket can't be opened. */
 	static TUniquePtr<FVMCUdpReceiver> Start(const FString& BindAddress, int32 Port, FOnPacket OnPacket, const FString& ThreadName, FString& OutError);

@@ -55,6 +55,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VMC|Connection")
 	bool bReceiveThread = true;
 
+	/** Only packets from these IPv4 addresses are used (for example 192.168.1.20). Empty: any sender. */
+	UPROPERTY(EditAnywhere, Category = "VMC|Senders")
+	TArray<FString> AllowedSenders;
+
+	/** Use only the first sender heard from until the source restarts (a new port, say), so a second
+	 *  sender on the network can't take over the subject. The status shows which sender it is. */
+	UPROPERTY(EditAnywhere, Category = "VMC|Senders")
+	bool bLockToFirstSender = false;
+
 	FVMCConnectionSettings ToConnectionSettings() const;
 	void FromConnectionSettings(const FVMCConnectionSettings& In);
 };
