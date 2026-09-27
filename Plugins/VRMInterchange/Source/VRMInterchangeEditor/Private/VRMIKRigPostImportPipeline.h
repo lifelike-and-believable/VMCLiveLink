@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "VRMAvatarTypes.h"
 #include "VRMPipelineBase.h"
 #include "VRMIKRigPostImportPipeline.generated.h"
 
@@ -16,7 +17,9 @@ class UFactory;
  * VRM IK Rig (Post-Import)
  *
  * - Runs once the import's skeletal mesh exists (UVRMPipelineBase).
- * - Duplicates an IK Rig asset from a template, targets the imported Skeleton/SkeletalMesh.
+ * - Builds the IK Rig from the VRM's humanoid map (P4.3): retarget root at the hips and the UE5
+ *   mannequin's chain names, whatever the bones are called. Without a humanoid map (or with
+ *   bBuildFromHumanoid off) it duplicates the template IK Rig instead.
  * - Sets the preview mesh on the IK Rig when possible.
  * - Does NOT save packages during import; marks packages dirty so Save All/SCC handle persistence.
  */
@@ -40,6 +43,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
 	bool bOverwriteExisting = false;
 
+	/** Build the chains from the VRM's humanoid map. Off: duplicate the template IK Rig, which only suits VRoid bone names. */
+	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
+	bool bBuildFromHumanoid = true;
+
 	/** Subfolder under character folder to place the asset */
 	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
 	FString IKRigDefinitionSubFolder = TEXT("IKRigDefinition");
@@ -56,6 +63,14 @@ public:
 	virtual void PostInitProperties() override;
 #endif
 
+	/** The IK Rig made by the last import (for tests). */
+	UIKRigDefinition* GetLastIKRig() const { return LastIKRig.Get(); }
+
 protected:
 	virtual void OnSkeletalMeshImported(USkeletalMesh* Mesh, bool bIsAReimport) override;
+
+private:
+	FVRMAvatarData StagedAvatar;
+	bool bHaveHumanoid = false;
+	TWeakObjectPtr<UIKRigDefinition> LastIKRig;
 };
