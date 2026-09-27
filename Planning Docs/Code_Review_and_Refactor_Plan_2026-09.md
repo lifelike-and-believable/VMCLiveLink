@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-27):** 35 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1 to P4.3, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 79 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-27):** 37 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1 to P4.4, P4.6, P4.7 in part, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 84 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -934,6 +934,11 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   3. Curves pass through unchanged: expression names from VMC reach the AnimBP, where P4.2's VRM Expressions node expands them. Expanding curves inside the remapper would need expression binds in the convention too; not planned.
   4. Document the keys in both READMEs; a test on each side (VRMInterchange writes them from a fixture, VMCLiveLink reads them from a mesh built in code).
 - **Acceptance:** with a VRM imported (by this plugin or any tool that writes the keys) and a VMC stream running, picking the skeletal mesh is the only setup step needed for a correct body. Either plugin works when installed alone.
+- **Status (#159, #160, merged):** both halves built and tested; the live acceptance is an editor check.
+  - VRMInterchange (#159): `VRM::UnityHumanBoneName` and `VRM::MakeHumanoidMetadata` in `VRMCore`; the avatar description pipeline writes the keys through `UEditorAssetSubsystem` (UnrealEd, no new dependency), changing only keys that differ so an unchanged reimport doesn't dirty the mesh. The README documents the keys.
+  - VMCLiveLink (#160): `UVMCLiveLinkRemapper::MakeBoneMapFromHumanoidMetadata` and `MapBonesFromHumanoidMetadata`, keeping only bones the skeleton has. While its maps are empty the remapper uses an explicit mapping asset first, then the metadata, then auto-detect. The runtime module reads metadata through a hook the editor module sets.
+  - Tests: `VRM.Avatar.HumanoidMetadata`, `VRM.Avatar.Pipeline` (keys written, stale key removed), `VMC.Remapper.HumanoidMetadata`.
+  - **Deviations:** the version key is `VRM.HumanoidVersion` (outside the `VRM.Humanoid.` prefix, so it is never read as a bone), written only when a bone is mapped. The keys are written only when Generate Avatar Description is on. Instead of a "Create Mapping from Skeletal Mesh" action, the remapper applies the metadata by itself and has a **Map Bones From Humanoid Metadata** button; the existing "Create Mapping Asset..." saves the result.
 
 ### P4.5 Materials
 - **Resolves:** T-07 · **Depends on:** P3.3, D-7
@@ -947,6 +952,11 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
 - **Resolves:** T-08 (normals and grouping)
 - **Steps:** read `NORMAL` deltas where present (without them, let UE recompute and document the trade-off). Merge unnamed targets only **within** the same mesh, and name them `<MeshName>_morph_<i>`. Warn about name collisions between meshes whose shapes differ.
 - **Acceptance:** an expression with normal deltas shades correctly. Unnamed targets across meshes are no longer merged.
+- **Status (#155, merged):** built and tested; shading is an editor check.
+  - NORMAL deltas go through the same rest transform as the base normal; the delta is stored relative to the stored base normal, and the translator writes the morphed normals into the morph payload.
+  - Unnamed targets are `<MeshName>_morph_<i>`; a mesh without a name, or sharing its name with another mesh, adds its glTF index. A name two meshes share is merged with a warning.
+  - Test: `VRM.MorphTargets` on the new `morph_targets` fixture.
+  - **Deviation:** a target without NORMAL deltas keeps the base normals rather than having UE recompute them (whether UE's build recomputes them depends on the mesh's build settings); the README says so.
 
 ### P4.7 VMC protocol coverage
 - **Resolves:** VMC-19 · **Depends on:** P3.1
@@ -957,6 +967,9 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - `/VMC/Ext/Cam`: optional camera subject.
   - A sender allowlist or "lock to first sender" option.
 - **Acceptance:** replayed captures create tracker subjects when enabled, and the status text reflects `/VMC/Ext/OK`.
+- **Status:** P4.7a (#156) merged; P4.7b (#157) in review.
+  - P4.7a: `/VMC/Ext/OK` (all three forms) is parsed and its noteworthy parts ("no avatar loaded", "calibrating", "tracking lost") appended to the source status; a restart clears it. Settings **Allowed Senders** (IPv4 list) and **Lock to First Sender**, applied on both receive paths before parsing; the status names the locked sender and counts ignored ones. Tests: `VMC.Protocol.Available`, `VMC.SenderFilter`, extended settings and loopback tests.
+  - P4.7b: **Device Subjects** publishes `/VMC/Ext/Hmd|Con|Tra/Pos` as Transform-role subjects `<Subject>_<serial>`, **Camera Subject** publishes `/VMC/Ext/Cam` as a Camera-role subject with its field of view; both in world space like the root, timed like the main subject. `/Local` variants are not used. Test: `VMC.Protocol.Devices`.
 
 ---
 
@@ -1123,14 +1136,17 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P4.1 Avatar description asset | #143, #144 | Merged | Copilot's reviews came after the merges; its findings were fixed in #147 |
 | P4.2 VRM Expressions node | #145 | Merged | First run crashed: `FBlendedCurve` needs an `FMemMark` outside anim evaluation (the tests make one) |
 | P4.3 IK Rig from the humanoid map | #153 | Merged | First build used `UIKRigDefinition::GetRetargetRoot`, which UE 5.6 doesn't have. Copilot's four findings fixed before the merge |
+| P4.4 Mapping from the humanoid map (D-4) | #159, #160 | Merged | Metadata convention, no plugin dependency. Copilot: 5 and 2 findings plus 1 missed, all fixed |
+| P4.6 Morph targets | #155 | Merged | Copilot: 4 findings and 3 "previously missed" over five rounds, all fixed |
+| P4.7 VMC protocol coverage | #156, #157 | #156 merged, #157 in review | #157 was stacked on #156; after #156's squash, the conflicts were only duplicated base changes (checked with `git diff` against `main`, rule 13) |
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, this PR | Merged | |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, this PR | Merged | |
 
-**Not started:** P4.4 to P4.7, and Phases 5 to 7.
+**Not started:** P4.5 (waits for D-7), and Phases 5 to 7.
 
 **Recommended next:**
-1. P4.4 per D-4 (the metadata convention), and decision D-7 (for P4.5).
-2. P4.6 (morph targets) and P4.7 (VMC protocol coverage), which need no decision.
+1. Decision D-7, then P4.5 (materials).
+2. Phase 5 (optimization).
 3. Owner: fix the runner's Application Control block (X-07).
 4. The editor checks below.
 
@@ -1168,6 +1184,9 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P4.4):** import a VRM, add a VMC source and set the subject remapper's Reference Skeleton to the imported mesh. The bone map fills from the mesh's `VRM.Humanoid.*` metadata and a VSeeFace stream drives the body with no other setup.
+- **In the editor (P4.6):** an expression whose morph has NORMAL deltas shades correctly (for example a VRoid face's mouth shapes); a target without them keeps its shading.
+- **In the editor (P4.7):** with Lock to First Sender on, a second sender is ignored and the status names the first. A capture with `/VMC/Ext/OK` calibration state 2 shows "calibrating". With Device and Camera Subjects on, VirtualMotionCapture's trackers and camera appear as subjects that a Live Link Controller follows.
 - **In the editor (P4.3):** import a VRM (ideally one with non-VRoid bone names). Its `IK_Rig_VRM_<mesh>` has the hips as retarget root and the chains listed in P4.3. Create an IK Retargeter from it to `IK_Mannequin` and check that every chain maps automatically and the mannequin follows an animation.
 - **In the editor (P4.2):** replay a VSeeFace capture (`scripts/vmc_sender.py replay`) into a VRoid avatar's AnimBP with a VRM Expressions node after the Live Link pose: the face follows with no curve map. Check that blinking stops while an expression with overrideBlink is active.
 - **In the editor (P4.1):** import a VRoid VRM 0.x and a VRM 1.0 avatar. `<Mesh>_Avatar` shows the humanoid map, expressions and meta; the licence notification appears; the spring data reference is set.
