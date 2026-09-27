@@ -19,28 +19,49 @@
 
 namespace
 {
-	/** Writes the humanoid map onto the mesh as metadata for VMCLiveLink (P4.4, D-4), replacing any
-	 *  left by an earlier import. Editor only; a no-op outside the editor. */
-	void WriteHumanoidMetadata(USkeletalMesh* Mesh, const FVRMAvatarData& Avatar)
+	/**
+	 * Writes the humanoid map onto the mesh as metadata for VMCLiveLink (P4.4, D-4), replacing any
+	 * left by an earlier import. Touches nothing when the tags are already right, so an unchanged
+	 * reimport doesn't dirty the mesh. Returns whether anything changed. Editor only.
+	 */
+	bool WriteHumanoidMetadata(USkeletalMesh* Mesh, const FVRMAvatarData& Avatar)
 	{
 		UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr;
 		if (!Assets || !Mesh)
 		{
-			return;
+			return false;
 		}
 		const FString Prefix = VRM::HumanoidMetadataPrefix;
-		for (const TPair<FName, FString>& Old : Assets->GetMetadataTagValues(Mesh))
+		TMap<FName, FString> Existing;
+		for (const TPair<FName, FString>& Tag : Assets->GetMetadataTagValues(Mesh))
 		{
-			const FString Key = Old.Key.ToString();
+			const FString Key = Tag.Key.ToString();
 			if (Key.StartsWith(Prefix) || Key == VRM::HumanoidMetadataVersionKey)
 			{
-				Assets->RemoveMetadataTag(Mesh, Old.Key);
+				Existing.Add(Tag.Key, Tag.Value);
 			}
 		}
-		for (const TPair<FName, FString>& Tag : VRM::MakeHumanoidMetadata(Avatar))
+		const TMap<FName, FString> Wanted = VRM::MakeHumanoidMetadata(Avatar);
+		if (Existing.OrderIndependentCompareEqual(Wanted))
 		{
-			Assets->SetMetadataTag(Mesh, Tag.Key, Tag.Value);
+			return false;
 		}
+		for (const TPair<FName, FString>& Tag : Existing)
+		{
+			if (!Wanted.Contains(Tag.Key))
+			{
+				Assets->RemoveMetadataTag(Mesh, Tag.Key);
+			}
+		}
+		for (const TPair<FName, FString>& Tag : Wanted)
+		{
+			const FString* Old = Existing.Find(Tag.Key);
+			if (!Old || *Old != Tag.Value)
+			{
+				Assets->SetMetadataTag(Mesh, Tag.Key, Tag.Value);
+			}
+		}
+		return true;
 	}
 }
 
@@ -130,8 +151,10 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	LastDescription = Description;
 
 	// The humanoid map, on the mesh itself, for VMCLiveLink's "Create Mapping" (no plugin dependency).
-	WriteHumanoidMetadata(Mesh, StagedAvatar);
-	Mesh->MarkPackageDirty();
+	if (WriteHumanoidMetadata(Mesh, StagedAvatar))
+	{
+		Mesh->MarkPackageDirty();
+	}
 
 	const FString License = VRM::DescribeLicense(StagedAvatar.Meta);
 	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] %s: %s"), *Description->GetPathName(), *License);

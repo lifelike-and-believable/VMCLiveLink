@@ -282,6 +282,7 @@ bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Hips metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.Hips")), Description->GetBone(EVRMHumanBone::Hips).ToString());
 		TestEqual(TEXT("Version metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.HumanoidVersion")), FString(TEXT("1")));
 		Assets->SetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand"), TEXT("Stale"));
+		TestEqual(TEXT("The stale key is there before the reimport"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand")), FString(TEXT("Stale")));
 	}
 
 	// Reimport with overwrite updates the same asset.

@@ -210,7 +210,7 @@ When the avatar description is generated, the importer also writes the humanoid 
 | Key | Value |
 |---|---|
 | `VRM.Humanoid.<UnityBoneName>` | The skeleton bone for that humanoid bone, e.g. `VRM.Humanoid.LeftUpperArm` = `J_Bip_L_UpperArm` |
-| `VRM.HumanoidVersion` | `1` |
+| `VRM.HumanoidVersion` | `1`, written only when at least one humanoid bone is mapped. A mesh without a humanoid map gets no keys at all, so a missing version just means "no map". |
 
 Keys use Unity `HumanBodyBones` names (what VMC senders stream). VRM 1.0's thumb is one joint off from Unity's: `leftThumbMetacarpal` is written as `LeftThumbProximal`, and `leftThumbProximal` as `LeftThumbIntermediate`. A reimport replaces the keys. Other tools can write the same keys to make any skeletal mesh mappable.
 

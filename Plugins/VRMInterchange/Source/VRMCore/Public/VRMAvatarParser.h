@@ -35,7 +35,8 @@ namespace VRM
 	 * The humanoid map as metadata for the imported skeletal mesh (P4.4, decision D-4): the
 	 * convention VMCLiveLink reads to map a VMC stream onto the mesh without depending on this
 	 * plugin. One key per mapped bone, "VRM.Humanoid.<UnityBoneName>" = the skeleton bone's name,
-	 * plus "VRM.HumanoidVersion" = "1". Documented in both plugins' READMEs; keep them in step.
+	 * plus "VRM.HumanoidVersion" = "1" when at least one bone is mapped. With no humanoid map the
+	 * result is empty (no version key either). Documented in both plugins' READMEs; keep them in step.
 	 */
 	VRMCORE_API TMap<FName, FString> MakeHumanoidMetadata(const FVRMAvatarData& Avatar);
 
