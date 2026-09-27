@@ -941,6 +941,7 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
     {
         const cgltf_mesh* Mesh2 = Instance.Node->mesh; // never null (see the first pass)
         const int32 NodeIndex = int32(Instance.Node - Data->nodes);
+        const TArray<FString>* MeshNames = Out.MeshMorphNames.Find(int32(Mesh2 - Data->meshes)); // from the first pass
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
         {
@@ -963,7 +964,7 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
 
             for (size_t ti = 0; ti < Prim2->targets_count; ++ti)
             {
-                const int32* FoundGlobal = NameToIndex.Find(MorphTargetName(Data, Mesh2, ti));
+                const int32* FoundGlobal = MeshNames && MeshNames->IsValidIndex(int32(ti)) ? NameToIndex.Find((*MeshNames)[ti]) : nullptr;
                 if (!FoundGlobal || !Out.Mesh.Morphs.IsValidIndex(*FoundGlobal))
                 {
                     continue; // every name was added in the first pass
