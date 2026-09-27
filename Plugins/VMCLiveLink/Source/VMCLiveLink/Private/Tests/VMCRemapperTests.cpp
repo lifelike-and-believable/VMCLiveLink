@@ -4,6 +4,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "VMCLiveLinkRemapper.h"
+#include "Engine/SkeletalMesh.h"
+#include "Misc/ScopeExit.h"
 #include "Roles/LiveLinkAnimationTypes.h"
 
 namespace VMCRemapperTests
@@ -143,4 +145,59 @@ bool FVMCRemapperInitializeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCRemapperHumanoidMetadataTest, "VMC.Remapper.HumanoidMetadata",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCRemapperHumanoidMetadataTest::RunTest(const FString& Parameters)
+{
+	// The convention VRM importers write (D-4): VRM.Humanoid.<UnityBoneName> = bone.
+	TMap<FName, FString> Tags;
+	Tags.Add(TEXT("VRM.Humanoid.Hips"), TEXT("J_Bip_C_Hips"));
+	Tags.Add(TEXT("VRM.Humanoid.LeftThumbProximal"), TEXT(" J_Bip_L_Thumb1 "));
+	Tags.Add(TEXT("VRM.HumanoidVersion"), TEXT("1"));  // not a bone
+	Tags.Add(TEXT("VRM.Humanoid."), TEXT("Nothing"));  // no bone name
+	Tags.Add(TEXT("VRM.Humanoid.Head"), TEXT(""));     // no target
+	Tags.Add(TEXT("Other.Tag"), TEXT("x"));
+	Tags.Add(TEXT("vrm.humanoid.Spine"), TEXT("J_Bip_C_Spine")); // FName keys can come back in any case
+	const TMap<FName, FName> Map = UVMCLiveLinkRemapper::MakeBoneMapFromHumanoidMetadata(Tags);
+	TestEqual(TEXT("Three bones"), Map.Num(), 3);
+	TestEqual(TEXT("Prefix in another case"), Map.FindRef(TEXT("Spine")), FName(TEXT("J_Bip_C_Spine")));
+	TestEqual(TEXT("Hips"), Map.FindRef(TEXT("Hips")), FName(TEXT("J_Bip_C_Hips")));
+	TestEqual(TEXT("Thumb, trimmed"), Map.FindRef(TEXT("LeftThumbProximal")), FName(TEXT("J_Bip_L_Thumb1")));
+
+	// On a remapper: only bones the reference skeleton has are kept; the map is replaced.
+	USkeletalMesh* Cube = LoadObject<USkeletalMesh>(nullptr, TEXT("/Engine/EngineMeshes/SkeletalCube.SkeletalCube"));
+	if (!TestNotNull(TEXT("SkeletalCube"), Cube) || !TestTrue(TEXT("SkeletalCube has a bone"), Cube->GetRefSkeleton().GetNum() > 0))
+	{
+		return false;
+	}
+	const FName CubeBone = Cube->GetRefSkeleton().GetBoneName(0);
+
+	const FVMCReadAssetMetadata Saved = UVMCLiveLinkRemapper::ReadAssetMetadata; // the editor module's
+	ON_SCOPE_EXIT { UVMCLiveLinkRemapper::ReadAssetMetadata = Saved; };
+	UVMCLiveLinkRemapper::ReadAssetMetadata = [CubeBone](UObject*)
+	{
+		TMap<FName, FString> OnMesh;
+		OnMesh.Add(TEXT("VRM.Humanoid.Hips"), CubeBone.ToString());
+		OnMesh.Add(TEXT("VRM.Humanoid.Head"), TEXT("NotInTheSkeleton"));
+		OnMesh.Add(TEXT("VRM.HumanoidVersion"), TEXT("1"));
+		return OnMesh;
+	};
+
+	UVMCLiveLinkRemapper* Remapper = NewObject<UVMCLiveLinkRemapper>();
+	Remapper->ReferenceSkeleton = Cube;
+	Remapper->BoneNameMap.Add(TEXT("Old"), TEXT("old"));
+	AddExpectedError(TEXT("which its skeleton doesn't have"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("Mapped from the metadata"), Remapper->MapBonesFromHumanoidMetadata());
+	TestEqual(TEXT("... replacing the map, without the missing bone"), Remapper->BoneNameMap.Num(), 1);
+	TestEqual(TEXT("... Hips to the mesh's bone"), Remapper->BoneNameMap.FindRef(TEXT("Hips")), CubeBone);
+
+	// A mesh without the metadata leaves the map alone.
+	UVMCLiveLinkRemapper::ReadAssetMetadata = [](UObject*) { return TMap<FName, FString>(); };
+	TestFalse(TEXT("No metadata: nothing to map"), Remapper->MapBonesFromHumanoidMetadata());
+	TestEqual(TEXT("... map kept"), Remapper->BoneNameMap.Num(), 1);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
+

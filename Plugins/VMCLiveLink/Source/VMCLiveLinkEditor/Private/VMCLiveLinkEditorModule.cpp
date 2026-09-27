@@ -6,6 +6,8 @@
 #include "PropertyEditorModule.h"
 #include "VMCLiveLinkRemapper.h"
 #include "VMCLiveLinkRemapperCustomization.h"
+#include "Editor.h"
+#include "Subsystems/EditorAssetSubsystem.h"
 
 
 #define LOCTEXT_NAMESPACE "FVMCLiveLinkEditorModule"
@@ -35,12 +37,20 @@ public:
 		FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyEditor.RegisterCustomClassLayout(UVMCLiveLinkRemapper::StaticClass()->GetFName(),
 			FOnGetDetailCustomizationInstance::CreateStatic(&FVMCLiveLinkRemapperCustomization::MakeInstance));
+
+		// Lets the runtime remapper read a mesh's humanoid-map metadata (P4.4, D-4).
+		UVMCLiveLinkRemapper::ReadAssetMetadata = [](UObject* Object)
+		{
+			UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr;
+			return Assets && Object ? Assets->GetMetadataTagValues(Object) : TMap<FName, FString>();
+		};
 #endif
 	}
 
 	virtual void ShutdownModule() override
 	{
 #if WITH_EDITOR
+		UVMCLiveLinkRemapper::ReadAssetMetadata = nullptr;
 		if (FPropertyEditorModule* PropertyEditor = FModuleManager::GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
 		{
 			PropertyEditor->UnregisterCustomClassLayout(UVMCLiveLinkRemapper::StaticClass()->GetFName());
