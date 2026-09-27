@@ -209,6 +209,9 @@ bool FVMCProtocolAvailableTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Calibrated is"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 3, 0 }), Conn).bSenderStateChanged);
 	TestTrue(TEXT("Kept"), Assembler.GetSenderState().IsSet() && Assembler.GetSenderState()->Calibration.Get(-1) == 3);
 	TestTrue(TEXT("A malformed OK is reported"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 3 }), Conn).bMalformed);
+	Assembler.ClearSenderState();
+	TestFalse(TEXT("Cleared"), Assembler.GetSenderState().IsSet());
+	TestTrue(TEXT("After clearing, the same OK is a change again"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 3, 0 }), Conn).bSenderStateChanged);
 	return true;
 }
 
