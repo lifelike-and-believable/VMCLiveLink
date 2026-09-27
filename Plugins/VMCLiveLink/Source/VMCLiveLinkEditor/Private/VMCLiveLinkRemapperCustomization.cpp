@@ -63,6 +63,9 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 	AddButton(LOCTEXT("ApplyAsset", "Apply Mapping Asset"),
 		LOCTEXT("ApplyAssetTip", "Replaces the maps with the selected mapping asset's."),
 		[this]() { return Run(LOCTEXT("ApplyAssetTx", "Apply VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R) { R.ApplyMappingAsset(R.MappingAsset.LoadSynchronous()); }); });
+	AddButton(LOCTEXT("FromHumanoid", "Map Bones From Humanoid Metadata"),
+		LOCTEXT("FromHumanoidTip", "Replaces the bone map with the humanoid map stored on the reference skeleton (VRM.Humanoid.* metadata, written by VRM importers). Curves are left as they are."),
+		[this]() { return Run(LOCTEXT("FromHumanoidTx", "Map VMC Bones From Humanoid Metadata"), [](UVMCLiveLinkRemapper& R) { R.MapBonesFromHumanoidMetadata(); }); });
 	AddButton(LOCTEXT("AutoDetect", "Auto-Detect Mapping"),
 		LOCTEXT("AutoDetectTip", "Finds the mapping asset made for the reference skeleton and applies it."),
 		[this]() { return Run(LOCTEXT("AutoDetectTx", "Auto-Detect VMC Mapping"), [](UVMCLiveLinkRemapper& R) { R.AutoDetectAndApplyMapping(); }); });
@@ -80,7 +83,7 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 		LOCTEXT("CreateAssetTip", "Creates a mapping asset from the current maps and the reference skeleton's signature, and selects it."),
 		[this]() { return Run(LOCTEXT("CreateTx", "Create VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R) { CreateMappingAsset(R); }); });
 
-	Tools.AddCustomRow(LOCTEXT("MappingToolsFilter", "Mapping Tools Preset Asset Seed Detect Save Create"))
+	Tools.AddCustomRow(LOCTEXT("MappingToolsFilter", "Mapping Tools Preset Asset Seed Detect Save Create Humanoid Metadata"))
 		.WholeRowContent()
 		[
 			Buttons

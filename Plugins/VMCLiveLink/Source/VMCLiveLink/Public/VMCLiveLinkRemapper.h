@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Templates/Function.h"
 #include "UObject/ObjectMacros.h"
 #include "ILiveLinkClient.h"
 #include "Features/IModularFeatures.h"
@@ -85,6 +86,9 @@ private:
 	bool bWarnedDuplicateCurves = false;
 };
 
+/** Reads an asset's editor metadata tags (see UVMCLiveLinkRemapper::ReadAssetMetadata). */
+using FVMCReadAssetMetadata = TFunction<TMap<FName, FString>(UObject*)>;
+
 // ---------------- Asset ----------------
 /**
  * Renames VMC bones and curves for a target skeleton (P3.2). Editing tools (apply or save a mapping
@@ -158,6 +162,26 @@ public:
 	 */
 	bool StartAutoDetectMapping(bool bOnlyIfMapsEmpty);
 
+	/**
+	 * The humanoid-map metadata convention shared with VRM importers (decision D-4; no plugin
+	 * dependency): a skeletal mesh may carry editor metadata "VRM.Humanoid.<UnityBoneName>" = its
+	 * bone. Returns that as a bone map (Unity bone name, which VMC streams, to the mesh's bone).
+	 * Other keys, and "VRM.HumanoidVersion", are ignored.
+	 */
+	static TMap<FName, FName> MakeBoneMapFromHumanoidMetadata(const TMap<FName, FString>& Tags);
+
+	/**
+	 * Replaces the bone map with the reference skeleton's humanoid metadata (see above), keeping only
+	 * bones the skeleton has. False, leaving the map alone, if the mesh has no such metadata. Editor
+	 * only: the metadata isn't in cooked builds.
+	 */
+	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
+	bool MapBonesFromHumanoidMetadata();
+
+	/** Reads an asset's editor metadata. The editor module sets it (this runtime module can't read
+	 *  editor metadata itself); unset outside the editor. */
+	static FVMCReadAssetMetadata ReadAssetMetadata;
+
 	/** Saves the current maps into an asset (and the reference skeleton's signature, if asked). */
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	void SaveCurrentMappingTo(UVMCLiveLinkMappingAsset* Asset, bool bCaptureSignatureFromReference);
@@ -207,6 +231,9 @@ private:
 	USkeletalMesh* ResolveReferenceSkeleton() const;
 
 	void SeedFromReferenceSkeleton();
+
+	/** MapBonesFromHumanoidMetadata for a given mesh. */
+	bool ApplyHumanoidMetadata(USkeletalMesh* Ref);
 
 	/** Map entries a preset seeds. None and Custom seed nothing. */
 	static void GetPresetMaps(ELLRemapPreset InPreset, TMap<FName, FName>& OutBones, TMap<FName, FName>& OutCurves);

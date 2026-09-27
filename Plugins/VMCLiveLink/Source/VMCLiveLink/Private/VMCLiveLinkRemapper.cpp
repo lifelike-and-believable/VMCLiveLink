@@ -31,6 +31,56 @@ static void GetBoneNames(TSoftObjectPtr<USkeletalMesh> Mesh, TArray<FName>& Out)
 	}
 }
 
+FVMCReadAssetMetadata UVMCLiveLinkRemapper::ReadAssetMetadata;
+
+TMap<FName, FName> UVMCLiveLinkRemapper::MakeBoneMapFromHumanoidMetadata(const TMap<FName, FString>& Tags)
+{
+	static const FString Prefix = TEXT("VRM.Humanoid.");
+	TMap<FName, FName> Out;
+	for (const TPair<FName, FString>& Tag : Tags)
+	{
+		const FString Key = Tag.Key.ToString();
+		const FString Bone = Tag.Value.TrimStartAndEnd();
+		if (Key.StartsWith(Prefix, ESearchCase::CaseSensitive) && Key.Len() > Prefix.Len() && !Bone.IsEmpty())
+		{
+			Out.Add(FName(Key.RightChop(Prefix.Len())), FName(Bone));
+		}
+	}
+	return Out;
+}
+
+bool UVMCLiveLinkRemapper::MapBonesFromHumanoidMetadata()
+{
+	return ApplyHumanoidMetadata(ResolveReferenceSkeleton());
+}
+
+bool UVMCLiveLinkRemapper::ApplyHumanoidMetadata(USkeletalMesh* Ref)
+{
+	if (!Ref || !ReadAssetMetadata)
+	{
+		return false;
+	}
+	TMap<FName, FName> Bones = MakeBoneMapFromHumanoidMetadata(ReadAssetMetadata(Ref));
+	const FReferenceSkeleton& RefSkel = Ref->GetRefSkeleton();
+	for (auto It = Bones.CreateIterator(); It; ++It)
+	{
+		if (RefSkel.FindBoneIndex(It.Value()) == INDEX_NONE)
+		{
+			UE_LOG(LogVMCLiveLink, Warning, TEXT("Humanoid metadata on '%s' maps %s to '%s', which its skeleton doesn't have; skipped."),
+				*Ref->GetName(), *It.Key().ToString(), *It.Value().ToString());
+			It.RemoveCurrent();
+		}
+	}
+	if (Bones.Num() == 0)
+	{
+		return false;
+	}
+	BoneNameMap = MoveTemp(Bones);
+	MarkDirty();
+	UE_LOG(LogVMCLiveLink, Log, TEXT("Bone map taken from the humanoid metadata on '%s' (%d bones)."), *Ref->GetName(), BoneNameMap.Num());
+	return true;
+}
+
 USkeletalMesh* UVMCLiveLinkRemapper::ResolveReferenceSkeleton() const
 {
 	if (USkeletalMesh* Mesh = ReferenceSkeleton.LoadSynchronous())
@@ -572,6 +622,12 @@ void UVMCLiveLinkRemapper::SeedFromReferenceSkeleton()
 			ApplyMappingAsset(Explicit, /*bAlsoCaptureSignature=*/false);
 			return;
 		}
+	}
+
+	// A mesh that carries its humanoid map (a VRM import, say) maps the bones exactly; curves pass through.
+	if (ApplyHumanoidMetadata(Ref))
+	{
+		return;
 	}
 
 	// Otherwise look for one, without blocking
