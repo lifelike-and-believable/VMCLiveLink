@@ -889,37 +889,39 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
     TArray<FString> OrderedNames; // deterministic order of Out.Mesh.Morphs
     TMap<FString, const cgltf_mesh*> NameToMesh; // the first mesh that has each name
 
-    // First pass: every target's name.
+    // First pass: every target's name, once per glTF mesh (its primitives share the targets, and a
+    // mesh placed by several nodes has the same ones each time).
     for (const FVRMMeshInstance& Instance : Instances)
     {
         const cgltf_mesh* Mesh2 = Instance.Node->mesh; // never null: instances are made only for nodes with a mesh
-        TArray<FString>& MeshNames = Out.MeshMorphNames.FindOrAdd(int32(Mesh2 - Data->meshes));
+        const int32 MeshIndex = int32(Mesh2 - Data->meshes);
+        if (Out.MeshMorphNames.Contains(MeshIndex))
+        {
+            continue;
+        }
+        TArray<FString>& MeshNames = Out.MeshMorphNames.Add(MeshIndex);
 
+        size_t TargetCount = 0;
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
         {
-            const cgltf_primitive* Prim2 = &Mesh2->primitives[pi2];
-            for (size_t ti = 0; ti < Prim2->targets_count; ++ti)
+            TargetCount = FMath::Max(TargetCount, Mesh2->primitives[pi2].targets_count);
+        }
+        for (size_t ti = 0; ti < TargetCount; ++ti)
+        {
+            const FString TargetName = MorphTargetName(Data, Mesh2, ti);
+            MeshNames.Add(TargetName);
+
+            if (!NameToIndex.Contains(TargetName))
             {
-                const FString TargetName = MorphTargetName(Data, Mesh2, ti);
-
-                if (MeshNames.Num() <= int32(ti))
-                {
-                    MeshNames.SetNum(int32(ti) + 1);
-                }
-                MeshNames[ti] = TargetName;
-
-                if (!NameToIndex.Contains(TargetName))
-                {
-                    NameToIndex.Add(TargetName, OrderedNames.Add(TargetName));
-                    NameToMesh.Add(TargetName, Mesh2);
-                }
-                else if (const cgltf_mesh* First = NameToMesh.FindRef(TargetName); First && First != Mesh2)
-                {
-                    // Different meshes, different shapes: an expression bound to one moves both.
-                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Meshes %s and %s both have a morph target named '%s'; they are imported as one morph target, so an expression bound to either moves both."),
-                        *MeshDisplayName(Data, First), *MeshDisplayName(Data, Mesh2), *TargetName);
-                    NameToMesh[TargetName] = nullptr; // warn once per name
-                }
+                NameToIndex.Add(TargetName, OrderedNames.Add(TargetName));
+                NameToMesh.Add(TargetName, Mesh2);
+            }
+            else if (const cgltf_mesh* First = NameToMesh.FindRef(TargetName); First && First != Mesh2)
+            {
+                // Different meshes, different shapes: an expression bound to one moves both.
+                UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Meshes %s and %s both have a morph target named '%s'; they are imported as one morph target, so an expression bound to either moves both."),
+                    *MeshDisplayName(Data, First), *MeshDisplayName(Data, Mesh2), *TargetName);
+                NameToMesh[TargetName] = nullptr; // warn once per name
             }
         }
     }
