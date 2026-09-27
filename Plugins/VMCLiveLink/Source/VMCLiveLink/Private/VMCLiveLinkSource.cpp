@@ -596,15 +596,22 @@ void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double Arrival
     {
         return;
     }
+    TMap<FName, FName>& Subjects = Device.bCamera ? CameraSubjects : DeviceSubjects;
+    const TMap<FName, FName>& Others = Device.bCamera ? DeviceSubjects : CameraSubjects;
     FName Subject;
-    if (const FName* Found = DeviceSubjects.Find(Device.Name))
+    if (const FName* Found = Subjects.Find(Device.Name))
     {
         Subject = *Found;
     }
     else
     {
-        // First pose from this device: its subject's static data, once.
+        // First pose from this device: its subject's static data, once. A camera named like a
+        // device's serial (or the other way round) gets a suffix, so the two never share a subject.
         Subject = VMCProtocol::MakeDeviceSubjectName(Snap.Settings.SubjectName, Device.Name);
+        if (Others.FindKey(Subject))
+        {
+            Subject = FName(*FString::Printf(TEXT("%s_%s"), *Subject.ToString(), Device.bCamera ? TEXT("Camera") : TEXT("Device")));
+        }
         if (Device.bCamera)
         {
             FLiveLinkStaticDataStruct Static(FLiveLinkCameraStaticData::StaticStruct());
@@ -616,11 +623,11 @@ void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double Arrival
             FLiveLinkStaticDataStruct Static(FLiveLinkTransformStaticData::StaticStruct());
             Client->PushSubjectStaticData_AnyThread({ SourceGuid, Subject }, ULiveLinkTransformRole::StaticClass(), MoveTemp(Static));
         }
-        DeviceSubjects.Add(Device.Name, Subject);
+        Subjects.Add(Device.Name, Subject);
         UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': publishing %s '%s' as subject '%s'."),
             *SourceName, Device.bCamera ? TEXT("camera") : TEXT("device"), *Device.Name.ToString(), *Subject.ToString());
         FScopeLock Lock(&StatsLock);
-        NumDeviceSubjects = DeviceSubjects.Num();
+        NumDeviceSubjects = DeviceSubjects.Num() + CameraSubjects.Num();
     }
 
     FLiveLinkFrameDataStruct Frame(Device.bCamera ? FLiveLinkCameraFrameData::StaticStruct() : FLiveLinkTransformFrameData::StaticStruct());
@@ -643,12 +650,16 @@ void FVMCLiveLinkSource::RemoveDeviceSubjects()
 {
     if (Client)
     {
-        for (const TPair<FName, FName>& Pair : DeviceSubjects)
+        for (const TMap<FName, FName>* Subjects : { &DeviceSubjects, &CameraSubjects })
         {
-            Client->RemoveSubject_AnyThread({ SourceGuid, Pair.Value });
+            for (const TPair<FName, FName>& Pair : *Subjects)
+            {
+                Client->RemoveSubject_AnyThread({ SourceGuid, Pair.Value });
+            }
         }
     }
     DeviceSubjects.Reset();
+    CameraSubjects.Reset();
     FScopeLock Lock(&StatsLock);
     NumDeviceSubjects = 0;
 }

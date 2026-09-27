@@ -125,7 +125,8 @@ private:
     // Frame building (one thread at a time)
     TUniquePtr<FVMCFrameAssembler> Assembler;
     TUniquePtr<FVMCSenderFilter> SenderFilter; // configured by the game thread while nothing is received
-    TMap<FName, FName> DeviceSubjects; // device or camera name -> its published subject; cleared while nothing is received
+    TMap<FName, FName> DeviceSubjects; // device serial -> its published subject; cleared while nothing is received
+    TMap<FName, FName> CameraSubjects; // camera name -> its published subject (kept apart: a name can match a serial)
     void InitSkeleton();
     bool bStaticDirty = false;           // a new bone or curve arrived
     uint32 PublishedStaticVersion = 0;   // snapshot version of the last static publish
