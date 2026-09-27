@@ -405,12 +405,18 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
 
         const bool bHaveDeltas = PMorph.DeltaPositions.Num() == PMesh.Positions.Num();
         // Without NORMAL deltas in the file the morph keeps the base normals (no shading change).
-        const bool bHaveNormalDeltas = PMorph.DeltaNormals.Num() == PMesh.Normals.Num();
-        auto MorphedNormal = [&PMesh, &PMorph, bHaveNormalDeltas](int32 Index)
+        // With them, each vertex's morphed normal is worked out once, not per triangle corner.
+        TArray<FVector3f> MorphedNormals;
+        if (PMorph.DeltaNormals.Num() == PMesh.Normals.Num())
         {
-            const FVector3f& Base = PMesh.Normals[Index];
-            return bHaveNormalDeltas ? (Base + PMorph.DeltaNormals[Index]).GetSafeNormal(UE_SMALL_NUMBER, Base) : Base;
-        };
+            MorphedNormals.SetNumUninitialized(PMesh.Normals.Num());
+            for (int32 n = 0; n < PMesh.Normals.Num(); ++n)
+            {
+                MorphedNormals[n] = (PMesh.Normals[n] + PMorph.DeltaNormals[n]).GetSafeNormal(UE_SMALL_NUMBER, PMesh.Normals[n]);
+            }
+        }
+        const TArray<FVector3f>& FinalNormals = MorphedNormals.Num() > 0 ? MorphedNormals : PMesh.Normals;
+        auto MorphedNormal = [&FinalNormals](int32 Index) { return FinalNormals[Index]; };
 
         for (int32 vi = 0; vi < PMesh.Positions.Num(); ++vi)
         {
