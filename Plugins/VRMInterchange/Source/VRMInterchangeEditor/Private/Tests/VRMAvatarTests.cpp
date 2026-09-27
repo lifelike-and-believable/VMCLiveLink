@@ -247,6 +247,11 @@ bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
 	// The pipeline makes <Mesh>_Avatar next to the character once the mesh arrives, and updates it on reimport.
 	using namespace VRMAvatarTests;
 	const FString ContentBase = TEXT("/Game/VRMAvatarTests");
+	UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr;
+	if (!TestNotNull(TEXT("Editor asset subsystem (the humanoid metadata is written through it)"), Assets))
+	{
+		return false;
+	}
 	UInterchangeSourceData* Source = NewObject<UInterchangeSourceData>();
 	Source->SetFilename(FixturePath(TEXT("vrm1_minimal"), TEXT(".vrm")));
 	UPackage* MeshPackage = CreatePackage(*(ContentBase / TEXT("vrm1_minimal") / TEXT("SK_AvatarTest")));
@@ -277,22 +282,16 @@ bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Source hash"), Description->SourceHash.IsEmpty());
 
 	// The humanoid map is on the mesh as metadata, in Unity names, for VMCLiveLink (P4.4).
-	if (UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr)
-	{
-		TestEqual(TEXT("Hips metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.Hips")), Description->GetBone(EVRMHumanBone::Hips).ToString());
-		TestEqual(TEXT("Version metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.HumanoidVersion")), FString(TEXT("1")));
-		Assets->SetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand"), TEXT("Stale"));
-		TestEqual(TEXT("The stale key is there before the reimport"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand")), FString(TEXT("Stale")));
-	}
+	TestEqual(TEXT("Hips metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.Hips")), Description->GetBone(EVRMHumanBone::Hips).ToString());
+	TestEqual(TEXT("Version metadata"), Assets->GetMetadataTag(Mesh, TEXT("VRM.HumanoidVersion")), FString(TEXT("1")));
+	Assets->SetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand"), TEXT("Stale"));
+	TestEqual(TEXT("The stale key is there before the reimport"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand")), FString(TEXT("Stale")));
 
 	// Reimport with overwrite updates the same asset.
 	Description->Avatar.Expressions.Reset();
 	TestTrue(TEXT("Overwrite keeps the asset"), Run(true, true) == Description);
 	TestEqual(TEXT("... with fresh data"), Description->Avatar.Expressions.Num(), 1);
-	if (UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr)
-	{
-		TestEqual(TEXT("A reimport drops keys the avatar no longer has"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand")), FString());
-	}
+	TestEqual(TEXT("A reimport drops keys the avatar no longer has"), Assets->GetMetadataTag(Mesh, TEXT("VRM.Humanoid.LeftHand")), FString());
 
 	// Turned off, nothing is staged.
 	UVRMAvatarDescriptionPipeline* Off = NewObject<UVRMAvatarDescriptionPipeline>();
