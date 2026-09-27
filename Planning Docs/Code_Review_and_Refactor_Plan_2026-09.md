@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-26):** 33 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1, and P7.1), plus two unplanned fixes. `main` builds (the Editor build without unity files) and passes all 73 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-27):** 34 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1, P4.2, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 76 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -500,6 +500,7 @@ File: `VRMSpringBonesRuntime/Private/AnimNode_VRMSpringBones.cpp` (abbreviated `
 11. **Tests don't depend on project config.** Tests that read `UDeveloperSettings` or other config must compare against the loaded settings, or set the values they need and restore them. Never assert on values that `Config/*.ini` can change (X-05).
 12. **CI must go green.** A PR is ready only when `PR Build and Tests` passes on its latest commit. Scripts called from CI must `exit 0` explicitly: PowerShell leaves `$LASTEXITCODE` unset after a script that doesn't exit, and `$null -ne 0` is true.
 13. **Check a merge before pushing it.** After merging `main` into a branch (especially one stacked on a squash-merged PR), run `git diff origin/main HEAD --stat` and confirm it shows only this PR's change. Git can auto-merge two identical additions with different surrounding lines into a duplicate, with no conflict reported (X-07).
+14. **Read the review before merging.** Copilot reviews a PR only once it leaves draft, so mark it ready and wait for the review of the latest commit. Merge only when every finding is fixed or answered on its thread and the thread is resolved. Findings on #99 to #147 were missed because PRs were marked ready and merged in one step.
 
 Task format below: **Resolves** (finding IDs) · **Depends on** · **Files** · **Steps** · **Acceptance**.
 
@@ -909,6 +910,11 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - Maps VRM 0.x and 1.0 expression names onto each other (Joy ↔ happy, A ↔ aa, and so on) so either sender version works with either avatar version.
 - Update the Live Link template ABP to use this node (a template asset change, described in the PR).
 - **Acceptance:** replaying a VSeeFace capture drives the correct morph targets on a VRoid VRM with no hand-authored curve map.
+- **Status (#145, merged):** the node works in tests; the acceptance replay is an editor check.
+  - `FAnimNode_VRMExpressions` is in `VRMCore`; its graph node is in `VRMSpringBonesEditor` (the plugin's existing anim graph editor module) rather than a new module.
+  - Names: an expression's own name, or its preset's VRM 1.0 or 0.x name, in any case. Binary rounding and the blink, look-at and mouth overrides follow three-vrm. Only morphs of expressions that had an input curve are written.
+  - Tests: `VRM.Expressions.Rules`, `.CrossVersion`.
+  - **Deviations:** weights come from curves only, not pins (a Modify Curve node can feed Blueprint values). The template Live Link AnimBP doesn't use the node yet; that is a `.uasset` change for the editor, and the README says how to add it.
 
 ### P4.3 IK Rig generated from the humanoid map
 - **Resolves:** PE-05 · **Depends on:** P4.1, P3.4
@@ -1108,17 +1114,18 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P3.3 One parse per VRM file (`VRMCore`) | #136, #137 | Merged | #136's first run warned (missing-file read); #137's first build used a translator API UE 5.6 doesn't have, and its next run hit error 4551 (re-run cleared it) |
 | P3.4 Pipeline base, post-import step, actor wiring | #139, #140 | Merged | #140's first three runs crashed on a bare test `USkeletalMesh` (no bones or LODs); the tests use `SkeletalCube` |
 | P3.5 Build files and platforms | #142 | Merged | Win64 only (D-2). The first push had an unquoted `:` in a workflow step name, which made the workflow invalid, so no jobs ran |
-| P4.1 Avatar description asset | #143, #144 | Merged | |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, this PR | Merged | |
+| P4.1 Avatar description asset | #143, #144 | Merged | Copilot's reviews came after the merges; its findings were fixed in #147 |
+| P4.2 VRM Expressions node | #145 | Merged | First run crashed: `FBlendedCurve` needs an `FMemMark` outside anim evaluation (the tests make one) |
+| (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, this PR | Merged | |
 
-**Not started:** P4.2 to P4.7, and Phases 5 to 7.
+**Not started:** P4.3 to P4.7, and Phases 5 to 7.
 
 **Recommended next:**
-1. P4.2: the "VRM Expressions" AnimGraph node, driven by `UVRMAvatarDescription`.
-2. P4.3: the IK Rig generated from the humanoid map.
-3. Decisions D-4 (for P4.4) and D-7 (for P4.5).
-4. Owner: fix the runner's Application Control block (X-07).
-5. The editor checks below.
+1. P4.3: the IK Rig generated from the humanoid map.
+2. Decisions D-4 (for P4.4) and D-7 (for P4.5).
+3. Owner: fix the runner's Application Control block (X-07).
+4. The editor checks below.
 
 ### How the merges went
 
@@ -1140,7 +1147,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
   - the VMC tests never ran (X-07).
 
   All are fixed or fixed in this PR. The general lesson is that code that has never been compiled or run needs a fix round once it is.
-- **New rules:** B.0 rules 10 to 13. New task: P0.5.
+- **New rules:** B.0 rules 10 to 13, and rule 14 after the Copilot backlog. New task: P0.5.
 - **Runner:** one unexplained cancellation (X-07), not seen again. The Application Control block (error 4551) has now hit five builds (#115, #121 twice, #123, #137). Re-runs cleared it each time. Nothing has changed on the runner, so expect it again (X-07).
 - **Engine objects in tests need to be real enough for engine code:** a bare `NewObject<USkeletalMesh>` was fine for asset references (P1.15, P3.4a) but crashed the editor three times once a component and a Blueprint compile used it (#140). Load a small engine asset (`/Engine/EngineMeshes/SkeletalCube`) when components or compiles are involved.
 - **Shadowing is an error here:** two first builds failed on C4458 (a local named like a member). Before pushing, check new locals against the class's members, including in static member functions.
@@ -1154,6 +1161,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P4.2):** replay a VSeeFace capture (`scripts/vmc_sender.py replay`) into a VRoid avatar's AnimBP with a VRM Expressions node after the Live Link pose: the face follows with no curve map. Check that blinking stops while an expression with overrideBlink is active.
 - **In the editor (P4.1):** import a VRoid VRM 0.x and a VRM 1.0 avatar. `<Mesh>_Avatar` shows the humanoid map, expressions and meta; the licence notification appears; the spring data reference is set.
 - **In the editor (P3.4):** import a VRM with the spring bone, IK Rig, Live Link and material pipelines. Open `BP_LL_VRM_<name>` and `BP_LL_VRM_To_UE5_<name>`: the mesh and anim Blueprint are set, and a placed actor shows the character. Reimport with and without Overwrite: with it, the same assets are updated; without it, new ones get unique names.
 - **In the editor (P3.3):** import a VRM 0.x and a VRM 1.0 avatar and compare the skeletal mesh, textures, materials and spring data asset with an import made before #136; reimport one. Open a spring data asset saved before #137 (it had `RawJson`) and check it loads.
