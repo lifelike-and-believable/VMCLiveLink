@@ -64,6 +64,16 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VMC|Senders")
 	bool bLockToFirstSender = false;
 
+	/** Publish each tracker, headset and controller the sender streams as a Live Link subject with the
+	 *  Transform role, named "<Subject Name>_<serial>" (world space, same conversion as the root). */
+	UPROPERTY(EditAnywhere, Category = "VMC|Devices")
+	bool bDeviceSubjects = false;
+
+	/** Publish the sender's camera as a Live Link subject with the Camera role (transform and field of
+	 *  view), named "<Subject Name>_<camera name>". */
+	UPROPERTY(EditAnywhere, Category = "VMC|Devices")
+	bool bCameraSubject = false;
+
 	FVMCConnectionSettings ToConnectionSettings() const;
 	void FromConnectionSettings(const FVMCConnectionSettings& In);
 };

@@ -22,6 +22,8 @@ FVMCConnectionSettings UVMCLiveLinkSourceSettings::ToConnectionSettings() const
 		}
 	}
 	Out.bLockToFirstSender = bLockToFirstSender;
+	Out.bDeviceSubjects = bDeviceSubjects;
+	Out.bCameraSubject = bCameraSubject;
 	return Out;
 }
 
@@ -38,6 +40,8 @@ void UVMCLiveLinkSourceSettings::FromConnectionSettings(const FVMCConnectionSett
 	bReceiveThread = In.bReceiveThread;
 	AllowedSenders = In.AllowedSenders;
 	bLockToFirstSender = In.bLockToFirstSender;
+	bDeviceSubjects = In.bDeviceSubjects;
+	bCameraSubject = In.bCameraSubject;
 	// Presets recreate the source from the connection string, so keep it in step.
 	ConnectionString = In.ToString();
 }

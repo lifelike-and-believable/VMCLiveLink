@@ -21,8 +21,10 @@ namespace VMCProtocol
 		BlendApply,  // /VMC/Ext/Blend/Apply
 		Time,        // /VMC/Ext/T
 		Available,   // /VMC/Ext/OK
-		DevicePos,   // /VMC/Ext/Hmd/Pos, Con/Pos, Tra/Pos and their /Local variants
-		Other,       // anything else (camera, keys, MIDI, settings, non-VMC)
+		DevicePos,      // /VMC/Ext/Hmd/Pos, Con/Pos, Tra/Pos: a tracked device in world space
+		DevicePosLocal, // their /Local variants (relative to the avatar's root; not used)
+		Camera,         // /VMC/Ext/Cam
+		Other,          // anything else (keys, MIDI, settings, non-VMC)
 	};
 
 	/** Which VMC message an OSC address is. Case-sensitive, as OSC addresses are. */
@@ -80,6 +82,16 @@ namespace VMCProtocol
 	 * bOutLegacyForm, since earlier VMCLiveLink versions and test senders used it.
 	 */
 	bool ParseRootPos(TConstArrayView<FArg> Args, FPose& Out, bool& bOutLegacyForm);
+
+	/** /VMC/Ext/Hmd|Con|Tra/Pos: (string serial, 7 floats), like Bone/Pos. */
+	inline bool ParseDevicePos(TConstArrayView<FArg> Args, FPose& Out) { return ParseBonePos(Args, Out); }
+
+	/** /VMC/Ext/Cam: (string name, 7 floats, float fov in degrees). A field of view that isn't
+	 *  finite, or not between 0 and 180 degrees, fails. */
+	bool ParseCamera(TConstArrayView<FArg> Args, FPose& Out, float& OutFieldOfView);
+
+	/** The Live Link subject a device or camera is published as: "<Subject>_<Name>". */
+	FName MakeDeviceSubjectName(FName Subject, FName DeviceName);
 
 	/** /VMC/Ext/Blend/Val: (string name, float value). */
 	bool ParseBlendVal(TConstArrayView<FArg> Args, FName& OutName, float& OutValue);

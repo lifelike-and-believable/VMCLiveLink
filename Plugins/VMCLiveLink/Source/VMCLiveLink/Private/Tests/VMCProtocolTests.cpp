@@ -8,6 +8,7 @@
 #include "VMCHumanoid.h"
 #include "VMCProtocol.h"
 #include "VMCSenderFilter.h"
+#include <limits>
 
 namespace VMCProtocolTests
 {
@@ -247,5 +248,50 @@ bool FVMCSenderFilterTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCProtocolDevicesTest, "VMC.Protocol.Devices",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCProtocolDevicesTest::RunTest(const FString& Parameters)
+{
+	using namespace VMCProtocol;
+	using VMCProtocolTests::Floats;
+
+	// /VMC/Ext/Cam: name, 7 floats, field of view.
+	FPose Pose;
+	float Fov = 0.f;
+	TestTrue(TEXT("Camera parses"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 60 }, TEXT("Camera")), Pose, Fov));
+	TestEqual(TEXT("... name"), Pose.Name, FName(TEXT("Camera")));
+	TestEqual(TEXT("... field of view"), Fov, 60.f);
+	TestFalse(TEXT("Camera without a field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1 }, TEXT("Camera")), Pose, Fov));
+	TestTrue(TEXT("... leaves no field of view behind"), Fov == 0.f && Pose.Name.IsNone());
+	TestFalse(TEXT("Camera without a name"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 60, 0 }), Pose, Fov));
+	TestFalse(TEXT("A zero field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 0 }, TEXT("Camera")), Pose, Fov));
+	TestFalse(TEXT("A 180-degree field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 180 }, TEXT("Camera")), Pose, Fov));
+	TestFalse(TEXT("A NaN field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, std::numeric_limits<float>::quiet_NaN() }, TEXT("Camera")), Pose, Fov));
+	TestEqual(TEXT("Subject names"), MakeDeviceSubjectName(TEXT("VMC_Subject"), TEXT("LHR-1234ABCD")), FName(TEXT("VMC_Subject_LHR-1234ABCD")));
+
+	// The assembler hands devices and the camera back in UE world space, with the root's yaw; the
+	// /Local variants are not used.
+	FVMCFrameAssembler Assembler;
+	FVMCConnectionSettings Conn;
+	Conn.YawOffsetDeg = 90.f;
+	const FVMCFrameAssembler::FMessageResult Tracker = Assembler.ApplyMessage(EAddress::DevicePos, Floats({ 1, 2, 3, 0, 0, 0, 1 }, TEXT("LHR-1234ABCD")), Conn);
+	if (TestTrue(TEXT("A tracker is a device"), Tracker.Device.IsSet()))
+	{
+		const FQuat Yaw(FVector::UpVector, FMath::DegreesToRadians(90.f));
+		const FVector Expected = Yaw.RotateVector(ToUEPosition(FVector3f(1, 2, 3), true, true));
+		TestFalse(TEXT("... not a camera"), Tracker.Device->bCamera);
+		TestEqual(TEXT("... serial"), Tracker.Device->Name, FName(TEXT("LHR-1234ABCD")));
+		TestEqual(TEXT("... converted like the root"), Tracker.Device->Transform.GetLocation(), Expected, 1e-3f);
+	}
+	const FVMCFrameAssembler::FMessageResult Cam = Assembler.ApplyMessage(EAddress::Camera, Floats({ 0, 1, 0, 0, 0, 0, 1, 45 }, TEXT("Camera")), Conn);
+	TestTrue(TEXT("The camera"), Cam.Device.IsSet() && Cam.Device->bCamera && Cam.Device->FieldOfView == 45.f);
+	TestFalse(TEXT("/Local poses are not devices"), Assembler.ApplyMessage(EAddress::DevicePosLocal, Floats({ 1, 2, 3, 0, 0, 0, 1 }, TEXT("LHR-1234ABCD")), Conn).Device.IsSet());
+	const FVMCFrameAssembler::FMessageResult Bad = Assembler.ApplyMessage(EAddress::DevicePos, Floats({ 1, 2, 3 }, TEXT("LHR-1234ABCD")), Conn);
+	TestTrue(TEXT("A short device message is malformed"), Bad.bMalformed && !Bad.Device.IsSet());
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
+
 

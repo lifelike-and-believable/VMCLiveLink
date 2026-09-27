@@ -55,6 +55,9 @@ bool FVMCConnectionSettingsParseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("senders parse"), FVMCConnectionSettings::FromString(TEXT("senders=192.168.1.20, 10.0.0.2 192.168.1.20;lockfirst=yes"), S, &Errors));
 	TestEqual(TEXT("senders"), S.AllowedSenders, TArray<FString>{ TEXT("192.168.1.20"), TEXT("10.0.0.2") });
 	TestTrue(TEXT("lockfirst"), S.bLockToFirstSender);
+	TestTrue(TEXT("devices and camera parse"), FVMCConnectionSettings::FromString(TEXT("devices=1;camera=on"), S));
+	TestTrue(TEXT("devices"), S.bDeviceSubjects);
+	TestTrue(TEXT("camera"), S.bCameraSubject);
 	TestTrue(TEXT("empty senders parse"), FVMCConnectionSettings::FromString(TEXT("senders="), S));
 	TestEqual(TEXT("... to any sender"), S.AllowedSenders.Num(), 0);
 	TestFalse(TEXT("a bad sender"), FVMCConnectionSettings::FromString(TEXT("senders=10.0.0.2,phone"), S, &Errors));
@@ -98,6 +101,8 @@ bool FVMCConnectionSettingsRoundTripTest::RunTest(const FString& Parameters)
 		In.bReceiveThread = Random.FRand() < 0.5f;
 		In.AllowedSenders = SenderLists[Random.RandRange(0, UE_ARRAY_COUNT(SenderLists) - 1)];
 		In.bLockToFirstSender = Random.FRand() < 0.5f;
+		In.bDeviceSubjects = Random.FRand() < 0.5f;
+		In.bCameraSubject = Random.FRand() < 0.5f;
 
 		const FString String = In.ToString();
 		FVMCConnectionSettings Out;

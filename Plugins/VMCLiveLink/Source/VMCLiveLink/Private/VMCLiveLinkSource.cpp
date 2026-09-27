@@ -14,6 +14,10 @@
 #include "LiveLinkTypes.h"
 #include "Roles/LiveLinkAnimationRole.h"
 #include "Roles/LiveLinkAnimationTypes.h"
+#include "Roles/LiveLinkCameraRole.h"
+#include "Roles/LiveLinkCameraTypes.h"
+#include "Roles/LiveLinkTransformRole.h"
+#include "Roles/LiveLinkTransformTypes.h"
 
 #include "VMCLiveLinkSettings.h"
 #include "VMCLiveLinkSourceSettings.h"
@@ -177,7 +181,7 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
     // Copy under the lock (the receive thread takes it for every frame), format after.
     double Last = 0.0, Interval = 0.0, Jitter = 0.0;
     FString StateText, Locked;
-    int32 Ignored = 0;
+    int32 Ignored = 0, Devices = 0;
     {
         FScopeLock Lock(&StatsLock);
         Last = LastFrameSeconds;
@@ -186,6 +190,7 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
         StateText = SenderStateText;
         Locked = LockedSender;
         Ignored = IgnoredSenders;
+        Devices = NumDeviceSubjects;
     }
     FText Notes; // "; sender: calibrating; from 192.168.1.20; ignoring 1 other sender", or empty
     {
@@ -197,6 +202,10 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
         if (!Locked.IsEmpty())
         {
             Parts.Add(FString::Printf(TEXT("from %s"), *Locked));
+        }
+        if (Devices > 0)
+        {
+            Parts.Add(FString::Printf(TEXT("%d device/camera subject%s"), Devices, Devices == 1 ? TEXT("") : TEXT("s")));
         }
         if (Ignored > 0)
         {
@@ -319,10 +328,13 @@ void FVMCLiveLinkSource::OnSettingsChanged(ULiveLinkSourceSettings* InSettings, 
     // New sender rules restart too, so the filter starts afresh (and forgets a locked sender).
     const bool bRestart = bNewSubject || New.Port != Settings.Port || New.BindAddress != Settings.BindAddress
         || New.bReceiveThread != Settings.bReceiveThread || New.AllowedSenders != Settings.AllowedSenders
-        || New.bLockToFirstSender != Settings.bLockToFirstSender;
+        || New.bLockToFirstSender != Settings.bLockToFirstSender
+        || New.bDeviceSubjects != Settings.bDeviceSubjects || New.bCameraSubject != Settings.bCameraSubject;
     if (bRestart)
     {
         StopReceiving();
+        // They come back on the next message if still wanted (under the new subject's name).
+        RemoveDeviceSubjects();
     }
     if (bNewSubject && Client)
     {
@@ -493,6 +505,10 @@ void FVMCLiveLinkSource::ProcessMessage(VMCProtocol::EAddress Kind, TConstArrayV
             *SourceName, *Result.NewBone.ToString());
     }
     bStaticDirty |= Result.bStaticChanged;
+    if (Result.Device.IsSet())
+    {
+        PushDevice(*Result.Device, ArrivalSeconds, Snap);
+    }
 
     if (!Result.bApply)
     {
@@ -572,6 +588,81 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
         MeanIntervalDeviation = FMath::Lerp(MeanIntervalDeviation, FMath::Abs(Interval - MeanFrameInterval), StatsSmoothing);
     }
     LastFrameSeconds = ArrivalSeconds;
+}
+
+void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double ArrivalSeconds, const FSnapshot& Snap)
+{
+    if (!Client || !(Device.bCamera ? Snap.Settings.bCameraSubject : Snap.Settings.bDeviceSubjects))
+    {
+        return;
+    }
+    TMap<FName, FName>& Subjects = Device.bCamera ? CameraSubjects : DeviceSubjects;
+    const TMap<FName, FName>& Others = Device.bCamera ? DeviceSubjects : CameraSubjects;
+    FName Subject;
+    if (const FName* Found = Subjects.Find(Device.Name))
+    {
+        Subject = *Found;
+    }
+    else
+    {
+        // First pose from this device: its subject's static data, once. A name another device or
+        // camera already publishes under gets a number, so no two ever share a subject.
+        const FName Base = VMCProtocol::MakeDeviceSubjectName(Snap.Settings.SubjectName, Device.Name);
+        Subject = Base;
+        for (int32 Suffix = 2; Subjects.FindKey(Subject) || Others.FindKey(Subject); ++Suffix)
+        {
+            Subject = FName(*FString::Printf(TEXT("%s_%d"), *Base.ToString(), Suffix));
+        }
+        if (Device.bCamera)
+        {
+            FLiveLinkStaticDataStruct Static(FLiveLinkCameraStaticData::StaticStruct());
+            Static.Cast<FLiveLinkCameraStaticData>()->bIsFieldOfViewSupported = true;
+            Client->PushSubjectStaticData_AnyThread({ SourceGuid, Subject }, ULiveLinkCameraRole::StaticClass(), MoveTemp(Static));
+        }
+        else
+        {
+            FLiveLinkStaticDataStruct Static(FLiveLinkTransformStaticData::StaticStruct());
+            Client->PushSubjectStaticData_AnyThread({ SourceGuid, Subject }, ULiveLinkTransformRole::StaticClass(), MoveTemp(Static));
+        }
+        Subjects.Add(Device.Name, Subject);
+        UE_LOG(LogVMCLiveLink, Log, TEXT("VMC source '%s': publishing %s '%s' as subject '%s'."),
+            *SourceName, Device.bCamera ? TEXT("camera") : TEXT("device"), *Device.Name.ToString(), *Subject.ToString());
+        FScopeLock Lock(&StatsLock);
+        NumDeviceSubjects = DeviceSubjects.Num() + CameraSubjects.Num();
+    }
+
+    FLiveLinkFrameDataStruct Frame(Device.bCamera ? FLiveLinkCameraFrameData::StaticStruct() : FLiveLinkTransformFrameData::StaticStruct());
+    FLiveLinkTransformFrameData* Data = Frame.Cast<FLiveLinkTransformFrameData>(); // the camera's derives from it
+    if (Device.bCamera)
+    {
+        Frame.Cast<FLiveLinkCameraFrameData>()->FieldOfView = Device.FieldOfView;
+    }
+    Data->Transform = Device.Transform;
+    // Timed like the main subject's frames (PushFrame), so the subjects stay in step.
+    Data->WorldTime = FLiveLinkWorldTime(ArrivalSeconds);
+    if (const TOptional<float> SenderTime = Assembler->GetSenderTime())
+    {
+        Data->MetaData.SceneTime = FQualifiedFrameTime(FFrameTime::FromDecimal(double(*SenderTime) * SenderTimeRate.AsDecimal()), SenderTimeRate);
+    }
+    Client->PushSubjectFrameData_AnyThread({ SourceGuid, Subject }, MoveTemp(Frame));
+}
+
+void FVMCLiveLinkSource::RemoveDeviceSubjects()
+{
+    if (Client)
+    {
+        for (const TMap<FName, FName>* Subjects : { &DeviceSubjects, &CameraSubjects })
+        {
+            for (const TPair<FName, FName>& Pair : *Subjects)
+            {
+                Client->RemoveSubject_AnyThread({ SourceGuid, Pair.Value });
+            }
+        }
+    }
+    DeviceSubjects.Reset();
+    CameraSubjects.Reset();
+    FScopeLock Lock(&StatsLock);
+    NumDeviceSubjects = 0;
 }
 
 // ---------------- Subject (game thread) ----------------
