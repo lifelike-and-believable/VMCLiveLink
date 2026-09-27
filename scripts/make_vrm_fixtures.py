@@ -23,6 +23,8 @@ expected values computed here from the same scene description:
   bind_pose_offset             A skinned mesh authored in a different pose from the node rest pose
                                (inverse bind matrices that are not the inverse joint world
                                transforms). Skinning must move its vertices into the rest pose.
+  morph_targets                Two meshes whose morph targets share a name ("Shared") and each
+                               have an unnamed target; one target carries NORMAL deltas.
 
 All geometry is in glTF space (right-handed, Y up, metres). Expected values in the sidecars are
 in glTF space too; tests convert them with the importer's conversion before comparing.
@@ -202,7 +204,10 @@ class Scene:
             if m["targets"]:
                 prim["targets"] = []
                 for t in m["targets"]:
-                    prim["targets"].append({"POSITION": self.accessor(t["deltas"], 5126, "VEC3", count, "3f", minmax=True)})
+                    target = {"POSITION": self.accessor(t["deltas"], 5126, "VEC3", count, "3f", minmax=True)}
+                    if "normals" in t:
+                        target["NORMAL"] = self.accessor(t["normals"], 5126, "VEC3", count, "3f")
+                    prim["targets"].append(target)
                 mj["extras"] = {"targetNames": [t["name"] for t in m["targets"]]}
             mesh_json.append(mj)
 
@@ -573,6 +578,50 @@ def make_bind_pose_offset(out_dir):
     }
 
 
+def make_morph_targets(out_dir):
+    s = Scene()
+    root = s.node("Root")
+    hips = s.node("Hips", root, t=[0, 1.0, 0])
+    head = s.node("Head", hips, t=[0, 0.6, 0])
+    mark_joints([hips, head])
+    face = body_mesh(s, root, [hips, head], name="Face")   # vertices 0-2 at Hips, 3-5 at Head
+    hair = body_mesh(s, root, [head], name="Hair")         # vertices 6-8 (after Face's)
+
+    def per_vertex(count, pick):
+        return [pick(i) for i in range(count)]
+
+    up = [0.0, 0.01, 0.0]
+    zero = [0.0, 0.0, 0.0]
+    # Face "Shared" lifts the head triangle and turns its normals from +Z to +Y
+    # (base normal (0,0,1) + delta (0,1,-1)); the unnamed target moves the hips triangle along +X.
+    s.meshes[face.mesh]["targets"] = [
+        {"name": "Shared", "deltas": per_vertex(6, lambda i: up if i >= 3 else zero),
+         "normals": per_vertex(6, lambda i: [0.0, 1.0, -1.0] if i >= 3 else zero)},
+        {"name": "", "deltas": per_vertex(6, lambda i: [0.01, 0.0, 0.0] if i < 3 else zero)},
+    ]
+    s.meshes[hair.mesh]["targets"] = [
+        {"name": "Shared", "deltas": per_vertex(3, lambda i: up)},
+        {"name": "", "deltas": per_vertex(3, lambda i: [-0.01, 0.0, 0.0])},
+    ]
+    ext = {"VRMC_vrm": {"specVersion": "1.0", "meta": vrm1_meta(),
+                        "humanoid": {"humanBones": {"hips": {"node": hips.index}, "head": {"node": head.index}}}}}
+    s.write(os.path.join(out_dir, "morph_targets.vrm"), ext)
+    return {
+        "vrm_version": "1.0",
+        "bones": s.expected_bones([hips, head]),
+        "vertices": s.expected_vertices(face) + s.expected_vertices(hair),
+        "morph_targets": {
+            "Shared": {"meshes": ["Face", "Hair"], "delta_gltf": up, "moves_vertices": [3, 4, 5, 6, 7, 8],
+                       "morphed_normal_gltf": {"vertices": [3, 4, 5], "normal": [0, 1, 0]}},
+            "Face_morph_1": {"delta_gltf": [0.01, 0, 0], "moves_vertices": [0, 1, 2]},
+            "Hair_morph_1": {"delta_gltf": [-0.01, 0, 0], "moves_vertices": [6, 7, 8]},
+        },
+        "note": "Unnamed targets are named <mesh>_morph_<index> and not merged across meshes. The two "
+                "meshes' 'Shared' targets are merged, with a warning. Vertex indices are in merged "
+                "order (Face, then Hair).",
+    }
+
+
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "Plugins", "VRMInterchange", "Tests", "Fixtures")
@@ -585,6 +634,7 @@ def main():
         "unnamed_and_duplicate_nodes": make_unnamed_and_duplicates,
         "armature_transform": make_armature_transform,
         "bind_pose_offset": make_bind_pose_offset,
+        "morph_targets": make_morph_targets,
     }
     for name, maker in makers.items():
         expected = maker(out_dir)

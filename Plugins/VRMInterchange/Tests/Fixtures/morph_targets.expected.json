@@ -1,0 +1,173 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": "Head",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    }
+  },
+  "morph_targets": {
+    "Face_morph_1": {
+      "delta_gltf": [
+        0.01,
+        0,
+        0
+      ],
+      "moves_vertices": [
+        0,
+        1,
+        2
+      ]
+    },
+    "Hair_morph_1": {
+      "delta_gltf": [
+        -0.01,
+        0,
+        0
+      ],
+      "moves_vertices": [
+        6,
+        7,
+        8
+      ]
+    },
+    "Shared": {
+      "delta_gltf": [
+        0.0,
+        0.01,
+        0.0
+      ],
+      "meshes": [
+        "Face",
+        "Hair"
+      ],
+      "morphed_normal_gltf": {
+        "normal": [
+          0,
+          1,
+          0
+        ],
+        "vertices": [
+          3,
+          4,
+          5
+        ]
+      },
+      "moves_vertices": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    }
+  },
+  "note": "Unnamed targets are named <mesh>_morph_<index> and not merged across meshes. The two meshes' 'Shared' targets are merged, with a warning. Vertex indices are in merged order (Face, then Hair).",
+  "vertices": [
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Face",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Face",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Face",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Face",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Face",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Face",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Hair",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Hair",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Hair",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

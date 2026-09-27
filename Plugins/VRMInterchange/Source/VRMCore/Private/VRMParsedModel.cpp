@@ -40,13 +40,21 @@ struct FVRMMeshInstance
 // Mesh nodes of the scene, in node index order.
 static TArray<FVRMMeshInstance> CollectMeshInstances(const cgltf_data* Data, const TMap<int32, int32>& NodeToBone);
 
-// Appends every primitive of every mesh instance to Out.Mesh, in the rest pose. OutVertexToRest
-// receives, per vertex, the glTF-space transform that was applied (for morph target deltas).
+// How one merged vertex was placed in the rest pose, in glTF space (for its morph target deltas).
+struct FVRMVertexRest
+{
+    FMatrix44f Position;     // applied to the position; deltas take its linear part
+    FMatrix Normal;          // applied to the normal (the inverse transpose)
+    FVector3f LocalNormal;   // the file's normal, before Normal was applied
+};
+
+// Appends every primitive of every mesh instance to Out.Mesh, in the rest pose. OutVertexRest
+// receives, per vertex, the transforms that were applied (for morph target deltas).
 static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TMap<int32, int32>& NodeToBone,
-    FVRMParsedModel& Out, TArray<FMatrix44f>& OutVertexToRest);
+    FVRMParsedModel& Out, TArray<FVRMVertexRest>& OutVertexRest);
 
 // Morph targets of the same mesh instances, in the same vertex order.
-static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FMatrix44f>& VertexToRest, FVRMParsedModel& Out);
+static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FVRMVertexRest>& VertexRest, FVRMParsedModel& Out);
 
 // New forward for extracted material parsing
 static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out);
@@ -238,7 +246,7 @@ static FVRMSkinRestPose ComputeSkinRestPose(const cgltf_skin& Skin, const cgltf_
 }
 
 static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TMap<int32, int32>& NodeToBone,
-    FVRMParsedModel& Out, TArray<FMatrix44f>& OutVertexToRest)
+    FVRMParsedModel& Out, TArray<FVRMVertexRest>& OutVertexRest)
 {
     if (!Data) return false;
     const VRM::Coord::FVRMAxisConvention Convention = Out.Convention();
@@ -346,7 +354,7 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
             Out.Mesh.Normals.Reserve(Out.Mesh.Normals.Num() + VertCount);
             Out.Mesh.UV0.Reserve(Out.Mesh.UV0.Num() + VertCount);
             Out.Mesh.SkinWeights.Reserve(Out.Mesh.SkinWeights.Num() + VertCount);
-            OutVertexToRest.Reserve(OutVertexToRest.Num() + VertCount);
+            OutVertexRest.Reserve(OutVertexRest.Num() + VertCount);
 
             for (int32 v = 0; v < VertCount; ++v)
             {
@@ -375,18 +383,12 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
                 const FVector RestPos = FVector(VertexXf.TransformPosition(FVector(PosLocal[v])));
                 Out.Mesh.Positions.Add(FVector3f(Convention.Position(RestPos)));
 
-                if (NrmLocal.IsValidIndex(v))
-                {
-                    Out.Mesh.Normals.Add(Convention.Direction(TransformNormal(NormalXf, NrmLocal[v])));
-                }
-                else
-                {
-                    // No normal: glTF up (+Y), converted like a real normal so it follows the node.
-                    Out.Mesh.Normals.Add(Convention.Direction(TransformNormal(NormalXf, FVector3f(0, 1, 0))));
-                }
+                // No normal: glTF up (+Y), converted like a real normal so it follows the node.
+                const FVector3f LocalNormal = NrmLocal.IsValidIndex(v) ? NrmLocal[v] : FVector3f(0, 1, 0);
+                Out.Mesh.Normals.Add(Convention.Direction(TransformNormal(NormalXf, LocalNormal)));
 
                 Out.Mesh.UV0.Add(UVLocal[v]);
-                OutVertexToRest.Add(FMatrix44f(VertexXf));
+                OutVertexRest.Add({ FMatrix44f(VertexXf), NormalXf, LocalNormal });
 
                 if (bSkinned)
                 {
@@ -478,15 +480,15 @@ bool VRM::BuildParsedModel(const FVRMDocument& Document, FVRMParsedModel& Out)
 
     // Every mesh node's primitives, placed in the rest pose the skeleton uses
     const TArray<FVRMMeshInstance> Instances = CollectMeshInstances(Data, NodeToBone);
-    TArray<FMatrix44f> VertexToRest;
-    if (!MergeMeshInstances(Data, Instances, NodeToBone, Out, VertexToRest))
+    TArray<FVRMVertexRest> VertexRest;
+    if (!MergeMeshInstances(Data, Instances, NodeToBone, Out, VertexRest))
     {
         UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to merge mesh primitives."));
         return false;
     }
 
     // Morph targets - must run after the primitives are merged, over the same instances
-    ParseMorphTargets(Data, Instances, VertexToRest, Out);
+    ParseMorphTargets(Data, Instances, VertexRest, Out);
 
     // Images: use extracted helper
     if (Data->images_count > 0)
@@ -831,7 +833,33 @@ static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out)
     }
 }
 
-static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FMatrix44f>& VertexToRest, FVRMParsedModel& Out)
+// The imported name of a mesh's morph target: the file's name, or "<MeshName>_morph_<index>" for
+// an unnamed one, so unnamed targets of different meshes stay apart.
+static FString MorphTargetName(const cgltf_data* Data, const cgltf_mesh* Mesh, size_t TargetIndex)
+{
+    FString Name;
+    if (Mesh->target_names && TargetIndex < Mesh->target_names_count && Mesh->target_names[TargetIndex])
+    {
+        Name = FString(UTF8_TO_TCHAR(Mesh->target_names[TargetIndex])).TrimStartAndEnd();
+    }
+    if (Name.IsEmpty())
+    {
+        FString MeshName = Mesh->name ? FString(UTF8_TO_TCHAR(Mesh->name)).TrimStartAndEnd() : FString();
+        if (MeshName.IsEmpty())
+        {
+            MeshName = FString::Printf(TEXT("Mesh%d"), int32(Mesh - Data->meshes));
+        }
+        Name = FString::Printf(TEXT("%s_morph_%d"), *MeshName, int32(TargetIndex));
+    }
+    return Name;
+}
+
+static FString MeshDisplayName(const cgltf_data* Data, const cgltf_mesh* Mesh)
+{
+    return Mesh->name ? FString::Printf(TEXT("'%s'"), UTF8_TO_TCHAR(Mesh->name)) : FString::Printf(TEXT("%d"), int32(Mesh - Data->meshes));
+}
+
+static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FVRMVertexRest>& VertexRest, FVRMParsedModel& Out)
 {
     if (!Data) return;
     const VRM::Coord::FVRMAxisConvention Convention = Out.Convention();
@@ -839,16 +867,16 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
     const int32 TotalVertices = Out.Mesh.Positions.Num();
     if (TotalVertices <= 0) return;
 
-    // Map target name -> global morph index
+    // Target name -> merged morph index. Targets of the same name are one morph target: the
+    // primitives of a mesh share its targets, and a mesh placed by several nodes repeats them.
     TMap<FString, int32> NameToIndex;
-    // Keep ordered list of names to create Out.Mesh.Morphs in deterministic order
-    TArray<FString> OrderedNames;
+    TArray<FString> OrderedNames; // deterministic order of Out.Mesh.Morphs
+    TMap<FString, const cgltf_mesh*> NameToMesh; // the first mesh that has each name
 
-    // First pass: discover all target names (if available) and build mapping.
+    // First pass: every target's name.
     for (const FVRMMeshInstance& Instance : Instances)
     {
         const cgltf_mesh* Mesh2 = Instance.Node->mesh; // never null: instances are made only for nodes with a mesh
-        const bool bHaveMeshNames = (Mesh2->target_names && Mesh2->target_names_count > 0);
         TArray<FString>& MeshNames = Out.MeshMorphNames.FindOrAdd(int32(Mesh2 - Data->meshes));
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
@@ -856,16 +884,7 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
             const cgltf_primitive* Prim2 = &Mesh2->primitives[pi2];
             for (size_t ti = 0; ti < Prim2->targets_count; ++ti)
             {
-                FString TargetName;
-                if (bHaveMeshNames && ti < Mesh2->target_names_count && Mesh2->target_names[ti])
-                {
-                    TargetName = FString(UTF8_TO_TCHAR(Mesh2->target_names[ti])).TrimStartAndEnd();
-                }
-                // If no name available, use deterministic index-based fallback so unnamed targets still group by index
-                if (TargetName.IsEmpty())
-                {
-                    TargetName = FString::Printf(TEXT("morph_%d"), int32(ti));
-                }
+                const FString TargetName = MorphTargetName(Data, Mesh2, ti);
 
                 if (MeshNames.Num() <= int32(ti))
                 {
@@ -875,9 +894,15 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
 
                 if (!NameToIndex.Contains(TargetName))
                 {
-                    const int32 NewIdx = OrderedNames.Num();
-                    OrderedNames.Add(TargetName);
-                    NameToIndex.Add(TargetName, NewIdx);
+                    NameToIndex.Add(TargetName, OrderedNames.Add(TargetName));
+                    NameToMesh.Add(TargetName, Mesh2);
+                }
+                else if (const cgltf_mesh* First = NameToMesh.FindRef(TargetName); First && First != Mesh2)
+                {
+                    // Different meshes, different shapes: an expression bound to one moves both.
+                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Meshes %s and %s both have a morph target named '%s'; they are imported as one morph target, so an expression bound to either moves both."),
+                        *MeshDisplayName(Data, First), *MeshDisplayName(Data, Mesh2), *TargetName);
+                    NameToMesh[TargetName] = nullptr; // warn once per name
                 }
             }
         }
@@ -894,13 +919,12 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
         Out.Mesh.Morphs[mi].DeltaPositions.SetNumZeroed(TotalVertices);
     }
 
-    // Second pass: read per-primitive deltas and merge into the global morph identified by name (or fallback index-name)
+    // Second pass: read per-primitive deltas into the merged morph of the target's name.
     int32 VertexBase2 = 0;
     for (const FVRMMeshInstance& Instance : Instances)
     {
         const cgltf_mesh* Mesh2 = Instance.Node->mesh; // never null (see the first pass)
         const int32 NodeIndex = int32(Instance.Node - Data->nodes);
-        const bool bHaveMeshNames = (Mesh2->target_names && Mesh2->target_names_count > 0);
 
         for (size_t pi2 = 0; pi2 < Mesh2->primitives_count; ++pi2)
         {
@@ -923,50 +947,65 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
 
             for (size_t ti = 0; ti < Prim2->targets_count; ++ti)
             {
-                // Determine global morph name/key for this primitive target
-                FString TargetName;
-                if (bHaveMeshNames && ti < Mesh2->target_names_count && Mesh2->target_names[ti])
+                const int32* FoundGlobal = NameToIndex.Find(MorphTargetName(Data, Mesh2, ti));
+                if (!FoundGlobal || !Out.Mesh.Morphs.IsValidIndex(*FoundGlobal))
                 {
-                    TargetName = FString(UTF8_TO_TCHAR(Mesh2->target_names[ti])).TrimStartAndEnd();
+                    continue; // every name was added in the first pass
                 }
-                if (TargetName.IsEmpty())
-                {
-                    TargetName = FString::Printf(TEXT("morph_%d"), int32(ti));
-                }
-
-                const int32* FoundGlobal = NameToIndex.Find(TargetName);
-                if (!FoundGlobal)
-                {
-                    // Shouldn't happen, but guard
-                    continue;
-                }
-                const int32 GlobalMorphIndex = *FoundGlobal;
-
+                FVRMParsedMorph& Morph = Out.Mesh.Morphs[*FoundGlobal];
                 const cgltf_morph_target& Tgt = Prim2->targets[ti];
-                const cgltf_accessor* PosAcc = FindTargetAccessor(Tgt, cgltf_attribute_type_position);
-                if (!PosAcc || !PosAcc->count)
-                {
-                    continue;
-                }
 
-                TArray<FVector3f> DeltaLocal;
-                ReadAccessorVec3f(*PosAcc, DeltaLocal);
-
-                if (DeltaLocal.Num() != PrimVertCount)
+                if (const cgltf_accessor* PosAcc = FindTargetAccessor(Tgt, cgltf_attribute_type_position); PosAcc && PosAcc->count)
                 {
-                    UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Morph target vertex count mismatch (node %d primitive %d): %d vs %d. Skipping."), NodeIndex, (int)pi2, DeltaLocal.Num(), PrimVertCount);
-                    continue;
-                }
-
-                for (int32 v = 0; v < PrimVertCount; ++v)
-                {
-                    const int32 GlobalIndex = VertexBase2 + v;
-                    // Deltas are offsets, so they take only the linear part of the vertex's rest transform.
-                    const FVector3f Src = VertexToRest.IsValidIndex(GlobalIndex) ? FVector3f(VertexToRest[GlobalIndex].TransformVector(DeltaLocal[v])) : DeltaLocal[v];
-                    const FVector3f Conv = Convention.Position(Src);
-                    if (Out.Mesh.Morphs.IsValidIndex(GlobalMorphIndex) && Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions.IsValidIndex(GlobalIndex))
+                    TArray<FVector3f> DeltaLocal;
+                    ReadAccessorVec3f(*PosAcc, DeltaLocal);
+                    if (DeltaLocal.Num() != PrimVertCount)
                     {
-                        Out.Mesh.Morphs[GlobalMorphIndex].DeltaPositions[GlobalIndex] = Conv;
+                        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Morph target vertex count mismatch (node %d primitive %d): %d vs %d. Skipping."), NodeIndex, (int)pi2, DeltaLocal.Num(), PrimVertCount);
+                    }
+                    else
+                    {
+                        for (int32 v = 0; v < PrimVertCount; ++v)
+                        {
+                            const int32 GlobalIndex = VertexBase2 + v;
+                            if (!Morph.DeltaPositions.IsValidIndex(GlobalIndex))
+                            {
+                                continue;
+                            }
+                            // Deltas are offsets, so they take only the linear part of the vertex's rest transform.
+                            const FVector3f Src = VertexRest.IsValidIndex(GlobalIndex) ? FVector3f(VertexRest[GlobalIndex].Position.TransformVector(DeltaLocal[v])) : DeltaLocal[v];
+                            Morph.DeltaPositions[GlobalIndex] = Convention.Position(Src);
+                        }
+                    }
+                }
+
+                // NORMAL deltas: the morphed normal goes through the same transform as the base
+                // normal; the stored delta is its change in Unreal space.
+                if (const cgltf_accessor* NrmAcc = FindTargetAccessor(Tgt, cgltf_attribute_type_normal); NrmAcc && NrmAcc->count)
+                {
+                    TArray<FVector3f> NormalDeltaLocal;
+                    ReadAccessorVec3f(*NrmAcc, NormalDeltaLocal);
+                    if (NormalDeltaLocal.Num() != PrimVertCount)
+                    {
+                        UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Morph target normal count mismatch (node %d primitive %d): %d vs %d. Skipping its normals."), NodeIndex, (int)pi2, NormalDeltaLocal.Num(), PrimVertCount);
+                    }
+                    else
+                    {
+                        if (Morph.DeltaNormals.Num() != TotalVertices)
+                        {
+                            Morph.DeltaNormals.SetNumZeroed(TotalVertices);
+                        }
+                        for (int32 v = 0; v < PrimVertCount; ++v)
+                        {
+                            const int32 GlobalIndex = VertexBase2 + v;
+                            if (NormalDeltaLocal[v].IsNearlyZero() || !VertexRest.IsValidIndex(GlobalIndex) || !Out.Mesh.Normals.IsValidIndex(GlobalIndex))
+                            {
+                                continue;
+                            }
+                            const FVRMVertexRest& Rest = VertexRest[GlobalIndex];
+                            const FVector3f Morphed = Convention.Direction(TransformNormal(Rest.Normal, Rest.LocalNormal + NormalDeltaLocal[v]));
+                            Morph.DeltaNormals[GlobalIndex] = Morphed - Out.Mesh.Normals[GlobalIndex];
+                        }
                     }
                 }
             }
