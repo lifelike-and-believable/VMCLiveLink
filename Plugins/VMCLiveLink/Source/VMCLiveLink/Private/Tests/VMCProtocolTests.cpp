@@ -262,6 +262,7 @@ bool FVMCProtocolDevicesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("... name"), Pose.Name, FName(TEXT("Camera")));
 	TestEqual(TEXT("... field of view"), Fov, 60.f);
 	TestFalse(TEXT("Camera without a field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1 }, TEXT("Camera")), Pose, Fov));
+	TestTrue(TEXT("... leaves no field of view behind"), Fov == 0.f && Pose.Name.IsNone());
 	TestFalse(TEXT("Camera without a name"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 60, 0 }), Pose, Fov));
 	TestEqual(TEXT("Subject names"), MakeDeviceSubjectName(TEXT("VMC_Subject"), TEXT("LHR-1234ABCD")), FName(TEXT("VMC_Subject_LHR-1234ABCD")));
 

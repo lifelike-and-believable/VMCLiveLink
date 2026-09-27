@@ -193,14 +193,22 @@ namespace VMCProtocol
 
 	bool ParseCamera(TConstArrayView<FArg> Args, FPose& Out, float& OutFieldOfView)
 	{
+		// Outputs are reset, and only filled once the whole message has parsed.
 		Out = FPose();
+		OutFieldOfView = 0.f;
 		if (Args.Num() != 9 || !Args[0].IsNonEmptyString() || !Args[8].IsNumber())
 		{
 			return false;
 		}
-		Out.Name = Args[0].ToName();
+		FPose Parsed;
+		Parsed.Name = Args[0].ToName();
+		if (Parsed.Name.IsNone() || !ReadPose7(Args, 1, Parsed))
+		{
+			return false;
+		}
+		Out = Parsed;
 		OutFieldOfView = Args[8].Number;
-		return !Out.Name.IsNone() && ReadPose7(Args, 1, Out);
+		return true;
 	}
 
 	FName MakeDeviceSubjectName(FName Subject, FName DeviceName)
