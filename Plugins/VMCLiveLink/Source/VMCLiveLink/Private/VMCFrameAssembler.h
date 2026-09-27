@@ -7,6 +7,16 @@
 
 struct FVMCConnectionSettings;
 
+/** A tracked device (/VMC/Ext/Hmd|Con|Tra/Pos) or the camera (/VMC/Ext/Cam), in UE world space with
+ *  the root's yaw offset. Not stored: the source publishes it as a subject of its own (P4.7). */
+struct FVMCDevicePose
+{
+	FName Name;              // the device's serial, or the camera's name
+	FTransform Transform;
+	bool bCamera = false;
+	float FieldOfView = 0.f; // degrees; camera only
+};
+
 /**
  * Collects VMC messages into Live Link data, independent of the source's networking so it can be
  * unit tested (P3.1).
@@ -46,6 +56,7 @@ public:
 		bool bRootScaleOffset = false; // VMC v2.1 root scale and offset (not applied)
 		bool bSenderStateChanged = false; // /VMC/Ext/OK said something different from the last one
 		FName NewBone;                 // set with bStaticChanged when the new entry is a non-humanoid bone
+		TOptional<FVMCDevicePose> Device; // a device or camera message
 	};
 
 	/**

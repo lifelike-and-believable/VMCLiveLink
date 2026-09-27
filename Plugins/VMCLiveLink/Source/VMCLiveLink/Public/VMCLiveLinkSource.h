@@ -18,6 +18,7 @@ class ULiveLinkSubjectRemapper;
 class ULiveLinkSubjectSettings;
 class FVMCFrameAssembler;
 class FVMCSenderFilter;
+struct FVMCDevicePose;
 class FVMCUdpReceiver;
 class FInternetAddr;
 class ULiveLinkSourceSettings;
@@ -93,6 +94,8 @@ private:
     void ProcessMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, double ArrivalSeconds, const FSnapshot& Snap);
     void PushStaticData(const FSnapshot& Snap);
     void PushFrame(const FSnapshot& Snap, double ArrivalSeconds);
+    void PushDevice(const FVMCDevicePose& Device, double ArrivalSeconds, const FSnapshot& Snap); // if its setting is on
+    void RemoveDeviceSubjects(); // game thread, while nothing is received
 
     // ---- Any thread ----
     TSharedPtr<const FSnapshot> GetSnapshot() const;
@@ -122,6 +125,7 @@ private:
     // Frame building (one thread at a time)
     TUniquePtr<FVMCFrameAssembler> Assembler;
     TUniquePtr<FVMCSenderFilter> SenderFilter; // configured by the game thread while nothing is received
+    TMap<FName, FName> DeviceSubjects; // device or camera name -> its published subject; cleared while nothing is received
     void InitSkeleton();
     bool bStaticDirty = false;           // a new bone or curve arrived
     uint32 PublishedStaticVersion = 0;   // snapshot version of the last static publish
@@ -142,4 +146,5 @@ private:
     FString SenderStateText;          // what /VMC/Ext/OK says, when worth showing (VMCProtocol::DescribeSenderState)
     FString LockedSender;             // the sender locked to (bLockToFirstSender), or empty
     int32 IgnoredSenders = 0;         // senders whose packets were ignored since receiving started
+    int32 NumDeviceSubjects = 0;      // device and camera subjects published
 };

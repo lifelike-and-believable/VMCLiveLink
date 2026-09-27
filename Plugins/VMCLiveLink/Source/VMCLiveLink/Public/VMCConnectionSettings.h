@@ -8,7 +8,7 @@
  * reads and writes it (P3.1, VMC-17).
  *
  * Format: "key=value" pairs separated by ';', keys case-insensitive, unknown keys ignored, e.g.
- *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;thread=1;senders=;lockfirst=0;subject=VMC_Subject
+ *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;thread=1;senders=;lockfirst=0;devices=0;camera=0;subject=VMC_Subject
  * Booleans accept 1/0, true/false, yes/no, on/off. Strings saved by earlier versions (port,
  * unity2ue, meters2cm, subject) read the same.
  */
@@ -41,6 +41,12 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	/** Use only the first sender heard from (after AllowedSenders) until receiving restarts, so a
 	 *  second sender on the network can't take over the subject. */
 	bool bLockToFirstSender = false;
+	/** Publish each tracked device the sender streams (/VMC/Ext/Hmd|Con|Tra/Pos) as a Live Link
+	 *  subject with the Transform role, named "<SubjectName>_<serial>". */
+	bool bDeviceSubjects = false;
+	/** Publish the sender's camera (/VMC/Ext/Cam) as a Live Link subject with the Camera role, named
+	 *  "<SubjectName>_<camera name>". */
+	bool bCameraSubject = false;
 
 	/**
 	 * Reads a connection string. Keys that are missing keep their defaults. Returns false if any

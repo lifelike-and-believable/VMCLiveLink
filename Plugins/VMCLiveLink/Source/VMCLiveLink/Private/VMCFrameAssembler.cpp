@@ -15,6 +15,23 @@ FVMCFrameAssembler::FVMCFrameAssembler()
 	PoseReceived.Init(false, BoneNames.Num());
 }
 
+namespace
+{
+	/** A world-space pose (root, device, camera) in UE space, with the extra yaw about UE Z. */
+	FTransform ToUEWorld(const VMCProtocol::FPose& Pose, const FVMCConnectionSettings& Settings)
+	{
+		FVector Position = VMCProtocol::ToUEPosition(Pose.Position, Settings.bUnityToUE, Settings.bMetersToCm);
+		FQuat Rotation = VMCProtocol::ToUERotation(Pose.Rotation, Settings.bUnityToUE);
+		if (!FMath::IsNearlyZero(Settings.YawOffsetDeg))
+		{
+			const FQuat YawDelta(FVector::UpVector, FMath::DegreesToRadians(Settings.YawOffsetDeg));
+			Rotation = YawDelta * Rotation;
+			Position = YawDelta.RotateVector(Position);
+		}
+		return FTransform(Rotation, Position, FVector::OneVector);
+	}
+}
+
 FVMCFrameAssembler::FMessageResult FVMCFrameAssembler::ApplyMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, const FVMCConnectionSettings& Settings)
 {
 	using namespace VMCProtocol;
@@ -49,17 +66,23 @@ FVMCFrameAssembler::FMessageResult FVMCFrameAssembler::ApplyMessage(VMCProtocol:
 			break;
 		}
 		Result.bRootScaleOffset = Parsed.bHasScaleAndOffset;
-
-		FVector Position = ToUEPosition(Parsed.Position, Settings.bUnityToUE, Settings.bMetersToCm);
-		FQuat Rotation = ToUERotation(Parsed.Rotation, Settings.bUnityToUE);
-		if (!FMath::IsNearlyZero(Settings.YawOffsetDeg))
+		SetRoot(ToUEWorld(Parsed, Settings));
+		break;
+	}
+	case EAddress::DevicePos:
+	case EAddress::Camera:
+	{
+		FPose Parsed;
+		FVMCDevicePose Device;
+		Device.bCamera = Kind == EAddress::Camera;
+		if (!(Device.bCamera ? ParseCamera(Args, Parsed, Device.FieldOfView) : ParseDevicePos(Args, Parsed)))
 		{
-			// Extra yaw about UE Z
-			const FQuat YawDelta(FVector::UpVector, FMath::DegreesToRadians(Settings.YawOffsetDeg));
-			Rotation = YawDelta * Rotation;
-			Position = YawDelta.RotateVector(Position);
+			Result.bMalformed = true;
+			break;
 		}
-		SetRoot(FTransform(Rotation, Position, FVector::OneVector));
+		Device.Name = Parsed.Name;
+		Device.Transform = ToUEWorld(Parsed, Settings);
+		Result.Device = MoveTemp(Device);
 		break;
 	}
 	case EAddress::BlendVal:
@@ -103,7 +126,7 @@ FVMCFrameAssembler::FMessageResult FVMCFrameAssembler::ApplyMessage(VMCProtocol:
 		Result.bApply = true;
 		break;
 	default:
-		break; // devices, camera, ...: not used yet
+		break; // /Local device poses, keys, MIDI, ...: not used
 	}
 	return Result;
 }

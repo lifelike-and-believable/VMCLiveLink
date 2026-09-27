@@ -45,11 +45,9 @@ namespace VMCProtocol
 			if (Is("Root/Pos"))    return EAddress::RootPos;
 			if (Is("T"))           return EAddress::Time;
 			if (Is("OK"))          return EAddress::Available;
-			static const char* const Devices[] = { "Hmd/Pos", "Con/Pos", "Tra/Pos", "Hmd/Pos/Local", "Con/Pos/Local", "Tra/Pos/Local" };
-			for (const char* Device : Devices)
-			{
-				if (Is(Device)) return EAddress::DevicePos;
-			}
+			if (Is("Hmd/Pos") || Is("Con/Pos") || Is("Tra/Pos")) return EAddress::DevicePos;
+			if (Is("Hmd/Pos/Local") || Is("Con/Pos/Local") || Is("Tra/Pos/Local")) return EAddress::DevicePosLocal;
+			if (Is("Cam"))         return EAddress::Camera;
 			return EAddress::Other;
 		}
 	}
@@ -191,6 +189,23 @@ namespace VMCProtocol
 			Out.Offset = FVector3f(V[3], V[4], V[5]);
 		}
 		return true;
+	}
+
+	bool ParseCamera(TConstArrayView<FArg> Args, FPose& Out, float& OutFieldOfView)
+	{
+		Out = FPose();
+		if (Args.Num() != 9 || !Args[0].IsNonEmptyString() || !Args[8].IsNumber())
+		{
+			return false;
+		}
+		Out.Name = Args[0].ToName();
+		OutFieldOfView = Args[8].Number;
+		return !Out.Name.IsNone() && ReadPose7(Args, 1, Out);
+	}
+
+	FName MakeDeviceSubjectName(FName Subject, FName DeviceName)
+	{
+		return FName(*FString::Printf(TEXT("%s_%s"), *Subject.ToString(), *DeviceName.ToString()));
 	}
 
 	bool ParseBlendVal(TConstArrayView<FArg> Args, FName& OutName, float& OutValue)
