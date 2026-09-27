@@ -3,8 +3,11 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "VMCConnectionSettings.h"
+#include "VMCFrameAssembler.h"
 #include "VMCHumanoid.h"
 #include "VMCProtocol.h"
+#include "VMCSenderFilter.h"
 
 namespace VMCProtocolTests
 {
@@ -158,4 +161,91 @@ bool FVMCHumanoidSkeletonTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCProtocolAvailableTest, "VMC.Protocol.Available",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCProtocolAvailableTest::RunTest(const FString& Parameters)
+{
+	using namespace VMCProtocol;
+	auto Ints = [](std::initializer_list<int32> Values)
+	{
+		FArgs Args;
+		for (int32 V : Values)
+		{
+			Args.Add(FArg::MakeInt(V));
+		}
+		return Args;
+	};
+
+	// /VMC/Ext/OK comes in three sizes.
+	FSenderState State;
+	TestTrue(TEXT("1 argument"), ParseAvailable(Ints({ 1 }), State));
+	TestTrue(TEXT("... loaded"), State.bLoaded);
+	TestFalse(TEXT("... no calibration state"), State.Calibration.IsSet());
+	TestEqual(TEXT("Loaded, nothing else said: nothing to show"), DescribeSenderState(State), FString());
+
+	TestTrue(TEXT("3 arguments"), ParseAvailable(Ints({ 1, 2, 0 }), State));
+	TestEqual(TEXT("... calibrating"), DescribeSenderState(State), FString(TEXT("calibrating")));
+
+	TestTrue(TEXT("4 arguments"), ParseAvailable(Ints({ 0, 1, 1, 0 }), State));
+	TestFalse(TEXT("... not loaded"), State.bLoaded);
+	TestEqual(TEXT("... mode"), State.CalibrationMode.Get(-1), 1);
+	TestEqual(TEXT("... everything worth saying"), DescribeSenderState(State), FString(TEXT("no avatar loaded, waiting for calibration, tracking lost")));
+
+	TestTrue(TEXT("Calibrated and tracking"), ParseAvailable(Ints({ 1, 3, 0, 1 }), State));
+	TestEqual(TEXT("... nothing to show"), DescribeSenderState(State), FString());
+
+	TestFalse(TEXT("2 arguments"), ParseAvailable(Ints({ 1, 3 }), State));
+	TestFalse(TEXT("No arguments"), ParseAvailable(FArgs(), State));
+	FArgs NotNumber;
+	NotNumber.Add(FArg::MakeString(TEXT("yes")));
+	TestFalse(TEXT("A string"), ParseAvailable(NotNumber, State));
+
+	// The assembler keeps the last one and reports changes only.
+	FVMCFrameAssembler Assembler;
+	const FVMCConnectionSettings Conn;
+	TestTrue(TEXT("First OK is a change"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 2, 0 }), Conn).bSenderStateChanged);
+	TestFalse(TEXT("The same again is not"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 2, 0 }), Conn).bSenderStateChanged);
+	TestTrue(TEXT("Calibrated is"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 3, 0 }), Conn).bSenderStateChanged);
+	TestTrue(TEXT("Kept"), Assembler.GetSenderState().IsSet() && Assembler.GetSenderState()->Calibration.Get(-1) == 3);
+	TestTrue(TEXT("A malformed OK is reported"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 3 }), Conn).bMalformed);
+	Assembler.ClearSenderState();
+	TestFalse(TEXT("Cleared"), Assembler.GetSenderState().IsSet());
+	TestTrue(TEXT("After clearing, the same OK is a change again"), Assembler.ApplyMessage(EAddress::Available, Ints({ 1, 3, 0 }), Conn).bSenderStateChanged);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCSenderFilterTest, "VMC.SenderFilter",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCSenderFilterTest::RunTest(const FString& Parameters)
+{
+	using EResult = FVMCSenderFilter::EResult;
+	const FString A = TEXT("192.168.1.20"), B = TEXT("192.168.1.21"), C = TEXT("10.0.0.2");
+
+	FVMCSenderFilter Filter;
+	TestFalse(TEXT("Default: inactive"), Filter.IsActive());
+	TestTrue(TEXT("Default: anyone"), Filter.Check(A) == EResult::Accepted && Filter.Check(B) == EResult::Accepted);
+
+	Filter.Configure({ A, B }, false);
+	TestTrue(TEXT("Allowlist: active"), Filter.IsActive());
+	TestTrue(TEXT("Allowed"), Filter.Check(B) == EResult::Accepted);
+	TestTrue(TEXT("Not allowed, first time"), Filter.Check(C) == EResult::RejectedNew);
+	TestTrue(TEXT("Not allowed, again"), Filter.Check(C) == EResult::Rejected);
+
+	Filter.Configure({}, true);
+	TestTrue(TEXT("Lock: the first sender locks"), Filter.Check(C) == EResult::Locked);
+	TestEqual(TEXT("... and is remembered"), Filter.GetLockedSender(), C);
+	TestTrue(TEXT("... then is accepted"), Filter.Check(C) == EResult::Accepted);
+	TestTrue(TEXT("Another sender is not"), Filter.Check(A) == EResult::RejectedNew);
+
+	Filter.Configure({ A, B }, true);
+	TestTrue(TEXT("Configure forgets the lock"), Filter.GetLockedSender().IsEmpty());
+	TestTrue(TEXT("Both: a sender not allowed doesn't lock"), Filter.Check(C) == EResult::RejectedNew);
+	TestTrue(TEXT("Both: the first allowed one does"), Filter.Check(B) == EResult::Locked);
+	TestTrue(TEXT("Both: the other allowed one is then rejected"), Filter.Check(A) == EResult::RejectedNew);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
+

@@ -39,6 +39,30 @@ namespace
 	}
 }
 
+bool FVMCConnectionSettings::ParseSenderList(const FString& Text, TArray<FString>& Out, FString* OutBad)
+{
+	Out.Reset();
+	TArray<FString> Entries;
+	Text.ParseIntoArrayWS(Entries, TEXT(","));
+	bool bOk = true;
+	for (const FString& Entry : Entries)
+	{
+		if (IsValidBindAddress(Entry))
+		{
+			Out.AddUnique(Entry);
+		}
+		else if (bOk)
+		{
+			bOk = false;
+			if (OutBad)
+			{
+				*OutBad = Entry;
+			}
+		}
+	}
+	return bOk;
+}
+
 bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCConnectionSettings& Out, TArray<FString>* OutErrors)
 {
 	Out = FVMCConnectionSettings();
@@ -99,6 +123,19 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 				Error(TEXT("subject name is empty or contains ';'"));
 			}
 		}
+		else if (Key.Equals(TEXT("senders"), ESearchCase::IgnoreCase))
+		{
+			TArray<FString> Senders;
+			FString Bad;
+			if (ParseSenderList(Trimmed, Senders, &Bad))
+			{
+				Out.AllowedSenders = MoveTemp(Senders);
+			}
+			else
+			{
+				Error(FString::Printf(TEXT("sender '%s' is not an IPv4 address"), *Bad));
+			}
+		}
 		else if (Key.Equals(TEXT("yaw"), ESearchCase::IgnoreCase))
 		{
 			if (Trimmed.IsNumeric())
@@ -118,6 +155,7 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 			else if (Key.Equals(TEXT("zeromissing"), ESearchCase::IgnoreCase)) Flag = &Out.bZeroMissingCurves;
 			else if (Key.Equals(TEXT("incomingtranslations"), ESearchCase::IgnoreCase)) Flag = &Out.bPreferIncomingTranslations;
 			else if (Key.Equals(TEXT("thread"), ESearchCase::IgnoreCase))      Flag = &Out.bReceiveThread;
+			else if (Key.Equals(TEXT("lockfirst"), ESearchCase::IgnoreCase))   Flag = &Out.bLockToFirstSender;
 			if (Flag && !ParseBool(Trimmed, *Flag))
 			{
 				Error(FString::Printf(TEXT("%s '%s' is not a yes/no value (1/0, true/false, yes/no, on/off)"), *Key, *Trimmed));
@@ -129,10 +167,10 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 
 FString FVMCConnectionSettings::ToString() const
 {
-	return FString::Printf(TEXT("port=%d;bind=%s;unity2ue=%d;meters2cm=%d;yaw=%s;zeromissing=%d;incomingtranslations=%d;thread=%d;subject=%s"),
+	return FString::Printf(TEXT("port=%d;bind=%s;unity2ue=%d;meters2cm=%d;yaw=%s;zeromissing=%d;incomingtranslations=%d;thread=%d;senders=%s;lockfirst=%d;subject=%s"),
 		Port, *BindAddress, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, *FString::SanitizeFloat(YawOffsetDeg),
 		bZeroMissingCurves ? 1 : 0, bPreferIncomingTranslations ? 1 : 0,
-		bReceiveThread ? 1 : 0, *SubjectName.ToString());
+		bReceiveThread ? 1 : 0, *FString::Join(AllowedSenders, TEXT(",")), bLockToFirstSender ? 1 : 0, *SubjectName.ToString());
 }
 
 bool FVMCConnectionSettings::Validate(TArray<FString>* OutErrors) const
@@ -146,6 +184,10 @@ bool FVMCConnectionSettings::Validate(TArray<FString>* OutErrors) const
 	if (!IsValidPort(Port)) Error(FString::Printf(TEXT("port %d is not from 1 to 65535"), Port));
 	if (!IsValidBindAddress(BindAddress)) Error(FString::Printf(TEXT("bind address '%s' is not an IPv4 address"), *BindAddress));
 	if (!IsValidSubject(SubjectName)) Error(TEXT("subject name is empty or contains ';'"));
+	for (const FString& Sender : AllowedSenders)
+	{
+		if (!IsValidBindAddress(Sender)) Error(FString::Printf(TEXT("sender '%s' is not an IPv4 address"), *Sender));
+	}
 	return bOk;
 }
 
@@ -154,5 +196,6 @@ bool FVMCConnectionSettings::operator==(const FVMCConnectionSettings& Other) con
 	return Port == Other.Port && BindAddress == Other.BindAddress && bUnityToUE == Other.bUnityToUE
 		&& bMetersToCm == Other.bMetersToCm && YawOffsetDeg == Other.YawOffsetDeg && SubjectName == Other.SubjectName
 		&& bZeroMissingCurves == Other.bZeroMissingCurves && bPreferIncomingTranslations == Other.bPreferIncomingTranslations
-		&& bReceiveThread == Other.bReceiveThread;
+		&& bReceiveThread == Other.bReceiveThread && AllowedSenders == Other.AllowedSenders
+		&& bLockToFirstSender == Other.bLockToFirstSender;
 }

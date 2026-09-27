@@ -8,6 +8,7 @@
 #include "VMCConnectionSettings.h"
 #include "VMCUdpReceiver.h"
 #include "Common/UdpSocketBuilder.h"
+#include "IPAddress.h"
 #include "HAL/PlatformProcess.h"
 #include "Interfaces/IPluginManager.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
@@ -319,13 +320,15 @@ bool FVMCUdpReceiverLoopbackTest::RunTest(const FString& Parameters)
 	FCriticalSection ReceivedLock;
 	TArray<TArray<uint8>> Received;
 	TArray<double> Times;
+	TArray<FString> Senders;
 	FString Error;
 	TUniquePtr<FVMCUdpReceiver> Receiver = FVMCUdpReceiver::Start(TEXT("127.0.0.1"), 0,
-		[&](TConstArrayView<uint8> Packet, double Arrival)
+		[&](TConstArrayView<uint8> Packet, double Arrival, const FInternetAddr& From)
 		{
 			FScopeLock ScopeLock(&ReceivedLock);
 			Received.Emplace(Packet.GetData(), Packet.Num());
 			Times.Add(Arrival);
+			Senders.Add(From.ToString(false));
 		},
 		TEXT("VMC receive test"), Error);
 	if (!TestTrue(FString::Printf(TEXT("Receiver starts (%s)"), *Error), Receiver.IsValid())) return false;
@@ -361,6 +364,7 @@ bool FVMCUdpReceiverLoopbackTest::RunTest(const FString& Parameters)
 	for (int32 i = 0; i < Count; ++i)
 	{
 		TestTrue(FString::Printf(TEXT("Packet %d intact and in order"), i), Received[i] == Sent[i]);
+		TestEqual(FString::Printf(TEXT("Packet %d sender (the sender filter's key)"), i), Senders[i], FString(TEXT("127.0.0.1")));
 		if (i > 0) TestTrue(TEXT("Arrival times rise"), Times[i] >= Times[i - 1]);
 	}
 	return true;

@@ -50,6 +50,16 @@ bool FVMCConnectionSettingsParseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("empty subject"), FVMCConnectionSettings::FromString(TEXT("subject=  "), S));
 	TestFalse(TEXT("bad yaw"), FVMCConnectionSettings::FromString(TEXT("yaw=left"), S));
 
+	// Senders (P4.7): commas or spaces, duplicates dropped; one bad entry rejects the list.
+	Errors.Reset();
+	TestTrue(TEXT("senders parse"), FVMCConnectionSettings::FromString(TEXT("senders=192.168.1.20, 10.0.0.2 192.168.1.20;lockfirst=yes"), S, &Errors));
+	TestEqual(TEXT("senders"), S.AllowedSenders, TArray<FString>{ TEXT("192.168.1.20"), TEXT("10.0.0.2") });
+	TestTrue(TEXT("lockfirst"), S.bLockToFirstSender);
+	TestTrue(TEXT("empty senders parse"), FVMCConnectionSettings::FromString(TEXT("senders="), S));
+	TestEqual(TEXT("... to any sender"), S.AllowedSenders.Num(), 0);
+	TestFalse(TEXT("a bad sender"), FVMCConnectionSettings::FromString(TEXT("senders=10.0.0.2,phone"), S, &Errors));
+	TestEqual(TEXT("... keeps the default"), S.AllowedSenders.Num(), 0);
+
 	// Validate.
 	FVMCConnectionSettings V;
 	TestTrue(TEXT("Defaults are valid"), V.Validate());
@@ -58,6 +68,9 @@ bool FVMCConnectionSettingsParseTest::RunTest(const FString& Parameters)
 	V = FVMCConnectionSettings();
 	V.SubjectName = TEXT("a;b");
 	TestFalse(TEXT("A ';' in the subject is invalid"), V.Validate());
+	V = FVMCConnectionSettings();
+	V.AllowedSenders = { TEXT("192.168.1.20"), TEXT("not an address") };
+	TestFalse(TEXT("A sender that isn't an address is invalid"), V.Validate());
 	return true;
 }
 
@@ -70,6 +83,7 @@ bool FVMCConnectionSettingsRoundTripTest::RunTest(const FString& Parameters)
 	const TCHAR* Subjects[] = { TEXT("VMC_Subject"), TEXT("Alice"), TEXT("Stage Left 2"), TEXT("Under_Score") };
 	const TCHAR* Binds[] = { TEXT("0.0.0.0"), TEXT("127.0.0.1"), TEXT("192.168.1.20") };
 	const float Yaws[] = { 0.f, 90.f, -90.5f, 12.25f, 179.75f };
+	const TArray<FString> SenderLists[] = { {}, { TEXT("192.168.1.20") }, { TEXT("10.0.0.2"), TEXT("127.0.0.1") } };
 	for (int32 i = 0; i < 50; ++i)
 	{
 		FVMCConnectionSettings In;
@@ -82,6 +96,8 @@ bool FVMCConnectionSettingsRoundTripTest::RunTest(const FString& Parameters)
 		In.bZeroMissingCurves = Random.FRand() < 0.5f;
 		In.bPreferIncomingTranslations = Random.FRand() < 0.5f;
 		In.bReceiveThread = Random.FRand() < 0.5f;
+		In.AllowedSenders = SenderLists[Random.RandRange(0, UE_ARRAY_COUNT(SenderLists) - 1)];
+		In.bLockToFirstSender = Random.FRand() < 0.5f;
 
 		const FString String = In.ToString();
 		FVMCConnectionSettings Out;

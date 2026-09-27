@@ -214,6 +214,55 @@ namespace VMCProtocol
 		return true;
 	}
 
+	bool ParseAvailable(TConstArrayView<FArg> Args, FSenderState& Out)
+	{
+		Out = FSenderState();
+		if (Args.Num() != 1 && Args.Num() != 3 && Args.Num() != 4)
+		{
+			return false;
+		}
+		float V[4];
+		if (!ReadNumbers(Args, 0, Args.Num(), V))
+		{
+			return false;
+		}
+		Out.bLoaded = V[0] != 0.f;
+		if (Args.Num() >= 3)
+		{
+			Out.Calibration = FMath::RoundToInt(V[1]);
+			Out.CalibrationMode = FMath::RoundToInt(V[2]);
+		}
+		if (Args.Num() == 4)
+		{
+			Out.Tracking = FMath::RoundToInt(V[3]);
+		}
+		return true;
+	}
+
+	FString DescribeSenderState(const FSenderState& State)
+	{
+		TArray<FString> Parts;
+		if (!State.bLoaded)
+		{
+			Parts.Add(TEXT("no avatar loaded"));
+		}
+		if (State.Calibration.IsSet())
+		{
+			switch (*State.Calibration)
+			{
+			case 0: Parts.Add(TEXT("not calibrated")); break;
+			case 1: Parts.Add(TEXT("waiting for calibration")); break;
+			case 2: Parts.Add(TEXT("calibrating")); break;
+			default: break; // 3: calibrated
+			}
+		}
+		if (State.Tracking.IsSet() && *State.Tracking == 0)
+		{
+			Parts.Add(TEXT("tracking lost"));
+		}
+		return FString::Join(Parts, TEXT(", "));
+	}
+
 	FVector ToUEPosition(const FVector3f& P, bool bUnityToUE, bool bMetersToCm)
 	{
 		// Both spaces are left-handed; this basis change is a proper rotation. It keeps a character

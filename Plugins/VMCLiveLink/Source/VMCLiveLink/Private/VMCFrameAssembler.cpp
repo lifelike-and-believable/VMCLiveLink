@@ -87,11 +87,23 @@ FVMCFrameAssembler::FMessageResult FVMCFrameAssembler::ApplyMessage(VMCProtocol:
 		}
 		break;
 	}
+	case EAddress::Available:
+	{
+		FSenderState State;
+		if (!ParseAvailable(Args, State))
+		{
+			Result.bMalformed = true;
+			break;
+		}
+		Result.bSenderStateChanged = !SenderState.IsSet() || *SenderState != State;
+		SenderState = State;
+		break;
+	}
 	case EAddress::BlendApply:
 		Result.bApply = true;
 		break;
 	default:
-		break; // availability, devices, camera, ...: not used yet
+		break; // devices, camera, ...: not used yet
 	}
 	return Result;
 }

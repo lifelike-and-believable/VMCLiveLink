@@ -17,7 +17,9 @@ struct FOSCMessage;
 class ULiveLinkSubjectRemapper;
 class ULiveLinkSubjectSettings;
 class FVMCFrameAssembler;
+class FVMCSenderFilter;
 class FVMCUdpReceiver;
+class FInternetAddr;
 class ULiveLinkSourceSettings;
 struct FPropertyChangedEvent;
 namespace VMCProtocol { struct FArg; enum class EAddress : uint8; }
@@ -86,7 +88,8 @@ private:
     void EnsureSubjectSettingsWithDefaults(); // create settings + attach the default remapper
 
     // ---- Frame-building thread (receive thread, or game thread) ----
-    void OnPacket(TConstArrayView<uint8> Packet, double ArrivalSeconds);
+    void OnPacket(TConstArrayView<uint8> Packet, double ArrivalSeconds, const FInternetAddr& Sender);
+    bool AcceptSender(const FString& Sender); // the allowlist and sender lock (Settings)
     void ProcessMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, double ArrivalSeconds, const FSnapshot& Snap);
     void PushStaticData(const FSnapshot& Snap);
     void PushFrame(const FSnapshot& Snap, double ArrivalSeconds);
@@ -118,6 +121,7 @@ private:
 
     // Frame building (one thread at a time)
     TUniquePtr<FVMCFrameAssembler> Assembler;
+    TUniquePtr<FVMCSenderFilter> SenderFilter; // configured by the game thread while nothing is received
     void InitSkeleton();
     bool bStaticDirty = false;           // a new bone or curve arrived
     uint32 PublishedStaticVersion = 0;   // snapshot version of the last static publish
@@ -135,4 +139,7 @@ private:
     double LastFrameSeconds = 0.0;
     double MeanFrameInterval = 0.0;   // seconds, moving average
     double MeanIntervalDeviation = 0.0; // seconds, moving average of |interval - mean|: the jitter
+    FString SenderStateText;          // what /VMC/Ext/OK says, when worth showing (VMCProtocol::DescribeSenderState)
+    FString LockedSender;             // the sender locked to (bLockToFirstSender), or empty
+    int32 IgnoredSenders = 0;         // senders whose packets were ignored since receiving started
 };

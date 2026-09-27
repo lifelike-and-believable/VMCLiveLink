@@ -92,7 +92,7 @@ uint32 FVMCUdpReceiver::Run()
 			{
 				break;
 			}
-			OnPacket(TConstArrayView<uint8>(Buffer.GetData(), BytesRead), FPlatformTime::Seconds());
+			OnPacket(TConstArrayView<uint8>(Buffer.GetData(), BytesRead), FPlatformTime::Seconds(), *Sender);
 		}
 	}
 	return 0;

@@ -13,6 +13,15 @@ FVMCConnectionSettings UVMCLiveLinkSourceSettings::ToConnectionSettings() const
 	Out.bZeroMissingCurves = bZeroMissingCurves;
 	Out.bPreferIncomingTranslations = bPreferIncomingTranslations;
 	Out.bReceiveThread = bReceiveThread;
+	for (const FString& Sender : AllowedSenders)
+	{
+		const FString Trimmed = Sender.TrimStartAndEnd();
+		if (!Trimmed.IsEmpty())
+		{
+			Out.AllowedSenders.AddUnique(Trimmed); // Validate reports entries that aren't addresses
+		}
+	}
+	Out.bLockToFirstSender = bLockToFirstSender;
 	return Out;
 }
 
@@ -27,6 +36,8 @@ void UVMCLiveLinkSourceSettings::FromConnectionSettings(const FVMCConnectionSett
 	bZeroMissingCurves = In.bZeroMissingCurves;
 	bPreferIncomingTranslations = In.bPreferIncomingTranslations;
 	bReceiveThread = In.bReceiveThread;
+	AllowedSenders = In.AllowedSenders;
+	bLockToFirstSender = In.bLockToFirstSender;
 	// Presets recreate the source from the connection string, so keep it in step.
 	ConnectionString = In.ToString();
 }
