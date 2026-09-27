@@ -630,7 +630,12 @@ void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double Arrival
         Frame.Cast<FLiveLinkCameraFrameData>()->FieldOfView = Device.FieldOfView;
     }
     Data->Transform = Device.Transform;
+    // Timed like the main subject's frames (PushFrame), so the subjects stay in step.
     Data->WorldTime = FLiveLinkWorldTime(ArrivalSeconds);
+    if (const TOptional<float> SenderTime = Assembler->GetSenderTime())
+    {
+        Data->MetaData.SceneTime = FQualifiedFrameTime(FFrameTime::FromDecimal(double(*SenderTime) * SenderTimeRate.AsDecimal()), SenderTimeRate);
+    }
     Client->PushSubjectFrameData_AnyThread({ SourceGuid, Subject }, MoveTemp(Frame));
 }
 
