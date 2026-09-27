@@ -205,7 +205,7 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
         }
         if (Devices > 0)
         {
-            Parts.Add(FString::Printf(TEXT("%d device subject%s"), Devices, Devices == 1 ? TEXT("") : TEXT("s")));
+            Parts.Add(FString::Printf(TEXT("%d device/camera subject%s"), Devices, Devices == 1 ? TEXT("") : TEXT("s")));
         }
         if (Ignored > 0)
         {
