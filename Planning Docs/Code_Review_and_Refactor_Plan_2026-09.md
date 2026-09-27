@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-27):** 34 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1, P4.2, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 76 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-27):** 35 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1 to P4.3, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 79 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -920,6 +920,11 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
 - **Resolves:** PE-05 · **Depends on:** P4.1, P3.4
 - **Steps:** generate the `UIKRigDefinition` with `UIKRigController`: set the retarget root (hips), add the standard chains (spine, neck, head, arms, legs, fingers, using the same chain names as the UE5 mannequin IK Rig so retargeters auto-map), and optionally add leg and arm goals. If humanoid data is missing, fall back to the current template duplication.
 - **Acceptance:** fixtures with **non-VRoid bone names** get complete chains. An automatic retargeter to the UE5 mannequin maps every standard chain.
+- **Status (#153, merged):** built and tested; the retargeter auto-map is an editor check.
+  - `VRMIKRig::Build` (in `VRMInterchangeEditor`) sets the hips as retarget root and adds up to 19 chains named as in `IK_Mannequin` (Spine, Neck, Head, clavicles, arms, legs, and five fingers per hand). Optional bones fall back to neighbours (the spine ends at the upper chest, else the chest). A rebuild replaces the chains, so a reimport with Overwrite matches the file.
+  - The pipeline builds from the humanoid map when **Build From Humanoid** is on (the default) and the VRM maps the hips; otherwise it duplicates the template as before, with a warning when the map lacks hips. Chains whose bones aren't in the skeleton are skipped and logged.
+  - Tests: `VRM.IKRig.Chains`, `.Build`, `.Pipeline`, on a skeleton built in code with 3ds Max-style names (`Pelvis`, `L_UpperArm`, `L_Finger1_1`, ...).
+  - **Deviations:** no IK goals or solvers are added (the step called them optional); the rig is for retargeting only. The first CI build failed because `UIKRigDefinition` has no `GetRetargetRoot` in UE 5.6; the tests read it through `UIKRigController`.
 
 ### P4.4 Creating a VMCLiveLink mapping from a VRM avatar
 - **Resolves:** X-01 (VMCLiveLink side) · **Depends on:** P4.1, P3.2, D-4
@@ -1116,14 +1121,15 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P3.5 Build files and platforms | #142 | Merged | Win64 only (D-2). The first push had an unquoted `:` in a workflow step name, which made the workflow invalid, so no jobs ran |
 | P4.1 Avatar description asset | #143, #144 | Merged | Copilot's reviews came after the merges; its findings were fixed in #147 |
 | P4.2 VRM Expressions node | #145 | Merged | First run crashed: `FBlendedCurve` needs an `FMemMark` outside anim evaluation (the tests make one) |
+| P4.3 IK Rig from the humanoid map | #153 | Merged | First build used `UIKRigDefinition::GetRetargetRoot`, which UE 5.6 doesn't have. Copilot's four findings fixed before the merge |
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, this PR | Merged | |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, this PR | Merged | |
 
-**Not started:** P4.3 to P4.7, and Phases 5 to 7.
+**Not started:** P4.4 to P4.7, and Phases 5 to 7.
 
 **Recommended next:**
-1. P4.3: the IK Rig generated from the humanoid map.
-2. Decisions D-4 (for P4.4) and D-7 (for P4.5).
+1. Decisions D-4 (for P4.4) and D-7 (for P4.5).
+2. P4.6 (morph targets) and P4.7 (VMC protocol coverage), which need no decision.
 3. Owner: fix the runner's Application Control block (X-07).
 4. The editor checks below.
 
@@ -1161,6 +1167,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P4.3):** import a VRM (ideally one with non-VRoid bone names). Its `IK_Rig_VRM_<mesh>` has the hips as retarget root and the chains listed in P4.3. Create an IK Retargeter from it to `IK_Mannequin` and check that every chain maps automatically and the mannequin follows an animation.
 - **In the editor (P4.2):** replay a VSeeFace capture (`scripts/vmc_sender.py replay`) into a VRoid avatar's AnimBP with a VRM Expressions node after the Live Link pose: the face follows with no curve map. Check that blinking stops while an expression with overrideBlink is active.
 - **In the editor (P4.1):** import a VRoid VRM 0.x and a VRM 1.0 avatar. `<Mesh>_Avatar` shows the humanoid map, expressions and meta; the licence notification appears; the spring data reference is set.
 - **In the editor (P3.4):** import a VRM with the spring bone, IK Rig, Live Link and material pipelines. Open `BP_LL_VRM_<name>` and `BP_LL_VRM_To_UE5_<name>`: the mesh and anim Blueprint are set, and a placed actor shows the character. Reimport with and without Overwrite: with it, the same assets are updated; without it, new ones get unique names.
