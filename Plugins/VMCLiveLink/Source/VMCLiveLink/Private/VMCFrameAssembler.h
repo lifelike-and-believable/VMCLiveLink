@@ -61,6 +61,9 @@ public:
 	/** The last /VMC/Ext/OK, if the sender sends one. */
 	const TOptional<VMCProtocol::FSenderState>& GetSenderState() const { return SenderState; }
 
+	/** Forgets the last /VMC/Ext/OK (receiving restarted, maybe from another sender). */
+	void ClearSenderState() { SenderState.Reset(); }
+
 	/** A /VMC/Ext/Bone/Pos transform (already in UE space). Returns true if the bone is new, in
 	 *  which case the static data must be published again. */
 	bool SetBone(FName Bone, const FTransform& Local);

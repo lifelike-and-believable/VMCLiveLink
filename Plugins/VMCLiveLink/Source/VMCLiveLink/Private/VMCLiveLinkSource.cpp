@@ -138,12 +138,15 @@ bool FVMCLiveLinkSource::RequestSourceShutdown()
 
 bool FVMCLiveLinkSource::StartReceiving()
 {
-    // No path is running, so the filter isn't in use. A restart forgets the locked sender.
+    // No path is running, so the filter and assembler aren't in use. A restart forgets the locked
+    // sender and what the last sender said in /VMC/Ext/OK, so a new sender's first OK is reported.
     SenderFilter->Configure(Settings.AllowedSenders, Settings.bLockToFirstSender);
+    Assembler->ClearSenderState();
     {
         FScopeLock Lock(&StatsLock);
         LockedSender.Reset();
         IgnoredSenders = 0;
+        SenderStateText.Reset();
     }
 
     if (!Settings.bReceiveThread)
