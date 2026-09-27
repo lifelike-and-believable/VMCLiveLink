@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-27):** 37 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1 to P4.4, P4.6, P4.7 in part, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 84 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-27):** 38 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1 to P4.4, P4.6, P4.7, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 85 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -967,9 +967,9 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   - `/VMC/Ext/Cam`: optional camera subject.
   - A sender allowlist or "lock to first sender" option.
 - **Acceptance:** replayed captures create tracker subjects when enabled, and the status text reflects `/VMC/Ext/OK`.
-- **Status:** P4.7a (#156) merged; P4.7b (#157) in review.
+- **Status (#156, #157, merged):** built and tested; the live acceptance is an editor check.
   - P4.7a: `/VMC/Ext/OK` (all three forms) is parsed and its noteworthy parts ("no avatar loaded", "calibrating", "tracking lost") appended to the source status; a restart clears it. Settings **Allowed Senders** (IPv4 list) and **Lock to First Sender**, applied on both receive paths before parsing; the status names the locked sender and counts ignored ones. Tests: `VMC.Protocol.Available`, `VMC.SenderFilter`, extended settings and loopback tests.
-  - P4.7b: **Device Subjects** publishes `/VMC/Ext/Hmd|Con|Tra/Pos` as Transform-role subjects `<Subject>_<serial>`, **Camera Subject** publishes `/VMC/Ext/Cam` as a Camera-role subject with its field of view; both in world space like the root, timed like the main subject. `/Local` variants are not used. Test: `VMC.Protocol.Devices`.
+  - P4.7b: **Device Subjects** publishes `/VMC/Ext/Hmd|Con|Tra/Pos` as Transform-role subjects `<Subject>_<serial>`, **Camera Subject** publishes `/VMC/Ext/Cam` as a Camera-role subject with its field of view; both in world space like the root, timed like the main subject (sender scene time included). `/Local` variants are not used. A subject name another device or camera already uses gets a number; a camera field of view that isn't finite or isn't between 0 and 180 degrees is rejected. Test: `VMC.Protocol.Devices`.
 
 ---
 
@@ -1138,7 +1138,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P4.3 IK Rig from the humanoid map | #153 | Merged | First build used `UIKRigDefinition::GetRetargetRoot`, which UE 5.6 doesn't have. Copilot's four findings fixed before the merge |
 | P4.4 Mapping from the humanoid map (D-4) | #159, #160 | Merged | Metadata convention, no plugin dependency. Copilot: 5 and 2 findings plus 1 missed, all fixed |
 | P4.6 Morph targets | #155 | Merged | Copilot: 4 findings and 3 "previously missed" over five rounds, all fixed |
-| P4.7 VMC protocol coverage | #156, #157 | #156 merged, #157 in review | #157 was stacked on #156; after #156's squash, the conflicts were only duplicated base changes (checked with `git diff` against `main`, rule 13) |
+| P4.7 VMC protocol coverage | #156, #157 | Merged | Copilot: 1 and 2 findings plus 5 "previously missed" over the rounds, all fixed. #157 was stacked on #156; after #156's squash, the conflicts were only duplicated base changes (checked with `git diff` against `main`, rule 13) |
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
 | (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, this PR | Merged | |
 
