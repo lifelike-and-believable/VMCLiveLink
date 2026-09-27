@@ -178,29 +178,38 @@ void FVMCLiveLinkSource::StopReceiving()
 
 FText FVMCLiveLinkSource::GetSourceStatus() const
 {
+    // Copy under the lock (the receive thread takes it for every frame), format after.
     double Last = 0.0, Interval = 0.0, Jitter = 0.0;
-    FText Notes; // "; sender: calibrating; from 192.168.1.20; ignoring 1 other sender", or empty
+    FString StateText, Locked;
+    int32 Ignored = 0, Devices = 0;
     {
         FScopeLock Lock(&StatsLock);
         Last = LastFrameSeconds;
         Interval = MeanFrameInterval;
         Jitter = MeanIntervalDeviation;
+        StateText = SenderStateText;
+        Locked = LockedSender;
+        Ignored = IgnoredSenders;
+        Devices = NumDeviceSubjects;
+    }
+    FText Notes; // "; sender: calibrating; from 192.168.1.20; ignoring 1 other sender", or empty
+    {
         TArray<FString> Parts;
-        if (!SenderStateText.IsEmpty())
+        if (!StateText.IsEmpty())
         {
-            Parts.Add(FString::Printf(TEXT("sender: %s"), *SenderStateText));
+            Parts.Add(FString::Printf(TEXT("sender: %s"), *StateText));
         }
-        if (!LockedSender.IsEmpty())
+        if (!Locked.IsEmpty())
         {
-            Parts.Add(FString::Printf(TEXT("from %s"), *LockedSender));
+            Parts.Add(FString::Printf(TEXT("from %s"), *Locked));
         }
-        if (NumDeviceSubjects > 0)
+        if (Devices > 0)
         {
-            Parts.Add(FString::Printf(TEXT("%d device subject%s"), NumDeviceSubjects, NumDeviceSubjects == 1 ? TEXT("") : TEXT("s")));
+            Parts.Add(FString::Printf(TEXT("%d device subject%s"), Devices, Devices == 1 ? TEXT("") : TEXT("s")));
         }
-        if (IgnoredSenders > 0)
+        if (Ignored > 0)
         {
-            Parts.Add(FString::Printf(TEXT("ignoring %d other sender%s"), IgnoredSenders, IgnoredSenders == 1 ? TEXT("") : TEXT("s")));
+            Parts.Add(FString::Printf(TEXT("ignoring %d other sender%s"), Ignored, Ignored == 1 ? TEXT("") : TEXT("s")));
         }
         if (Parts.Num() > 0)
         {
