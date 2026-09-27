@@ -44,7 +44,7 @@ static TArray<FVRMMeshInstance> CollectMeshInstances(const cgltf_data* Data, con
 struct FVRMVertexRest
 {
     FMatrix44f Position;     // applied to the position; deltas take its linear part
-    FMatrix Normal;          // applied to the normal (the inverse transpose)
+    FMatrix44f Normal;       // applied to the normal (the inverse transpose); single precision to keep this small
     FVector3f LocalNormal;   // the file's normal, before Normal was applied
 };
 
@@ -388,7 +388,7 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
                 Out.Mesh.Normals.Add(Convention.Direction(TransformNormal(NormalXf, LocalNormal)));
 
                 Out.Mesh.UV0.Add(UVLocal[v]);
-                OutVertexRest.Add({ FMatrix44f(VertexXf), NormalXf, LocalNormal });
+                OutVertexRest.Add({ FMatrix44f(VertexXf), FMatrix44f(NormalXf), LocalNormal });
 
                 if (bSkinned)
                 {
@@ -833,8 +833,14 @@ static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out)
     }
 }
 
+static FString GltfMeshName(const cgltf_mesh& Mesh)
+{
+    return Mesh.name ? FString(UTF8_TO_TCHAR(Mesh.name)).TrimStartAndEnd() : FString();
+}
+
 // The imported name of a mesh's morph target: the file's name, or "<MeshName>_morph_<index>" for
-// an unnamed one, so unnamed targets of different meshes stay apart.
+// an unnamed one, so unnamed targets of different meshes stay apart. A mesh without a name, or
+// with one another mesh also has, adds its glTF index ("Face_3_morph_0", "Mesh3_morph_0").
 static FString MorphTargetName(const cgltf_data* Data, const cgltf_mesh* Mesh, size_t TargetIndex)
 {
     FString Name;
@@ -844,10 +850,20 @@ static FString MorphTargetName(const cgltf_data* Data, const cgltf_mesh* Mesh, s
     }
     if (Name.IsEmpty())
     {
-        FString MeshName = Mesh->name ? FString(UTF8_TO_TCHAR(Mesh->name)).TrimStartAndEnd() : FString();
+        const int32 MeshIndex = int32(Mesh - Data->meshes);
+        FString MeshName = GltfMeshName(*Mesh);
+        bool bShared = false;
+        for (cgltf_size m = 0; m < Data->meshes_count && !MeshName.IsEmpty() && !bShared; ++m)
+        {
+            bShared = int32(m) != MeshIndex && GltfMeshName(Data->meshes[m]) == MeshName;
+        }
         if (MeshName.IsEmpty())
         {
-            MeshName = FString::Printf(TEXT("Mesh%d"), int32(Mesh - Data->meshes));
+            MeshName = FString::Printf(TEXT("Mesh%d"), MeshIndex);
+        }
+        else if (bShared)
+        {
+            MeshName = FString::Printf(TEXT("%s_%d"), *MeshName, MeshIndex);
         }
         Name = FString::Printf(TEXT("%s_morph_%d"), *MeshName, int32(TargetIndex));
     }
@@ -998,13 +1014,19 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
                         for (int32 v = 0; v < PrimVertCount; ++v)
                         {
                             const int32 GlobalIndex = VertexBase2 + v;
-                            if (NormalDeltaLocal[v].IsNearlyZero() || !VertexRest.IsValidIndex(GlobalIndex) || !Out.Mesh.Normals.IsValidIndex(GlobalIndex))
+                            // Every non-zero delta counts, however small; zero leaves the normal as it is.
+                            if (NormalDeltaLocal[v] == FVector3f::ZeroVector || !VertexRest.IsValidIndex(GlobalIndex))
                             {
                                 continue;
                             }
+                            // Base and morphed normal through the same transform, so the delta is only the morph's.
                             const FVRMVertexRest& Rest = VertexRest[GlobalIndex];
-                            const FVector3f Morphed = Convention.Direction(TransformNormal(Rest.Normal, Rest.LocalNormal + NormalDeltaLocal[v]));
-                            Morph.DeltaNormals[GlobalIndex] = Morphed - Out.Mesh.Normals[GlobalIndex];
+                            auto ToUE = [&Rest, &Convention](const FVector3f& Local)
+                            {
+                                const FVector3f N = FVector3f(Rest.Normal.TransformVector(Local)).GetSafeNormal(UE_SMALL_NUMBER, FVector3f(0, 0, 1));
+                                return Convention.Direction(N);
+                            };
+                            Morph.DeltaNormals[GlobalIndex] = ToUE(Rest.LocalNormal + NormalDeltaLocal[v]) - ToUE(Rest.LocalNormal);
                         }
                     }
                 }
