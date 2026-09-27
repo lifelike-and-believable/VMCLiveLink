@@ -158,8 +158,10 @@ bool FVMCRemapperHumanoidMetadataTest::RunTest(const FString& Parameters)
 	Tags.Add(TEXT("VRM.Humanoid."), TEXT("Nothing"));  // no bone name
 	Tags.Add(TEXT("VRM.Humanoid.Head"), TEXT(""));     // no target
 	Tags.Add(TEXT("Other.Tag"), TEXT("x"));
+	Tags.Add(TEXT("vrm.humanoid.Spine"), TEXT("J_Bip_C_Spine")); // FName keys can come back in any case
 	const TMap<FName, FName> Map = UVMCLiveLinkRemapper::MakeBoneMapFromHumanoidMetadata(Tags);
-	TestEqual(TEXT("Two bones"), Map.Num(), 2);
+	TestEqual(TEXT("Three bones"), Map.Num(), 3);
+	TestEqual(TEXT("Prefix in another case"), Map.FindRef(TEXT("Spine")), FName(TEXT("J_Bip_C_Spine")));
 	TestEqual(TEXT("Hips"), Map.FindRef(TEXT("Hips")), FName(TEXT("J_Bip_C_Hips")));
 	TestEqual(TEXT("Thumb, trimmed"), Map.FindRef(TEXT("LeftThumbProximal")), FName(TEXT("J_Bip_L_Thumb1")));
 

@@ -41,7 +41,8 @@ TMap<FName, FName> UVMCLiveLinkRemapper::MakeBoneMapFromHumanoidMetadata(const T
 	{
 		const FString Key = Tag.Key.ToString();
 		const FString Bone = Tag.Value.TrimStartAndEnd();
-		if (Key.StartsWith(Prefix, ESearchCase::CaseSensitive) && Key.Len() > Prefix.Len() && !Bone.IsEmpty())
+		// FName keys may come back in whichever casing was registered first, so ignore case.
+		if (Key.StartsWith(Prefix, ESearchCase::IgnoreCase) && Key.Len() > Prefix.Len() && !Bone.IsEmpty())
 		{
 			Out.Add(FName(Key.RightChop(Prefix.Len())), FName(Bone));
 		}

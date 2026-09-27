@@ -172,8 +172,9 @@ public:
 
 	/**
 	 * Replaces the bone map with the reference skeleton's humanoid metadata (see above), keeping only
-	 * bones the skeleton has. False, leaving the map alone, if the mesh has no such metadata. Editor
-	 * only: the metadata isn't in cooked builds.
+	 * bones the skeleton has. False, leaving the map alone, when there is no reference skeleton, when
+	 * metadata can't be read (outside the editor: ReadAssetMetadata is unset and cooked builds have no
+	 * metadata), or when the mesh's metadata gives no bone the skeleton has.
 	 */
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	bool MapBonesFromHumanoidMetadata();
