@@ -35,7 +35,8 @@ namespace VRMIKRig
 	/**
 	 * Points IKRig at Mesh and replaces its retarget root and chains with the ones above. Chains
 	 * whose bones aren't in the mesh's skeleton are skipped and listed in OutProblems. False if
-	 * the rig couldn't be set up at all (no hips, or the hips aren't in the skeleton).
+	 * the rig couldn't be set up at all, with the reason in OutProblems: IKRig or Mesh is null,
+	 * the avatar has no hips, the hips aren't in the skeleton, or the rig won't take the mesh.
 	 */
 	bool Build(UIKRigDefinition* IKRig, USkeletalMesh* Mesh, const FVRMAvatarData& Avatar, TArray<FString>* OutProblems = nullptr);
 }

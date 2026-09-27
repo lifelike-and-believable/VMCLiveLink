@@ -28,6 +28,7 @@ void UVRMIKRigPostImportPipeline::PostInitProperties()
 void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath)
 {
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
+	LastIKRig = nullptr; // only this import's rig counts
 	// Only this instance's flag counts (seeded from the project settings in PostInitProperties).
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && bGenerateIKRig)
 	{
@@ -36,7 +37,12 @@ void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer*
 		bHaveHumanoid = false;
 		if (const UInterchangeVRMNode* VRMNode = UInterchangeVRMNode::Find(*BaseNodeContainer))
 		{
-			bHaveHumanoid = VRMNode->GetAvatarData(StagedAvatar) && !VRMIKRig::RetargetRoot(StagedAvatar).IsNone();
+			const bool bHaveAvatar = VRMNode->GetAvatarData(StagedAvatar);
+			bHaveHumanoid = bHaveAvatar && !VRMIKRig::RetargetRoot(StagedAvatar).IsNone();
+			if (bHaveAvatar && !bHaveHumanoid && bBuildFromHumanoid)
+			{
+				UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] The VRM's humanoid map has no hips bone, so the IK Rig is copied from the template instead of built from the map."));
+			}
 		}
 		WaitForSkeletalMesh();
 	}

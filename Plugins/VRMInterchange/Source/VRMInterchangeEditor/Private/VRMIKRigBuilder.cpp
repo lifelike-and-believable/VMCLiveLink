@@ -95,8 +95,13 @@ namespace VRMIKRig
 			}
 		};
 
+		if (!IKRig || !Mesh)
+		{
+			Problem(TEXT("No IK Rig or skeletal mesh was given to build."));
+			return false;
+		}
 		const FName Root = RetargetRoot(Avatar);
-		if (!IKRig || !Mesh || Root.IsNone())
+		if (Root.IsNone())
 		{
 			Problem(TEXT("The avatar has no hips bone, so no IK Rig can be built from its humanoid map."));
 			return false;
