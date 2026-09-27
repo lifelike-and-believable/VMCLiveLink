@@ -45,11 +45,9 @@ namespace VMCProtocol
 			if (Is("Root/Pos"))    return EAddress::RootPos;
 			if (Is("T"))           return EAddress::Time;
 			if (Is("OK"))          return EAddress::Available;
-			static const char* const Devices[] = { "Hmd/Pos", "Con/Pos", "Tra/Pos", "Hmd/Pos/Local", "Con/Pos/Local", "Tra/Pos/Local" };
-			for (const char* Device : Devices)
-			{
-				if (Is(Device)) return EAddress::DevicePos;
-			}
+			if (Is("Hmd/Pos") || Is("Con/Pos") || Is("Tra/Pos")) return EAddress::DevicePos;
+			if (Is("Hmd/Pos/Local") || Is("Con/Pos/Local") || Is("Tra/Pos/Local")) return EAddress::DevicePosLocal;
+			if (Is("Cam"))         return EAddress::Camera;
 			return EAddress::Other;
 		}
 	}
@@ -191,6 +189,37 @@ namespace VMCProtocol
 			Out.Offset = FVector3f(V[3], V[4], V[5]);
 		}
 		return true;
+	}
+
+	bool ParseCamera(TConstArrayView<FArg> Args, FPose& Out, float& OutFieldOfView)
+	{
+		// Outputs are reset, and only filled once the whole message has parsed.
+		Out = FPose();
+		OutFieldOfView = 0.f;
+		if (Args.Num() != 9 || !Args[0].IsNonEmptyString() || !Args[8].IsNumber())
+		{
+			return false;
+		}
+		// A field of view Live Link cameras can use: finite, between 0 and 180 degrees.
+		const float Fov = Args[8].Number;
+		if (!FMath::IsFinite(Fov) || Fov <= 0.f || Fov >= 180.f)
+		{
+			return false;
+		}
+		FPose Parsed;
+		Parsed.Name = Args[0].ToName();
+		if (Parsed.Name.IsNone() || !ReadPose7(Args, 1, Parsed))
+		{
+			return false;
+		}
+		Out = Parsed;
+		OutFieldOfView = Fov;
+		return true;
+	}
+
+	FName MakeDeviceSubjectName(FName Subject, FName DeviceName)
+	{
+		return FName(*FString::Printf(TEXT("%s_%s"), *Subject.ToString(), *DeviceName.ToString()));
 	}
 
 	bool ParseBlendVal(TConstArrayView<FArg> Args, FName& OutName, float& OutValue)
