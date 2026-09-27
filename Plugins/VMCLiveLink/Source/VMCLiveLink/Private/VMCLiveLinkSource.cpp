@@ -605,12 +605,13 @@ void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double Arrival
     }
     else
     {
-        // First pose from this device: its subject's static data, once. A camera named like a
-        // device's serial (or the other way round) gets a suffix, so the two never share a subject.
-        Subject = VMCProtocol::MakeDeviceSubjectName(Snap.Settings.SubjectName, Device.Name);
-        if (Others.FindKey(Subject))
+        // First pose from this device: its subject's static data, once. A name another device or
+        // camera already publishes under gets a number, so no two ever share a subject.
+        const FName Base = VMCProtocol::MakeDeviceSubjectName(Snap.Settings.SubjectName, Device.Name);
+        Subject = Base;
+        for (int32 Suffix = 2; Subjects.FindKey(Subject) || Others.FindKey(Subject); ++Suffix)
         {
-            Subject = FName(*FString::Printf(TEXT("%s_%s"), *Subject.ToString(), Device.bCamera ? TEXT("Camera") : TEXT("Device")));
+            Subject = FName(*FString::Printf(TEXT("%s_%d"), *Base.ToString(), Suffix));
         }
         if (Device.bCamera)
         {

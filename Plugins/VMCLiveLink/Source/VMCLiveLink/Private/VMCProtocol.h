@@ -86,7 +86,8 @@ namespace VMCProtocol
 	/** /VMC/Ext/Hmd|Con|Tra/Pos: (string serial, 7 floats), like Bone/Pos. */
 	inline bool ParseDevicePos(TConstArrayView<FArg> Args, FPose& Out) { return ParseBonePos(Args, Out); }
 
-	/** /VMC/Ext/Cam: (string name, 7 floats, float fov in degrees). */
+	/** /VMC/Ext/Cam: (string name, 7 floats, float fov in degrees). A field of view that isn't
+	 *  finite, or not between 0 and 180 degrees, fails. */
 	bool ParseCamera(TConstArrayView<FArg> Args, FPose& Out, float& OutFieldOfView);
 
 	/** The Live Link subject a device or camera is published as: "<Subject>_<Name>". */

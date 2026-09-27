@@ -200,6 +200,12 @@ namespace VMCProtocol
 		{
 			return false;
 		}
+		// A field of view Live Link cameras can use: finite, between 0 and 180 degrees.
+		const float Fov = Args[8].Number;
+		if (!FMath::IsFinite(Fov) || Fov <= 0.f || Fov >= 180.f)
+		{
+			return false;
+		}
 		FPose Parsed;
 		Parsed.Name = Args[0].ToName();
 		if (Parsed.Name.IsNone() || !ReadPose7(Args, 1, Parsed))
@@ -207,7 +213,7 @@ namespace VMCProtocol
 			return false;
 		}
 		Out = Parsed;
-		OutFieldOfView = Args[8].Number;
+		OutFieldOfView = Fov;
 		return true;
 	}
 

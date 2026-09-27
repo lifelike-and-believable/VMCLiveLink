@@ -8,6 +8,7 @@
 #include "VMCHumanoid.h"
 #include "VMCProtocol.h"
 #include "VMCSenderFilter.h"
+#include <limits>
 
 namespace VMCProtocolTests
 {
@@ -264,6 +265,9 @@ bool FVMCProtocolDevicesTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Camera without a field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1 }, TEXT("Camera")), Pose, Fov));
 	TestTrue(TEXT("... leaves no field of view behind"), Fov == 0.f && Pose.Name.IsNone());
 	TestFalse(TEXT("Camera without a name"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 60, 0 }), Pose, Fov));
+	TestFalse(TEXT("A zero field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 0 }, TEXT("Camera")), Pose, Fov));
+	TestFalse(TEXT("A 180-degree field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, 180 }, TEXT("Camera")), Pose, Fov));
+	TestFalse(TEXT("A NaN field of view"), ParseCamera(Floats({ 1, 2, 3, 0, 0, 0, 1, std::numeric_limits<float>::quiet_NaN() }, TEXT("Camera")), Pose, Fov));
 	TestEqual(TEXT("Subject names"), MakeDeviceSubjectName(TEXT("VMC_Subject"), TEXT("LHR-1234ABCD")), FName(TEXT("VMC_Subject_LHR-1234ABCD")));
 
 	// The assembler hands devices and the camera back in UE world space, with the root's yaw; the
