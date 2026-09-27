@@ -203,6 +203,17 @@ VMC senders send expressions (blend shapes) by name, such as `Joy`, `A` or `Blin
 
 Either version's names drive either version's avatar. The node follows the VRM 1.0 rules: binary expressions snap to 0 or 1, and an expression that overrides blink, look-at or mouth reduces those expressions while it is active. Curves that aren't expressions pass through unchanged. If a VMC remapper renames the expression curves (its curve map), the node sees the new names, so leave expression names unmapped when you use this node. The generated Live Link AnimBP doesn't contain this node yet; add it by hand.
 
+### Humanoid Map Metadata (for VMC Live Link)
+
+When the avatar description is generated, the importer also writes the humanoid map onto the skeletal mesh as editor metadata, so VMC Live Link (a separate plugin) can map a VMC stream onto the mesh without either plugin depending on the other:
+
+| Key | Value |
+|---|---|
+| `VRM.Humanoid.<UnityBoneName>` | The skeleton bone for that humanoid bone, e.g. `VRM.Humanoid.LeftUpperArm` = `J_Bip_L_UpperArm` |
+| `VRM.HumanoidVersion` | `1`, written only when at least one humanoid bone is mapped. A mesh without a humanoid map gets no keys at all, so a missing version just means "no map". |
+
+Keys use Unity `HumanBodyBones` names (what VMC senders stream). VRM 1.0's thumb is one joint off from Unity's: `leftThumbMetacarpal` is written as `LeftThumbProximal`, and `leftThumbProximal` as `LeftThumbIntermediate`. A reimport replaces the keys. Other tools can write the same keys to make any skeletal mesh mappable.
+
 ## Advanced Topics
 
 ### Re-importing VRM Files

@@ -497,6 +497,42 @@ namespace VRM
 		return EVRMHumanBone::None;
 	}
 
+	FString UnityHumanBoneName(EVRMHumanBone Bone)
+	{
+		FString Name = HumanBoneName(Bone);
+		if (Name.IsEmpty())
+		{
+			return Name;
+		}
+		// VRM 0.x names are Unity's with a lower-case first letter, so undo 1.0's thumb shift.
+		for (const TCHAR* Side : { TEXT("left"), TEXT("right") })
+		{
+			const FString Prefix = FString(Side) + TEXT("Thumb");
+			if (Name == Prefix + TEXT("Metacarpal")) { Name = Prefix + TEXT("Proximal"); break; }
+			if (Name == Prefix + TEXT("Proximal")) { Name = Prefix + TEXT("Intermediate"); break; }
+		}
+		Name[0] = FChar::ToUpper(Name[0]);
+		return Name;
+	}
+
+	TMap<FName, FString> MakeHumanoidMetadata(const FVRMAvatarData& Avatar)
+	{
+		TMap<FName, FString> Out;
+		for (const TPair<EVRMHumanBone, FName>& Pair : Avatar.HumanoidToBone)
+		{
+			const FString Unity = UnityHumanBoneName(Pair.Key);
+			if (!Unity.IsEmpty() && !Pair.Value.IsNone())
+			{
+				Out.Add(FName(FString(HumanoidMetadataPrefix) + Unity), Pair.Value.ToString());
+			}
+		}
+		if (Out.Num() > 0)
+		{
+			Out.Add(HumanoidMetadataVersionKey, TEXT("1"));
+		}
+		return Out;
+	}
+
 	FString HumanBoneName(EVRMHumanBone Bone)
 	{
 		const int32 i = int32(Bone) - 1;
