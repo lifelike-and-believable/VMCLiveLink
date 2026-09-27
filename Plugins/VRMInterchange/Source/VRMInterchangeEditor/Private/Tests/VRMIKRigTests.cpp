@@ -13,6 +13,7 @@
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "ReferenceSkeleton.h"
 #include "Rig/IKRigDefinition.h"
+#include "RigEditor/IKRigController.h"
 #include "UObject/Package.h"
 #include "VRMIKRigBuilder.h"
 #include "VRMIKRigPostImportPipeline.h"
@@ -202,7 +203,7 @@ bool FVRMIKRigBuildTest::RunTest(const FString& Parameters)
 			return false;
 		}
 		TestEqual(TEXT("No problems"), Problems.Num(), 0);
-		TestEqual(TEXT("Retarget root"), IKRig->GetRetargetRoot(), FName(TEXT("Pelvis")));
+		TestEqual(TEXT("Retarget root"), UIKRigController::GetController(IKRig)->GetRetargetRoot(), FName(TEXT("Pelvis")));
 		TestEqual(TEXT("All chains"), IKRig->GetRetargetChains().Num(), 19);
 		const FBoneChain* LeftArm = FindRigChain(IKRig, TEXT("LeftArm"));
 		if (TestNotNull(TEXT("LeftArm chain"), LeftArm))
@@ -284,7 +285,7 @@ bool FVRMIKRigPipelineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Named after the mesh, in the IK Rig folder"), IKRig->GetPathName(),
 		ContentBase / TEXT("vrm1_minimal") / TEXT("IKRigDefinition") / TEXT("IK_Rig_VRM_SK_IKRigTest.IK_Rig_VRM_SK_IKRigTest"));
 	TestTrue(TEXT("Preview mesh is the imported mesh"), IKRig->GetPreviewMesh() == Mesh);
-	TestEqual(TEXT("Retarget root from the humanoid map"), IKRig->GetRetargetRoot(), FName(TEXT("Pelvis")));
+	TestEqual(TEXT("Retarget root from the humanoid map"), UIKRigController::GetController(IKRig)->GetRetargetRoot(), FName(TEXT("Pelvis")));
 	TestEqual(TEXT("Chains from the humanoid map"), IKRig->GetRetargetChains().Num(), 19);
 
 	TestTrue(TEXT("Overwrite reuses the IK Rig"), Run(true) == IKRig);
