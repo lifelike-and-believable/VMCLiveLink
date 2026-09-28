@@ -76,10 +76,10 @@ namespace VRMMToonImportTests
 		return Uid;
 	}
 
-	UMaterialInstanceConstant* NewInstance(const FString& Folder, const FString& Name, UMaterialInterface* Parent)
+	UMaterialInstanceConstant* NewInstance(const FString& Folder, const FString& Name, UMaterialInterface* ParentMaterial)
 	{
 		UMaterialInstanceConstant* Instance = NewObject<UMaterialInstanceConstant>(CreatePackage(*(Folder / Name)), *Name, RF_Transient);
-		Instance->SetParentEditorOnly(Parent);
+		Instance->SetParentEditorOnly(ParentMaterial);
 		return Instance;
 	}
 }
