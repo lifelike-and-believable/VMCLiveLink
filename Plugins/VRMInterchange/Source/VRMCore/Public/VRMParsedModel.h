@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "VRMCoordinateConversion.h"
+#include "VRMMaterialTypes.h"
 
 class FVRMDocument;
 
@@ -57,18 +58,8 @@ struct FVRMParsedModel
     TArray<FVRMParsedBone> Bones;
     TArray<FVRMParsedImage> Images;
 
-    struct FMat
-    {
-        FString Name;
-        int32 BaseColorTexture = INDEX_NONE;
-        int32 NormalTexture = INDEX_NONE;
-        int32 MetallicRoughnessTexture = INDEX_NONE; // G=Roughness, B=Metallic
-        int32 OcclusionTexture = INDEX_NONE; // R channel
-        int32 EmissiveTexture = INDEX_NONE;
-        bool bDoubleSided = false;
-        int32 AlphaMode = 0; // 0 Opaque, 1 Mask, 2 Blend
-        float AlphaCutoff = 0.5f;
-    };
+    // Materials, by glTF material index (VRM::ParseMaterials)
+    using FMat = FVRMParsedMaterial;
     TArray<FMat> Materials;
 
     // Single merged mesh for now
