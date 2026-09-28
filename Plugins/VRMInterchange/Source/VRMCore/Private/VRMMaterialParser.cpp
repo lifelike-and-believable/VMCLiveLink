@@ -5,7 +5,9 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
-namespace
+// Named, not anonymous: VRMAvatarParser.cpp has helpers with the same names, and unity builds put
+// both files in one translation unit.
+namespace VRMMaterialParserPrivate
 {
 	using FJsonArray = TArray<TSharedPtr<FJsonValue>>;
 
@@ -373,6 +375,54 @@ namespace
 			}
 		}
 	}
+
+	TArray<FVRMParsedMaterial> ParseMaterials(const FJsonObject& Root)
+	{
+		TArray<FVRMParsedMaterial> Out;
+		const FJsonArray* Materials = JArray(&Root, TEXT("materials"));
+		if (!Materials)
+		{
+			return Out;
+		}
+		const FJsonArray* Textures = JArray(&Root, TEXT("textures"));
+		const FJsonArray* Properties0 = JArray(JObject(JObject(&Root, TEXT("extensions")), TEXT("VRM")), TEXT("materialProperties"));
+
+		Out.SetNum(Materials->Num());
+		TArray<bool> bFrom0;
+		bFrom0.Init(false, Materials->Num());
+		for (int32 i = 0; i < Materials->Num(); ++i)
+		{
+			FVRMParsedMaterial& M = Out[i];
+			const TSharedPtr<FJsonObject>* Material = nullptr;
+			const bool bHasObject = (*Materials)[i].IsValid() && (*Materials)[i]->TryGetObject(Material) && Material && Material->IsValid();
+			M.Name = bHasObject ? JString(Material->Get(), TEXT("name")) : FString();
+			if (M.Name.IsEmpty())
+			{
+				M.Name = FString::Printf(TEXT("VRM_Mat_%d"), i);
+			}
+			if (!bHasObject)
+			{
+				continue;
+			}
+
+			ReadGltfCore(**Material, Textures, M);
+			if (const FJsonObject* MToon1 = JObject(JObject(Material->Get(), TEXT("extensions")), TEXT("VRMC_materials_mtoon")))
+			{
+				ReadMToon1(*MToon1, Textures, M);
+			}
+			else if (Properties0 && Properties0->IsValidIndex(i) && (*Properties0)[i].IsValid())
+			{
+				const TSharedPtr<FJsonObject>* Props = nullptr;
+				if ((*Properties0)[i]->TryGetObject(Props) && Props && Props->IsValid())
+				{
+					ReadMaterialProperties0(**Props, Textures, M);
+					bFrom0[i] = true;
+				}
+			}
+		}
+		MigrateRenderQueues0(Out, bFrom0);
+		return Out;
+	}
 }
 
 FVector2f VRM::MigrateMToon0Shading(float ShadeShift0, float ShadeToony0)
@@ -389,48 +439,5 @@ FVector2f VRM::MigrateMToon0Shading(float ShadeShift0, float ShadeToony0)
 
 TArray<FVRMParsedMaterial> VRM::ParseMaterials(const FJsonObject& Root)
 {
-	TArray<FVRMParsedMaterial> Out;
-	const FJsonArray* Materials = JArray(&Root, TEXT("materials"));
-	if (!Materials)
-	{
-		return Out;
-	}
-	const FJsonArray* Textures = JArray(&Root, TEXT("textures"));
-	const FJsonArray* Properties0 = JArray(JObject(JObject(&Root, TEXT("extensions")), TEXT("VRM")), TEXT("materialProperties"));
-
-	Out.SetNum(Materials->Num());
-	TArray<bool> bFrom0;
-	bFrom0.Init(false, Materials->Num());
-	for (int32 i = 0; i < Materials->Num(); ++i)
-	{
-		FVRMParsedMaterial& M = Out[i];
-		const TSharedPtr<FJsonObject>* Material = nullptr;
-		const bool bHasObject = (*Materials)[i].IsValid() && (*Materials)[i]->TryGetObject(Material) && Material && Material->IsValid();
-		M.Name = bHasObject ? JString(Material->Get(), TEXT("name")) : FString();
-		if (M.Name.IsEmpty())
-		{
-			M.Name = FString::Printf(TEXT("VRM_Mat_%d"), i);
-		}
-		if (!bHasObject)
-		{
-			continue;
-		}
-
-		ReadGltfCore(**Material, Textures, M);
-		if (const FJsonObject* MToon1 = JObject(JObject(Material->Get(), TEXT("extensions")), TEXT("VRMC_materials_mtoon")))
-		{
-			ReadMToon1(*MToon1, Textures, M);
-		}
-		else if (Properties0 && Properties0->IsValidIndex(i) && (*Properties0)[i].IsValid())
-		{
-			const TSharedPtr<FJsonObject>* Props = nullptr;
-			if ((*Properties0)[i]->TryGetObject(Props) && Props && Props->IsValid())
-			{
-				ReadMaterialProperties0(**Props, Textures, M);
-				bFrom0[i] = true;
-			}
-		}
-	}
-	MigrateRenderQueues0(Out, bFrom0);
-	return Out;
+	return VRMMaterialParserPrivate::ParseMaterials(Root);
 }
