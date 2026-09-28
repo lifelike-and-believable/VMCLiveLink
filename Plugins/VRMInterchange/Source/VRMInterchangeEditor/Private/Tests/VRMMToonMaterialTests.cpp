@@ -90,9 +90,11 @@ bool FVRMMToonMaterialGraph::RunTest(const FString& Parameters)
 	TestHas(*this, TEXT("Surface scalar"), ParameterNames(*Surface, EMaterialParameterType::Scalar), {
 		P::NormalScale, P::ShadingShiftTextureScale, P::ShadingShiftFactor, P::ShadingToonyFactor,
 		P::ParametricRimFresnelPowerFactor, P::ParametricRimLiftFactor, P::RimLightingMixFactor,
-		P::UVOffsetU, P::UVOffsetV, P::UVScaleU, P::UVScaleV, P::UVRotation, P::GraphVersion });
+		P::UVOffsetU, P::UVOffsetV, P::UVScaleU, P::UVScaleV, P::UVRotation, P::GraphVersion,
+		P::AlphaCutoff, P::AlphaMode, P::DoubleSided });
 	TestHas(*this, TEXT("Surface static switch"), ParameterNames(*Surface, EMaterialParameterType::StaticSwitch), {
-		P::UseShadingShiftTexture });
+		P::UseShadingShiftTexture, P::UnlitShading });
+	TestEqual(TEXT("Surface clips masked pixels at 0.5 (the cutoff is in the graph)"), Surface->OpacityMaskClipValue, 0.5f);
 	TestCompiles(*this, *Surface);
 
 	// Outline

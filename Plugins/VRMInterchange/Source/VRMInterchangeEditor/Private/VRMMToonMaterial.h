@@ -52,6 +52,14 @@ namespace VRM::MToon
 		inline constexpr const TCHAR* ParametricRimFresnelPowerFactor = TEXT("ParametricRimFresnelPowerFactor");
 		inline constexpr const TCHAR* ParametricRimLiftFactor = TEXT("ParametricRimLiftFactor");
 		inline constexpr const TCHAR* RimLightingMixFactor = TEXT("RimLightingMixFactor");
+		/** Static switch: lit colour plus emission, no lighting (KHR_materials_unlit, VRM 0.x Unlit shaders). */
+		inline constexpr const TCHAR* UnlitShading = TEXT("UnlitShading");
+		/** Masked materials keep pixels whose alpha reaches this. */
+		inline constexpr const TCHAR* AlphaCutoff = TEXT("AlphaCutoff");
+		/** EVRMAlphaMode (0 opaque, 1 mask, 2 blend) and double-sidedness (0 or 1). The graph doesn't use them: the
+		 * importer turns them into the instance's blend mode and two-sided overrides. */
+		inline constexpr const TCHAR* AlphaMode = TEXT("AlphaMode");
+		inline constexpr const TCHAR* DoubleSided = TEXT("DoubleSided");
 
 		// Outline
 		inline constexpr const TCHAR* OutlineWidthMultiplyTexture = TEXT("OutlineWidthMultiplyTexture");

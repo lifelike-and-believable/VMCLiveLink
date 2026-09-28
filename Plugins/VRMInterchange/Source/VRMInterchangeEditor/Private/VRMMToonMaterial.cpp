@@ -5,6 +5,7 @@
 #include "Engine/Texture2D.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionCameraPositionWS.h"
 #include "Materials/MaterialExpressionCameraVectorWS.h"
 #include "Materials/MaterialExpressionConstant.h"
@@ -94,6 +95,9 @@ namespace VRMMToonMaterialPrivate
 		"float World = Width * 100.0;\n"
 		"float Screen = Width * 2.0 * Distance / max(ResolvedView.ViewToClip[1][1], 1e-4);\n"
 		"return normalize(Normal) * lerp(World, Screen, ScreenMode);\n");
+
+	// Opacity mask against the material's clip value of 0.5.
+	const TCHAR* const OpacityMaskCode = TEXT("return Alpha - Cutoff + 0.5;\n");
 
 	// Back faces only: the front faces of the pushed-out mesh are clipped.
 	const TCHAR* const BackFaceCode = TEXT("return saturate(-Sign);\n");
@@ -295,6 +299,7 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 	G.Reset();
 	CommonSettings(Material);
 	Material.BlendMode = BLEND_Opaque; // instances override the blend mode and two-sidedness
+	Material.OpacityMaskClipValue = 0.5f;
 
 	UMaterialExpression* UV = G.TransformedUV(-2400, 0);
 
@@ -365,14 +370,34 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 		{ TEXT("RimPower"), G.Scalar(Param::ParametricRimFresnelPowerFactor, 5.f, TEXT("Rim"), -500, 1230), 0 },
 		{ TEXT("RimLift"), G.Scalar(Param::ParametricRimLiftFactor, 0.f, TEXT("Rim"), -500, 1310), 0 },
 		{ TEXT("Emissive"), Emissive, 0 },
-		{ TEXT("Version"), G.Scalar(Param::GraphVersion, float(GraphVersion), TEXT("Internal"), -500, 1450), 0 },
+		// Unused by the code; connected so the parameters exist (see Param::AlphaMode)
+		{ TEXT("AlphaModeTag"), G.Scalar(Param::AlphaMode, 0.f, TEXT("Internal"), -500, 1450), 0 },
+		{ TEXT("DoubleSidedTag"), G.Scalar(Param::DoubleSided, 0.f, TEXT("Internal"), -500, 1530), 0 },
+		{ TEXT("Version"), G.Scalar(Param::GraphVersion, float(GraphVersion), TEXT("Internal"), -500, 1610), 0 },
 	};
-	UMaterialExpression* Color = G.Custom(TEXT("VRM MToon shading"), ShadeCode, CMOT_Float3, ShadeInputs, -200, 0);
+	UMaterialExpression* Toon = G.Custom(TEXT("VRM MToon shading"), ShadeCode, CMOT_Float3, ShadeInputs, -200, 0);
+
+	// Unlit: the lit colour and emission alone
+	UMaterialExpressionAdd* Unlit = G.Add<UMaterialExpressionAdd>(-200, -300);
+	Unlit->A.Connect(0, Lit);
+	Unlit->B.Connect(0, Emissive);
+	UMaterialExpressionStaticSwitchParameter* UseUnlit = G.Add<UMaterialExpressionStaticSwitchParameter>(50, 0);
+	UseUnlit->ParameterName = Param::UnlitShading;
+	UseUnlit->DefaultValue = false;
+	UseUnlit->Group = TEXT("Lit");
+	UseUnlit->A.Connect(0, Unlit);
+	UseUnlit->B.Connect(0, Toon);
+
+	const FInputLink MaskInputs[] = {
+		{ TEXT("Alpha"), Alpha, 0 },
+		{ TEXT("Cutoff"), G.Scalar(Param::AlphaCutoff, 0.5f, TEXT("Lit"), -1500, -350), 0 },
+	};
+	UMaterialExpression* Mask = G.Custom(TEXT("VRM alpha cutoff"), OpacityMaskCode, CMOT_Float1, MaskInputs, -200, 300);
 
 	UMaterialEditorOnlyData* Ed = Material.GetEditorOnlyData();
-	Ed->EmissiveColor.Connect(0, Color);
+	Ed->EmissiveColor.Connect(0, UseUnlit);
 	Ed->Opacity.Connect(0, Alpha);
-	Ed->OpacityMask.Connect(0, Alpha);
+	Ed->OpacityMask.Connect(0, Mask);
 	return G.Finish(OutError);
 }
 
