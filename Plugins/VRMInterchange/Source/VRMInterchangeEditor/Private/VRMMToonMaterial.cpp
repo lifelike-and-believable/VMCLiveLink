@@ -30,9 +30,9 @@ namespace VRMMToonMaterialPrivate
 	using namespace VRM::MToon;
 
 	// Output indices of texture samples and vector parameters
-	constexpr int32 OutRGB = 0;
-	constexpr int32 OutR = 1;
-	constexpr int32 OutA = 4;
+	constexpr int32 OutputRGB = 0;
+	constexpr int32 OutputR = 1;
+	constexpr int32 OutputA = 4;
 
 	// Atmosphere nodes, looked up by class so a renamed engine class fails the build of the graph
 	// (and the test) instead of the compile.
@@ -306,16 +306,16 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 	// Lit and shade colours
 	UMaterialExpression* BaseTex = G.Texture(Param::BaseColorTexture, White, SAMPLERTYPE_Color, UV, TEXT("Lit"), -1800, -600);
 	UMaterialExpression* BaseFactor = G.Vector(Param::BaseColorFactor, FLinearColor::White, TEXT("Lit"), -1800, -400);
-	UMaterialExpression* Lit = G.Multiply(BaseTex, OutRGB, BaseFactor, OutRGB, -1500, -600);
-	UMaterialExpression* Alpha = G.Multiply(BaseTex, OutA, BaseFactor, OutA, -1500, -450);
+	UMaterialExpression* Lit = G.Multiply(BaseTex, OutputRGB, BaseFactor, OutputRGB, -1500, -600);
+	UMaterialExpression* Alpha = G.Multiply(BaseTex, OutputA, BaseFactor, OutputA, -1500, -450);
 	UMaterialExpression* ShadeTex = G.Texture(Param::ShadeMultiplyTexture, White, SAMPLERTYPE_Color, UV, TEXT("Shade"), -1800, -250);
 	UMaterialExpression* ShadeFactor = G.Vector(Param::ShadeColorFactor, FLinearColor::Black, TEXT("Shade"), -1800, -50);
-	UMaterialExpression* Shade = G.Multiply(ShadeTex, OutRGB, ShadeFactor, OutRGB, -1500, -250);
+	UMaterialExpression* Shade = G.Multiply(ShadeTex, OutputRGB, ShadeFactor, OutputRGB, -1500, -250);
 
 	// Normal: the normal map in world space, facing the viewer on back faces
 	UMaterialExpression* NormalTex = G.Texture(Param::NormalTexture, FlatNormal, SAMPLERTYPE_Normal, UV, TEXT("Normal"), -1800, 150);
 	const FInputLink NormalScaleInputs[] = {
-		{ TEXT("TangentNormal"), NormalTex, OutRGB },
+		{ TEXT("TangentNormal"), NormalTex, OutputRGB },
 		{ TEXT("Scale"), G.Scalar(Param::NormalScale, 1.f, TEXT("Normal"), -1800, 350), 0 },
 	};
 	UMaterialExpression* ScaledNormal = G.Custom(TEXT("VRM normal scale"), NormalScaleCode, CMOT_Float3, NormalScaleInputs, -1500, 150);
@@ -330,7 +330,7 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 	UseShift->ParameterName = Param::UseShadingShiftTexture;
 	UseShift->DefaultValue = false;
 	UseShift->Group = TEXT("Shading");
-	UseShift->A.Connect(OutR, G.Texture(Param::ShadingShiftTexture, WhiteMask, SAMPLERTYPE_Masks, UV, TEXT("Shading"), -1800, 450));
+	UseShift->A.Connect(OutputR, G.Texture(Param::ShadingShiftTexture, WhiteMask, SAMPLERTYPE_Masks, UV, TEXT("Shading"), -1800, 450));
 	UMaterialExpressionConstant* Zero = G.Add<UMaterialExpressionConstant>(-1800, 650);
 	Zero->R = 0.f;
 	UseShift->B.Connect(0, Zero);
@@ -340,12 +340,12 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 	const FInputLink MatcapUVInputs[] = { { TEXT("V"), View, 0 }, { TEXT("N"), Normal, 0 } };
 	UMaterialExpression* MatcapUV = G.Custom(TEXT("VRM matcap UV"), MatcapUVCode, CMOT_Float2, MatcapUVInputs, -1000, 800);
 	UMaterialExpression* MatcapTex = G.Texture(Param::MatcapTexture, White, SAMPLERTYPE_Color, MatcapUV, TEXT("Rim"), -750, 800);
-	UMaterialExpression* Matcap = G.Multiply(MatcapTex, OutRGB, G.Vector(Param::MatcapFactor, FLinearColor::Black, TEXT("Rim"), -750, 1000), OutRGB, -500, 800);
+	UMaterialExpression* Matcap = G.Multiply(MatcapTex, OutputRGB, G.Vector(Param::MatcapFactor, FLinearColor::Black, TEXT("Rim"), -750, 1000), OutputRGB, -500, 800);
 	UMaterialExpression* RimMask = G.Texture(Param::RimMultiplyTexture, White, SAMPLERTYPE_Color, UV, TEXT("Rim"), -750, 1150);
 
 	// Emission
 	UMaterialExpression* EmissiveTex = G.Texture(Param::EmissiveTexture, White, SAMPLERTYPE_Color, UV, TEXT("Emission"), -1800, 1300);
-	UMaterialExpression* Emissive = G.Multiply(EmissiveTex, OutRGB, G.Vector(Param::EmissiveFactor, FLinearColor::Black, TEXT("Emission"), -1800, 1500), OutRGB, -1500, 1300);
+	UMaterialExpression* Emissive = G.Multiply(EmissiveTex, OutputRGB, G.Vector(Param::EmissiveFactor, FLinearColor::Black, TEXT("Emission"), -1800, 1500), OutputRGB, -1500, 1300);
 
 	const FGraph::FLight Light = G.Light(-1000, -900);
 
@@ -357,15 +357,15 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 		{ TEXT("L"), Light.Direction, 0 },
 		{ TEXT("Illuminance"), Light.Illuminance, 0 },
 		{ TEXT("Ambient"), Light.Ambient, 0 },
-		{ TEXT("FallbackDirection"), Light.FallbackDirection, OutRGB },
-		{ TEXT("FallbackColor"), Light.FallbackColor, OutRGB },
+		{ TEXT("FallbackDirection"), Light.FallbackDirection, OutputRGB },
+		{ TEXT("FallbackColor"), Light.FallbackColor, OutputRGB },
 		{ TEXT("ShiftTexture"), UseShift, 0 },
 		{ TEXT("ShiftScale"), G.Scalar(Param::ShadingShiftTextureScale, 1.f, TEXT("Shading"), -750, 300), 0 },
 		{ TEXT("Shift"), G.Scalar(Param::ShadingShiftFactor, 0.f, TEXT("Shading"), -750, 380), 0 },
 		{ TEXT("Toony"), G.Scalar(Param::ShadingToonyFactor, 0.9f, TEXT("Shading"), -750, 460), 0 },
 		{ TEXT("Matcap"), Matcap, 0 },
-		{ TEXT("RimColor"), G.Vector(Param::ParametricRimColorFactor, FLinearColor::Black, TEXT("Rim"), -500, 1000), OutRGB },
-		{ TEXT("RimMask"), RimMask, OutRGB },
+		{ TEXT("RimColor"), G.Vector(Param::ParametricRimColorFactor, FLinearColor::Black, TEXT("Rim"), -500, 1000), OutputRGB },
+		{ TEXT("RimMask"), RimMask, OutputRGB },
 		{ TEXT("RimMix"), G.Scalar(Param::RimLightingMixFactor, 1.f, TEXT("Rim"), -500, 1150), 0 },
 		{ TEXT("RimPower"), G.Scalar(Param::ParametricRimFresnelPowerFactor, 5.f, TEXT("Rim"), -500, 1230), 0 },
 		{ TEXT("RimLift"), G.Scalar(Param::ParametricRimLiftFactor, 0.f, TEXT("Rim"), -500, 1310), 0 },
@@ -428,7 +428,7 @@ bool VRM::MToon::BuildOutlineMaterial(UMaterial& Material, UTexture* WhiteMask, 
 	const FInputLink OffsetInputs[] = {
 		{ TEXT("Normal"), G.Add<UMaterialExpressionVertexNormalWS>(-900, -500), 0 },
 		{ TEXT("Factor"), G.Scalar(Param::OutlineWidthFactor, 0.f, TEXT("Outline"), -900, -150), 0 },
-		{ TEXT("WidthTexture"), G.Texture(Param::OutlineWidthMultiplyTexture, WhiteMask, SAMPLERTYPE_Masks, UV, TEXT("Outline"), -1200, 0), OutR },
+		{ TEXT("WidthTexture"), G.Texture(Param::OutlineWidthMultiplyTexture, WhiteMask, SAMPLERTYPE_Masks, UV, TEXT("Outline"), -1200, 0), OutputR },
 		{ TEXT("Distance"), Distance, 0 },
 		{ TEXT("ScreenMode"), G.Scalar(Param::OutlineScreenCoordinates, 0.f, TEXT("Outline"), -900, -50), 0 },
 	};
@@ -441,13 +441,13 @@ bool VRM::MToon::BuildOutlineMaterial(UMaterial& Material, UTexture* WhiteMask, 
 	// Colour
 	const FGraph::FLight Light = G.Light(-1200, 500);
 	const FInputLink ColorInputs[] = {
-		{ TEXT("Color"), G.Vector(Param::OutlineColorFactor, FLinearColor::Black, TEXT("Outline"), -900, 450), OutRGB },
+		{ TEXT("Color"), G.Vector(Param::OutlineColorFactor, FLinearColor::Black, TEXT("Outline"), -900, 450), OutputRGB },
 		{ TEXT("Mix"), G.Scalar(Param::OutlineLightingMixFactor, 1.f, TEXT("Outline"), -900, 650), 0 },
 		{ TEXT("L"), Light.Direction, 0 },
 		{ TEXT("Illuminance"), Light.Illuminance, 0 },
 		{ TEXT("Ambient"), Light.Ambient, 0 },
-		{ TEXT("FallbackColor"), Light.FallbackColor, OutRGB },
-		{ TEXT("FallbackDirection"), Light.FallbackDirection, OutRGB }, // unused; keeps the parameter set the same as the surface's
+		{ TEXT("FallbackColor"), Light.FallbackColor, OutputRGB },
+		{ TEXT("FallbackDirection"), Light.FallbackDirection, OutputRGB }, // unused; keeps the parameter set the same as the surface's
 		{ TEXT("Version"), G.Scalar(Param::GraphVersion, float(GraphVersion), TEXT("Internal"), -900, 800), 0 },
 	};
 	UMaterialExpression* Color = G.Custom(TEXT("VRM outline colour"), OutlineColorCode, CMOT_Float3, ColorInputs, -500, 500);
