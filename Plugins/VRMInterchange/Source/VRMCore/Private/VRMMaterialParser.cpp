@@ -232,10 +232,12 @@ namespace VRMMaterialParserPrivate
 			JNumber(Floats, Name, Value);
 			return Value;
 		};
+		// A gamma-encoded Unity colour (defaults are MToon 0.x's, gamma-encoded too), as linear.
 		auto Color = [&](const TCHAR* Name, const FLinearColor& Default)
 		{
 			FLinearColor Value = Default;
-			return JColor4(Vectors, Name, Value) ? SRGBToLinear(Value) : Default;
+			JColor4(Vectors, Name, Value);
+			return SRGBToLinear(Value);
 		};
 
 		if (Shader.StartsWith(TEXT("VRM/Unlit")))
