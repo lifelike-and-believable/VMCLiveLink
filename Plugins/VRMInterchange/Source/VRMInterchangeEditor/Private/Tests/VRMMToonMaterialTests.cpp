@@ -122,6 +122,12 @@ bool FVRMMToonMaterialGraph::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Surface rebuilds"), VRM::MToon::BuildSurfaceMaterial(*Surface, WhiteMask, Error));
 	TestEqual(TEXT("Rebuild keeps the node count"), Surface->GetExpressions().Num(), NodeCount);
 
+	// The translator parents instances to these paths; they must name what the editor generates.
+	TestEqual(TEXT("Surface path"), FString(VRM::MToon::SurfacePath),
+		FString(VRM::MToon::GeneratedFolder) / VRM::MToon::SurfaceName + TEXT(".") + VRM::MToon::SurfaceName);
+	TestEqual(TEXT("Outline path"), FString(VRM::MToon::OutlinePath),
+		FString(VRM::MToon::GeneratedFolder) / VRM::MToon::OutlineName + TEXT(".") + VRM::MToon::OutlineName);
+
 	TestEqual(TEXT("A plain material has no graph version"), VRM::MToon::GetGraphVersion(NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient)), 0);
 	return true;
 }
