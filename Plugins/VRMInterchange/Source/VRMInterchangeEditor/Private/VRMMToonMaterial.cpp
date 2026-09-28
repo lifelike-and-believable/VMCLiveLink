@@ -250,7 +250,10 @@ namespace VRMMToonMaterialPrivate
 				OutError = FString::Printf(TEXT("Material node classes missing from the engine: %s"), *FString::Join(Missing, TEXT(", ")));
 				return false;
 			}
-			UMaterialEditingLibrary::RecompileMaterial(&Material);
+			// PostEditChange recompiles the material and updates its instances. (UMaterialEditingLibrary's
+			// RecompileMaterial also refreshes editor UI, and crashes on a material no editor has opened.)
+			Material.PreEditChange(nullptr);
+			Material.PostEditChange();
 			return true;
 		}
 
