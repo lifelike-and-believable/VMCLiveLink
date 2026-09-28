@@ -23,7 +23,8 @@
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
 
-namespace
+// Named, not anonymous, so unity builds can't mix these up with other files' helpers.
+namespace VRMMToonMaterialPrivate
 {
 	using namespace VRM::MToon;
 
@@ -281,6 +282,7 @@ UTexture2D* VRM::MToon::CreateWhiteMaskTexture(UObject* Outer, FName Name, EObje
 
 bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, FString& OutError)
 {
+	using namespace VRMMToonMaterialPrivate;
 	UTexture* White = EngineTexture(TEXT("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture"));
 	UTexture* FlatNormal = EngineTexture(TEXT("/Engine/EngineMaterials/DefaultNormal.DefaultNormal"));
 	if (!White || !FlatNormal || !WhiteMask)
@@ -376,6 +378,7 @@ bool VRM::MToon::BuildSurfaceMaterial(UMaterial& Material, UTexture* WhiteMask, 
 
 bool VRM::MToon::BuildOutlineMaterial(UMaterial& Material, UTexture* WhiteMask, FString& OutError)
 {
+	using namespace VRMMToonMaterialPrivate;
 	if (!WhiteMask)
 	{
 		OutError = TEXT("Default texture for the MToon outline material is missing.");
@@ -441,7 +444,7 @@ int32 VRM::MToon::GetGraphVersion(const UMaterialInterface* Material)
 	return 0;
 }
 
-namespace
+namespace VRMMToonMaterialPrivate
 {
 	template <class T>
 	T* FindOrLoad(const FString& PackagePath, const TCHAR* Name)
@@ -464,6 +467,7 @@ namespace
 
 VRM::MToon::FMaterials VRM::MToon::FindOrCreateMToonMaterials(FString& OutError)
 {
+	using namespace VRMMToonMaterialPrivate;
 	check(IsInGameThread());
 	FMaterials Out;
 	const FString Folder = GeneratedFolder;
