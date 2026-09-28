@@ -6,6 +6,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Engine/SkeletalMesh.h"
+#include "InterchangeManager.h"
 #include "InterchangeMaterialInstanceNode.h"
 #include "InterchangeSourceData.h"
 #include "InterchangeTranslatorBase.h"
@@ -92,15 +93,14 @@ bool FVRMMToonTranslateTest::RunTest(const FString& Parameters)
 	using namespace VRMMToonImportTests;
 	namespace P = VRM::MToon::Param;
 
-	UClass* TranslatorClass = FindObject<UClass>(nullptr, TEXT("/Script/VRMInterchange.VRMTranslator"));
-	if (!TestNotNull(TEXT("Translator class"), TranslatorClass))
+	// The Interchange manager picks the translator registered for .vrm and gives it the source.
+	UInterchangeSourceData* Source = UInterchangeManager::CreateSourceData(FixturePath(TEXT("mtoon_materials")));
+	UInterchangeTranslatorBase* Translator = UInterchangeManager::GetInterchangeManager().GetTranslatorForSourceData(Source);
+	if (!TestNotNull(TEXT("A translator for .vrm"), Translator)
+		|| !TestEqual(TEXT("It is the VRM translator"), Translator->GetClass()->GetName(), FString(TEXT("VRMTranslator"))))
 	{
 		return false;
 	}
-	UInterchangeSourceData* Source = NewObject<UInterchangeSourceData>();
-	Source->SetFilename(FixturePath(TEXT("mtoon_materials")));
-	UInterchangeTranslatorBase* Translator = NewObject<UInterchangeTranslatorBase>(GetTransientPackage(), TranslatorClass);
-	Translator->SetSourceData(Source);
 	UInterchangeBaseNodeContainer* Container = NewObject<UInterchangeBaseNodeContainer>();
 	if (!TestTrue(TEXT("Translates"), Translator->Translate(*Container)))
 	{
