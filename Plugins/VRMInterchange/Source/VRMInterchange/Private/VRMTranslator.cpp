@@ -19,6 +19,7 @@
 #include "InterchangeTexture2DNode.h"
 #include "InterchangeTexture2DFactoryNode.h"
 #include "InterchangeMaterialDefinitions.h"
+#include "VRMMToonParameters.h"
 
 // Include payload types here (keep header light)
 #include "Mesh/InterchangeMeshPayload.h"
@@ -161,93 +162,145 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
 #endif
     }
 
-    // Create Material Instances:
-    // - One character-level MI parented to the master material
-    // - One MI per VRM material parented to the master material
+    // Material instances (P4.5). MToon and unlit materials use the MToon master the editor module
+    // generates (VRMMToonParameters.h), glTF PBR materials use M_VRM_Master. Each master used gets
+    // a character-level instance: MI_VRM_<Character> (M_VRM_Master) and MI_VRM_<Character>__MToon.
+    // The material pipeline parents the per-material instances to the one with their master, so
+    // shared parameters can be tuned in one place. A model with MToon outlines also gets
+    // MI_VRM_<Character>__Outline, which the pipeline makes the mesh's overlay material.
     const FString CharacterName = FPaths::GetBaseFilename(GetSourceData()->GetFilename());
+    const TCHAR* const MasterPath = TEXT("/VRMInterchange/Materials/M_VRM_Master");
+    auto UsesMToonMaster = [](const FVRMParsedMaterial& M) { return M.bMToon || M.bUnlit; };
 
-    // Character-level MI
-    const FString CharacterMIDisplayName = FString::Printf(TEXT("MI_VRM_%s"), *CharacterName);
-    const FString CharacterMIUid = MakeNodeUid(TEXT("MI_Character"));
-    UInterchangeMaterialInstanceNode* CharacterMINode = NewObject<UInterchangeMaterialInstanceNode>(&NodeContainer);
-    NodeContainer.SetupNode(CharacterMINode, CharacterMIUid, *CharacterMIDisplayName, EInterchangeNodeContainerType::TranslatedAsset);
-
-    // Parent to master material with safe path fallback (verified API only)
+    auto MakeInstance = [&](const FString& Key, const FString& DisplayName, const TCHAR* ParentPath)
     {
-        bool bParentSet = false;
-        const FString MasterShortPath = TEXT("/VRMInterchange/Materials/M_VRM_Master");
-        const FString MasterFullPath  = TEXT("/VRMInterchange/Materials/M_VRM_Master.M_VRM_Master");
-
-        bParentSet = CharacterMINode->SetCustomParent(MasterShortPath);
-        if (!bParentSet)
+        UInterchangeMaterialInstanceNode* Node = NewObject<UInterchangeMaterialInstanceNode>(&NodeContainer);
+        NodeContainer.SetupNode(Node, MakeNodeUid(*Key), *DisplayName, EInterchangeNodeContainerType::TranslatedAsset);
+        if (!Node->SetCustomParent(ParentPath))
         {
-            bParentSet = CharacterMINode->SetCustomParent(MasterFullPath);
+            UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to set the parent of '%s' to '%s'."), *DisplayName, ParentPath);
         }
-        if (!bParentSet)
+        return Node;
+    };
+    auto BindTexture = [&](UInterchangeMaterialInstanceNode& Node, const TCHAR* Parameter, int32 ImageIndex, VRM::ETextureUsage Usage)
+    {
+        if (TextureNodeUids.IsValidIndex(ImageIndex))
         {
-            UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to set Character MI parent. Tried '%s' and '%s'"), *MasterShortPath, *MasterFullPath);
+            if (const FString* Uid = TextureNodeUids[ImageIndex].Find(Usage))
+            {
+                Node.AddTextureParameterValue(Parameter, *Uid);
+            }
+        }
+    };
+    auto SetUVTransform = [](UInterchangeMaterialInstanceNode& Node, const FVRMTextureTransform& UV)
+    {
+        namespace P = VRM::MToon::Param;
+        Node.AddScalarParameterValue(P::UVOffsetU, UV.Offset.X);
+        Node.AddScalarParameterValue(P::UVOffsetV, UV.Offset.Y);
+        Node.AddScalarParameterValue(P::UVScaleU, UV.Scale.X);
+        Node.AddScalarParameterValue(P::UVScaleV, UV.Scale.Y);
+        Node.AddScalarParameterValue(P::UVRotation, UV.Rotation);
+    };
+
+    bool bAnyMToonMaster = false;
+    bool bAnyPbr = false;
+    const FVRMParsedMaterial* OutlineSource = nullptr; // the MToon material with the widest outline
+    for (const FVRMParsedMaterial& M : Parsed.Materials)
+    {
+        (UsesMToonMaster(M) ? bAnyMToonMaster : bAnyPbr) = true;
+        if (M.bMToon && M.MToon.HasOutline() && (!OutlineSource || M.MToon.OutlineWidth > OutlineSource->MToon.OutlineWidth))
+        {
+            OutlineSource = &M;
         }
     }
 
-    // Per-material MIs parented to the master material (not the character MI)
+    if (bAnyPbr || !bAnyMToonMaster)
+    {
+        MakeInstance(TEXT("MI_Character"), FString::Printf(TEXT("MI_VRM_%s"), *CharacterName), MasterPath);
+    }
+    if (bAnyMToonMaster)
+    {
+        MakeInstance(TEXT("MI_Character_MToon"), FString::Printf(TEXT("MI_VRM_%s__MToon"), *CharacterName), VRM::MToon::SurfacePath);
+    }
+    if (OutlineSource)
+    {
+        namespace P = VRM::MToon::Param;
+        const FVRMMToon& T = OutlineSource->MToon;
+        UInterchangeMaterialInstanceNode* Outline = MakeInstance(TEXT("MI_Character_Outline"), FString::Printf(TEXT("MI_VRM_%s__Outline"), *CharacterName), VRM::MToon::OutlinePath);
+        Outline->AddScalarParameterValue(P::OutlineWidthFactor, T.OutlineWidth);
+        Outline->AddScalarParameterValue(P::OutlineScreenCoordinates, T.OutlineWidthMode == EVRMOutlineWidthMode::ScreenCoordinates ? 1.f : 0.f);
+        Outline->AddVectorParameterValue(P::OutlineColorFactor, T.OutlineColor);
+        Outline->AddScalarParameterValue(P::OutlineLightingMixFactor, T.OutlineLightingMix);
+        BindTexture(*Outline, P::OutlineWidthMultiplyTexture, T.OutlineWidthMultiplyTexture, VRM::ETextureUsage::Data);
+        SetUVTransform(*Outline, OutlineSource->UVTransform);
+    }
+
+    // Per-material instances, parented to their master (the pipeline reparents them)
     TArray<FString> MaterialNodeUids;
     MaterialNodeUids.SetNum(Parsed.Materials.Num());
     for (int32 mi = 0; mi < Parsed.Materials.Num(); ++mi)
     {
-        const auto& M = Parsed.Materials[mi];
+        const FVRMParsedMaterial& M = Parsed.Materials[mi];
         const FString MatDisplayName = M.Name.IsEmpty() ? FString::Printf(TEXT("VRM_Mat_%d"), mi) : M.Name;
         const FString PerMIDisplayName = FString::Printf(TEXT("MI_VRM_%s_%s"), *CharacterName, *MatDisplayName);
+        const FString Key = FString::Printf(TEXT("MI_%d"), mi);
+        MaterialNodeUids[mi] = MakeNodeUid(*Key);
 
-        const FString MatMIUid = MakeNodeUid(*FString::Printf(TEXT("MI_%d"), mi));
-        MaterialNodeUids[mi] = MatMIUid;
-
-        UInterchangeMaterialInstanceNode* MatMINode = NewObject<UInterchangeMaterialInstanceNode>(&NodeContainer);
-        NodeContainer.SetupNode(MatMINode, MatMIUid, *PerMIDisplayName, EInterchangeNodeContainerType::TranslatedAsset);
-
-        // Assign texture parameters, each to the texture made for that use
-        auto BindTexture = [&](const TCHAR* Parameter, int32 ImageIndex, VRM::ETextureUsage Usage)
+        if (!UsesMToonMaster(M))
         {
-            if (TextureNodeUids.IsValidIndex(ImageIndex))
-            {
-                if (const FString* Uid = TextureNodeUids[ImageIndex].Find(Usage))
-                {
-                    MatMINode->AddTextureParameterValue(Parameter, *Uid);
-                }
-            }
-        };
-        BindTexture(TEXT("BaseColorTexture"), M.BaseColorTexture, VRM::ETextureUsage::Color);
-        BindTexture(TEXT("NormalTexture"), M.NormalTexture, VRM::ETextureUsage::Normal);
-        BindTexture(TEXT("ORMTexture"), M.MetallicRoughnessTexture, VRM::ETextureUsage::Data);
-        BindTexture(TEXT("OcclusionTexture"), M.OcclusionTexture, VRM::ETextureUsage::Data);
-        BindTexture(TEXT("EmissiveTexture"), M.EmissiveTexture, VRM::ETextureUsage::Color);
-        // Set "Has ORM Texture?" boolean based on presence of ORM (MetallicRoughness) texture
-        {
-            const bool bHasORM = (M.MetallicRoughnessTexture != INDEX_NONE);
-            MatMINode->AddStaticSwitchParameterValue(TEXT("Has ORM Texture?"), bHasORM);
-        }
-        // Set "Has Emissive Texture?" boolean based on presence of Emissive texture
-        {
-            const bool bHasEmissive = (M.EmissiveTexture != INDEX_NONE);
-            MatMINode->AddStaticSwitchParameterValue(TEXT("Has Emissive Texture?"), bHasEmissive);
+            // glTF PBR on M_VRM_Master, as before P4.5: textures only (the master has no factor parameters)
+            UInterchangeMaterialInstanceNode* Node = MakeInstance(Key, PerMIDisplayName, MasterPath);
+            BindTexture(*Node, TEXT("BaseColorTexture"), M.BaseColorTexture, VRM::ETextureUsage::Color);
+            BindTexture(*Node, TEXT("NormalTexture"), M.NormalTexture, VRM::ETextureUsage::Normal);
+            BindTexture(*Node, TEXT("ORMTexture"), M.MetallicRoughnessTexture, VRM::ETextureUsage::Data);
+            BindTexture(*Node, TEXT("OcclusionTexture"), M.OcclusionTexture, VRM::ETextureUsage::Data);
+            BindTexture(*Node, TEXT("EmissiveTexture"), M.EmissiveTexture, VRM::ETextureUsage::Color);
+            Node->AddStaticSwitchParameterValue(TEXT("Has ORM Texture?"), M.MetallicRoughnessTexture != INDEX_NONE);
+            Node->AddStaticSwitchParameterValue(TEXT("Has Emissive Texture?"), M.EmissiveTexture != INDEX_NONE);
+            continue;
         }
 
-        // Parent per-material MI to the master material (verified API)
-        {
-            bool bMatParentSet = false;
-            const FString MasterShortPath = TEXT("/VRMInterchange/Materials/M_VRM_Master");
-            const FString MasterFullPath  = TEXT("/VRMInterchange/Materials/M_VRM_Master.M_VRM_Master");
+        namespace P = VRM::MToon::Param;
+        UInterchangeMaterialInstanceNode* Node = MakeInstance(Key, PerMIDisplayName, VRM::MToon::SurfacePath);
 
-            bMatParentSet = MatMINode->SetCustomParent(MasterShortPath);
-            if (!bMatParentSet)
-            {
-                bMatParentSet = MatMINode->SetCustomParent(MasterFullPath);
-            }
-            if (!bMatParentSet)
-            {
-                UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Failed to set MI '%s' parent to master. Tried '%s' and '%s'"),
-                    *PerMIDisplayName, *MasterShortPath, *MasterFullPath);
-            }
+        // Shared by MToon and unlit
+        BindTexture(*Node, P::BaseColorTexture, M.BaseColorTexture, VRM::ETextureUsage::Color);
+        Node->AddVectorParameterValue(P::BaseColorFactor, M.BaseColorFactor);
+        BindTexture(*Node, P::EmissiveTexture, M.EmissiveTexture, VRM::ETextureUsage::Color);
+        Node->AddVectorParameterValue(P::EmissiveFactor, M.EmissiveFactor);
+        Node->AddScalarParameterValue(P::AlphaMode, float(uint8(M.AlphaMode)));
+        Node->AddScalarParameterValue(P::AlphaCutoff, M.AlphaCutoff);
+        Node->AddScalarParameterValue(P::DoubleSided, M.bDoubleSided ? 1.f : 0.f);
+        SetUVTransform(*Node, M.UVTransform);
+
+        if (!M.bMToon)
+        {
+            // KHR_materials_unlit or a VRM 0.x Unlit shader (MToon wins when a material has both)
+            Node->AddStaticSwitchParameterValue(P::UnlitShading, true);
+            continue;
         }
+
+        const FVRMMToon& T = M.MToon;
+        BindTexture(*Node, P::NormalTexture, M.NormalTexture, VRM::ETextureUsage::Normal);
+        Node->AddScalarParameterValue(P::NormalScale, M.NormalScale);
+        BindTexture(*Node, P::ShadeMultiplyTexture, T.ShadeMultiplyTexture, VRM::ETextureUsage::Color);
+        Node->AddVectorParameterValue(P::ShadeColorFactor, T.ShadeColor);
+        Node->AddScalarParameterValue(P::ShadingShiftFactor, T.ShadingShift);
+        Node->AddScalarParameterValue(P::ShadingToonyFactor, T.ShadingToony);
+        if (T.ShadingShiftTexture != INDEX_NONE)
+        {
+            Node->AddStaticSwitchParameterValue(P::UseShadingShiftTexture, true);
+            BindTexture(*Node, P::ShadingShiftTexture, T.ShadingShiftTexture, VRM::ETextureUsage::Data);
+            Node->AddScalarParameterValue(P::ShadingShiftTextureScale, T.ShadingShiftTextureScale);
+        }
+        // Without a texture the matcap adds nothing (spec), whatever its factor
+        BindTexture(*Node, P::MatcapTexture, T.MatcapTexture, VRM::ETextureUsage::Color);
+        Node->AddVectorParameterValue(P::MatcapFactor, T.MatcapTexture != INDEX_NONE ? T.MatcapColor : FLinearColor::Black);
+        BindTexture(*Node, P::RimMultiplyTexture, T.RimMultiplyTexture, VRM::ETextureUsage::Color);
+        Node->AddVectorParameterValue(P::ParametricRimColorFactor, T.RimColor);
+        Node->AddScalarParameterValue(P::ParametricRimFresnelPowerFactor, T.RimFresnelPower);
+        Node->AddScalarParameterValue(P::ParametricRimLiftFactor, T.RimLift);
+        Node->AddScalarParameterValue(P::RimLightingMixFactor, T.RimLightingMix);
     }
 
     // Name base color textures after their material (suffix _DIFFUSE)
@@ -280,6 +333,14 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         SetTexName(M.MetallicRoughnessTexture, VRM::ETextureUsage::Data, MatName, TEXT("_ORM"));
         SetTexName(M.OcclusionTexture, VRM::ETextureUsage::Data, MatName, TEXT("_AO"));
         SetTexName(M.EmissiveTexture, VRM::ETextureUsage::Color, MatName, TEXT("_EMISSIVE"));
+        if (M.bMToon)
+        {
+            SetTexName(M.MToon.ShadeMultiplyTexture, VRM::ETextureUsage::Color, MatName, TEXT("_SHADE"));
+            SetTexName(M.MToon.ShadingShiftTexture, VRM::ETextureUsage::Data, MatName, TEXT("_SHADINGSHIFT"));
+            SetTexName(M.MToon.MatcapTexture, VRM::ETextureUsage::Color, MatName, TEXT("_MATCAP"));
+            SetTexName(M.MToon.RimMultiplyTexture, VRM::ETextureUsage::Color, MatName, TEXT("_RIM"));
+            SetTexName(M.MToon.OutlineWidthMultiplyTexture, VRM::ETextureUsage::Data, MatName, TEXT("_OUTLINEWIDTH"));
+        }
     }
 #endif
 
@@ -692,6 +753,14 @@ namespace VRM
             Mark(M.NormalTexture, ETextureUsage::Normal);
             Mark(M.MetallicRoughnessTexture, ETextureUsage::Data);
             Mark(M.OcclusionTexture, ETextureUsage::Data);
+            if (M.bMToon)
+            {
+                Mark(M.MToon.ShadeMultiplyTexture, ETextureUsage::Color);
+                Mark(M.MToon.MatcapTexture, ETextureUsage::Color);
+                Mark(M.MToon.RimMultiplyTexture, ETextureUsage::Color);
+                Mark(M.MToon.ShadingShiftTexture, ETextureUsage::Data);
+                Mark(M.MToon.OutlineWidthMultiplyTexture, ETextureUsage::Data);
+            }
         }
         return Usages;
     }
