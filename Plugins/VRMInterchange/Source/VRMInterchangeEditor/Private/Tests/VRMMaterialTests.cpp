@@ -148,7 +148,7 @@ bool FVRMMaterialsMToon1::RunTest(const FString& Parameters)
 	// Spec defaults
 	const FVRMMToon& D = Materials[1].MToon;
 	TestTrue(TEXT("Defaults: MToon"), Materials[1].bMToon);
-	TestColor(*this, TEXT("Defaults: white shade"), D.ShadeColor, FLinearColor::White);
+	TestColor(*this, TEXT("Defaults: black shade"), D.ShadeColor, FLinearColor::Black);
 	TestEqual(TEXT("Defaults: toony 0.9"), D.ShadingToony, 0.9f, 1e-5f);
 	TestEqual(TEXT("Defaults: GI equalization 0.9"), D.GIEqualization, 0.9f, 1e-5f);
 	TestEqual(TEXT("Defaults: fresnel power 5"), D.RimFresnelPower, 5.f, 1e-5f);
@@ -177,9 +177,9 @@ bool FVRMMaterialsMToon0::RunTest(const FString& Parameters)
 			{"name":"Face","shader":"VRM/MToon","renderQueue":3002,
 			 "floatProperties":{"_BlendMode":1,"_Cutoff":0.4,"_CullMode":0,"_ShadeShift":-0.5,"_ShadeToony":0.5,
 				"_IndirectLightIntensity":0.25,"_RimLightingMix":0.5,"_RimFresnelPower":2,"_RimLift":0.1,
-				"_OutlineWidthMode":1,"_OutlineWidth":0.2,"_OutlineColorMode":1,"_OutlineLightingMix":0.75},
+				"_OutlineWidthMode":1,"_OutlineWidth":0.2,"_OutlineColorMode":1,"_OutlineLightingMix":0.75,"_BumpScale":0.8},
 			 "vectorProperties":{"_Color":[0.5,1,0,0.5],"_ShadeColor":[0.5,0.5,0.5,1],"_RimColor":[1,1,1,1],
-				"_OutlineColor":[0,0,0,1],"_EmissionColor":[0.5,0,0,1],"_MainTex":[2,4,0.25,0.5]},
+				"_OutlineColor":[0,0,0,1],"_EmissionColor":[0.5,0,0,1],"_MainTex":[0.25,0.5,2,4]},
 			 "textureProperties":{"_MainTex":0,"_ShadeTexture":1,"_BumpMap":2,"_SphereAdd":3,"_EmissionMap":4,
 				"_RimTexture":1,"_OutlineWidthTexture":2}},
 			{"name":"Hair","shader":"VRM/UnlitCutout","floatProperties":{"_Cutoff":0.6}},
@@ -199,15 +199,17 @@ bool FVRMMaterialsMToon0::RunTest(const FString& Parameters)
 	TestColor(*this, TEXT("_Color is converted to linear, alpha kept"), A.BaseColorFactor, FLinearColor(Half, 1.f, 0.f, 0.5f));
 	TestEqual(TEXT("_MainTex replaces the glTF base colour texture"), A.BaseColorTexture, 5);
 	TestEqual(TEXT("_BumpMap"), A.NormalTexture, 3);
+	TestEqual(TEXT("_BumpScale"), A.NormalScale, 0.8f, 1e-5f);
 	TestEqual(TEXT("_EmissionMap"), A.EmissiveTexture, 1);
-	TestColor(*this, TEXT("_EmissionColor"), A.EmissiveFactor, FLinearColor(Half, 0.f, 0.f, 1.f));
+	TestColor(*this, TEXT("_EmissionColor is already linear"), A.EmissiveFactor, FLinearColor(0.5f, 0.f, 0.f, 1.f));
+	// _MainTex is Unity's offset then scale.
 	TestTrue(TEXT("_MainTex scale"), A.UVTransform.Scale.Equals(FVector2f(2.f, 4.f), 1e-5f));
-	TestTrue(TEXT("_MainTex offset, V from the top"), A.UVTransform.Offset.Equals(FVector2f(0.25f, 1.f - 4.f - 0.5f), 1e-5f));
+	TestTrue(TEXT("_MainTex offset, V from the top"), A.UVTransform.Offset.Equals(FVector2f(0.25f, 1.f - 0.5f - 4.f), 1e-5f));
 	TestTrue(TEXT("_BlendMode 1 is cutout"), A.AlphaMode == EVRMAlphaMode::Mask);
 	TestEqual(TEXT("_Cutoff"), A.AlphaCutoff, 0.4f, 1e-5f);
 	TestTrue(TEXT("_CullMode 0 is double sided"), A.bDoubleSided);
 	TestFalse(TEXT("No z-write"), T.bTransparentWithZWrite);
-	TestEqual(TEXT("Render queue only counts for transparent"), T.RenderQueueOffset, 0);
+	TestEqual(TEXT("Cutout has no render queue offset"), T.RenderQueueOffset, 0);
 
 	TestColor(*this, TEXT("_ShadeColor"), T.ShadeColor, FLinearColor(Half, Half, Half));
 	TestEqual(TEXT("_ShadeTexture"), T.ShadeMultiplyTexture, 4);
@@ -219,7 +221,7 @@ bool FVRMMaterialsMToon0::RunTest(const FString& Parameters)
 	TestColor(*this, TEXT("Matcap colour white"), T.MatcapColor, FLinearColor::White);
 	TestColor(*this, TEXT("_RimColor"), T.RimColor, FLinearColor::White);
 	TestEqual(TEXT("_RimTexture"), T.RimMultiplyTexture, 4);
-	TestEqual(TEXT("_RimLightingMix"), T.RimLightingMix, 0.5f, 1e-5f);
+	TestEqual(TEXT("Rim lighting mix is 1, whatever _RimLightingMix says (UniVRM)"), T.RimLightingMix, 1.f, 1e-5f);
 	TestEqual(TEXT("_RimFresnelPower"), T.RimFresnelPower, 2.f, 1e-5f);
 	TestEqual(TEXT("_RimLift"), T.RimLift, 0.1f, 1e-5f);
 	TestTrue(TEXT("_OutlineWidthMode 1 is world"), T.OutlineWidthMode == EVRMOutlineWidthMode::WorldCoordinates);
@@ -240,6 +242,46 @@ bool FVRMMaterialsMToon0::RunTest(const FString& Parameters)
 	TestTrue(TEXT("glTF shader: keeps double-sided"), C.bDoubleSided);
 
 	TestFalse(TEXT("No entry: not MToon"), Materials[3].bMToon);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMMaterialsMToon0Migration, "VRM.Materials.MToon0Migration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMMaterialsMToon0Migration::RunTest(const FString& Parameters)
+{
+	using namespace VRMMaterialTests;
+	// Two transparent materials (queues 3001 and 3005), two with z-write (2502 and 2501), all MToon.
+	const FString Json = FString(TEXT("{")) + Textures + TEXT(R"json(
+		"materials":[{"name":"T1"},{"name":"T2"},{"name":"Z1"},{"name":"Z2"}],
+		"extensions":{"VRM":{"materialProperties":[
+			{"shader":"VRM/MToon","renderQueue":3001,"floatProperties":{"_BlendMode":2,"_CullMode":1,"_OutlineWidthMode":2,"_OutlineWidth":1},
+			 "textureProperties":{"_MainTex":0}},
+			{"shader":"VRM/MToon","renderQueue":3005,"floatProperties":{"_BlendMode":2},"textureProperties":{"_MainTex":0,"_SphereAdd":1}},
+			{"shader":"VRM/MToon","renderQueue":2502,"floatProperties":{"_BlendMode":3}},
+			{"shader":"VRM/MToon","renderQueue":2501,"floatProperties":{"_BlendMode":3}}
+		]}}})json");
+
+	const TArray<FVRMParsedMaterial> Materials = Parse(*this, *Json);
+	if (!TestEqual(TEXT("Four materials"), Materials.Num(), 4))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Latest transparent queue: offset 0"), Materials[1].MToon.RenderQueueOffset, 0);
+	TestEqual(TEXT("Earlier transparent queue: offset -1"), Materials[0].MToon.RenderQueueOffset, -1);
+	TestEqual(TEXT("Earliest z-write queue: offset 0"), Materials[3].MToon.RenderQueueOffset, 0);
+	TestEqual(TEXT("Later z-write queue: offset 1"), Materials[2].MToon.RenderQueueOffset, 1);
+	TestTrue(TEXT("Z-write flag"), Materials[2].MToon.bTransparentWithZWrite);
+
+	const FVRMParsedMaterial& T1 = Materials[0];
+	TestTrue(TEXT("_CullMode 1 (front) is double sided"), T1.bDoubleSided);
+	TestEqual(TEXT("No _ShadeTexture: the lit texture is used"), T1.MToon.ShadeMultiplyTexture, 5);
+	TestColor(*this, TEXT("No _SphereAdd: black matcap"), T1.MToon.MatcapColor, FLinearColor::Black);
+	TestTrue(TEXT("Screen outline"), T1.MToon.OutlineWidthMode == EVRMOutlineWidthMode::ScreenCoordinates);
+	TestEqual(TEXT("Screen width: percent of half the height to a fraction of the height"), T1.MToon.OutlineWidth, 0.005f, 1e-6f);
+	TestColor(*this, TEXT("Default _ShadeColor (0.97, 0.81, 0.86) in linear"), T1.MToon.ShadeColor, FLinearColor(0.9331f, 0.6209f, 0.7106f));
+	TestColor(*this, TEXT("_SphereAdd: white matcap"), Materials[1].MToon.MatcapColor, FLinearColor::White);
+	TestEqual(TEXT("No _MainTex: no shade texture either"), Materials[2].MToon.ShadeMultiplyTexture, int32(INDEX_NONE));
 	return true;
 }
 

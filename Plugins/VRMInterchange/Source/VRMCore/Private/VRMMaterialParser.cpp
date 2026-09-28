@@ -146,7 +146,9 @@ namespace
 			ReadTextureTransform(BaseColorInfo, M.UVTransform);
 			M.MetallicRoughnessTexture = ImageOfTextureInfo(Textures, JObject(Pbr, TEXT("metallicRoughnessTexture")));
 		}
-		M.NormalTexture = ImageOfTextureInfo(Textures, JObject(&Material, TEXT("normalTexture")));
+		const FJsonObject* NormalInfo = JObject(&Material, TEXT("normalTexture"));
+		M.NormalTexture = ImageOfTextureInfo(Textures, NormalInfo);
+		JNumber(NormalInfo, TEXT("scale"), M.NormalScale);
 		M.OcclusionTexture = ImageOfTextureInfo(Textures, JObject(&Material, TEXT("occlusionTexture")));
 		M.EmissiveTexture = ImageOfTextureInfo(Textures, JObject(&Material, TEXT("emissiveTexture")));
 		JColor3(&Material, TEXT("emissiveFactor"), M.EmissiveFactor);
@@ -253,70 +255,122 @@ namespace
 		M.bMToon = true;
 		FVRMMToon& T = M.MToon;
 
-		// Base colour, normal, emission and alpha come from the MToon properties.
+		// Base colour, normal, emission and alpha come from the MToon properties. Unity's colours
+		// are gamma-encoded except the HDR emission colour, which is already linear.
 		M.BaseColorFactor = Color(TEXT("_Color"), FLinearColor::White);
-		if (const int32 Main = Texture(TEXT("_MainTex")); Main != INDEX_NONE)
+		const int32 MainTexture = Texture(TEXT("_MainTex"));
+		if (MainTexture != INDEX_NONE)
 		{
-			M.BaseColorTexture = Main;
+			M.BaseColorTexture = MainTexture;
 		}
 		float MainST[4];
-		if (JNumbers(Vectors, TEXT("_MainTex"), MainST, 4))
+		if (MainTexture != INDEX_NONE && JNumbers(Vectors, TEXT("_MainTex"), MainST, 4))
 		{
-			// Unity's scale and offset, with V measured from the bottom; glTF measures V from the top.
+			// Unity's offset (X, Y) and scale (Z, W), with V measured from the bottom; glTF measures V from the top.
 			M.UVTransform = FVRMTextureTransform();
-			M.UVTransform.Scale = FVector2f(MainST[0], MainST[1]);
-			M.UVTransform.Offset = FVector2f(MainST[2], 1.f - MainST[1] - MainST[3]);
+			M.UVTransform.Scale = FVector2f(MainST[2], MainST[3]);
+			M.UVTransform.Offset = FVector2f(MainST[0], 1.f - MainST[1] - MainST[3]);
 		}
 		if (const int32 Bump = Texture(TEXT("_BumpMap")); Bump != INDEX_NONE)
 		{
 			M.NormalTexture = Bump;
+			M.NormalScale = Float(TEXT("_BumpScale"), 1.f);
 		}
-		M.EmissiveFactor = Color(TEXT("_EmissionColor"), FLinearColor::Black);
-		M.EmissiveFactor.A = 1.f;
-		if (const int32 Emission = Texture(TEXT("_EmissionMap")); Emission != INDEX_NONE)
+		FLinearColor Emission = FLinearColor::Black;
+		JColor4(Vectors, TEXT("_EmissionColor"), Emission);
+		M.EmissiveFactor = FLinearColor(Emission.R, Emission.G, Emission.B, 1.f);
+		if (const int32 EmissionMap = Texture(TEXT("_EmissionMap")); EmissionMap != INDEX_NONE)
 		{
-			M.EmissiveTexture = Emission;
+			M.EmissiveTexture = EmissionMap;
 		}
 
 		// _BlendMode: 0 opaque, 1 cutout, 2 transparent, 3 transparent with z-write
 		const int32 BlendMode = FMath::RoundToInt(Float(TEXT("_BlendMode"), 0.f));
 		M.AlphaMode = BlendMode == 1 ? EVRMAlphaMode::Mask : (BlendMode >= 2 ? EVRMAlphaMode::Blend : EVRMAlphaMode::Opaque);
-		M.AlphaCutoff = Float(TEXT("_Cutoff"), 0.5f);
+		M.AlphaCutoff = BlendMode == 1 ? Float(TEXT("_Cutoff"), 0.5f) : 0.5f;
 		T.bTransparentWithZWrite = BlendMode == 3;
-		// _CullMode: 0 off (both sides), 1 front, 2 back
-		M.bDoubleSided = FMath::RoundToInt(Float(TEXT("_CullMode"), 2.f)) == 0;
+		// _CullMode: 0 off, 1 front, 2 back. glTF can't cull front faces, so front is double-sided too.
+		M.bDoubleSided = FMath::RoundToInt(Float(TEXT("_CullMode"), 2.f)) != 2;
 
 		T.ShadeColor = Color(TEXT("_ShadeColor"), FLinearColor(0.97f, 0.81f, 0.86f, 1.f));
 		T.ShadeMultiplyTexture = Texture(TEXT("_ShadeTexture"));
+		if (T.ShadeMultiplyTexture == INDEX_NONE)
+		{
+			// Many 0.x models set only the lit texture and looked right because of 0.x's GI; UniVRM
+			// uses the lit texture for the shade too.
+			T.ShadeMultiplyTexture = MainTexture;
+		}
 		const FVector2f Shading = VRM::MigrateMToon0Shading(Float(TEXT("_ShadeShift"), 0.f), Float(TEXT("_ShadeToony"), 0.9f));
 		T.ShadingShift = Shading.X;
 		T.ShadingToony = Shading.Y;
 		T.GIEqualization = FMath::Clamp(1.f - Float(TEXT("_IndirectLightIntensity"), 0.1f), 0.f, 1.f);
 
 		T.MatcapTexture = Texture(TEXT("_SphereAdd"));
-		T.MatcapColor = FLinearColor::White;
+		T.MatcapColor = T.MatcapTexture != INDEX_NONE ? FLinearColor::White : FLinearColor::Black;
 
 		T.RimColor = Color(TEXT("_RimColor"), FLinearColor::Black);
 		T.RimMultiplyTexture = Texture(TEXT("_RimTexture"));
-		T.RimLightingMix = Float(TEXT("_RimLightingMix"), 0.f);
+		// 0.x's rim mixes with the lighting differently; 1.0's full mix is the safe look (UniVRM).
+		T.RimLightingMix = 1.f;
 		T.RimFresnelPower = Float(TEXT("_RimFresnelPower"), 1.f);
 		T.RimLift = Float(TEXT("_RimLift"), 0.f);
 
-		// _OutlineWidthMode: 0 none, 1 world, 2 screen. _OutlineWidth is in centimetres (world) or
-		// hundredths of the screen height (screen).
+		// _OutlineWidthMode: 0 none, 1 world (_OutlineWidth in centimetres), 2 screen (percent of half the screen height).
 		const int32 WidthMode = FMath::RoundToInt(Float(TEXT("_OutlineWidthMode"), 0.f));
+		const float Width0 = Float(TEXT("_OutlineWidth"), 0.5f);
 		T.OutlineWidthMode = WidthMode == 1 ? EVRMOutlineWidthMode::WorldCoordinates
 			: (WidthMode == 2 ? EVRMOutlineWidthMode::ScreenCoordinates : EVRMOutlineWidthMode::None);
-		T.OutlineWidth = Float(TEXT("_OutlineWidth"), 0.5f) * 0.01f;
+		T.OutlineWidth = WidthMode == 1 ? Width0 * 0.01f : (WidthMode == 2 ? Width0 * 0.01f * 0.5f : 0.f);
 		T.OutlineWidthMultiplyTexture = Texture(TEXT("_OutlineWidthTexture"));
 		T.OutlineColor = Color(TEXT("_OutlineColor"), FLinearColor::Black);
 		// _OutlineColorMode: 0 fixed colour, 1 mixed with the lighting
 		T.OutlineLightingMix = FMath::RoundToInt(Float(TEXT("_OutlineColorMode"), 0.f)) == 1 ? Float(TEXT("_OutlineLightingMix"), 1.f) : 0.f;
 
+		// The Unity queue relative to the render mode's default; VRM::ParseMaterials turns it into
+		// a 1.0 offset once it has seen every material.
+		static const int32 DefaultQueue[] = { 2000, 2450, 3000, 2501 };
 		float Queue = 0.f;
-		if (JNumber(&Props, TEXT("renderQueue"), Queue) && M.AlphaMode == EVRMAlphaMode::Blend)
+		if (JNumber(&Props, TEXT("renderQueue"), Queue))
 		{
-			T.RenderQueueOffset = FMath::RoundToInt(Queue) - 3000; // Unity's transparent queue starts at 3000
+			T.RenderQueueOffset = FMath::RoundToInt(Queue) - DefaultQueue[FMath::Clamp(BlendMode, 0, 3)];
+		}
+	}
+
+	// VRM 0.x render queues to VRM 1.0 offsets, keeping the order (UniVRM): transparent materials
+	// get 0, -1, -2... from the latest queue down, z-write ones 0, 1, 2... from the earliest up.
+	void MigrateRenderQueues0(TArray<FVRMParsedMaterial>& Materials, const TArray<bool>& bFrom0)
+	{
+		TArray<int32> Transparent, ZWrite;
+		for (int32 i = 0; i < Materials.Num(); ++i)
+		{
+			const FVRMParsedMaterial& M = Materials[i];
+			if (bFrom0[i] && M.bMToon && M.AlphaMode == EVRMAlphaMode::Blend)
+			{
+				(M.MToon.bTransparentWithZWrite ? ZWrite : Transparent).AddUnique(M.MToon.RenderQueueOffset);
+			}
+		}
+		Transparent.Sort([](int32 A, int32 B) { return A > B; });
+		ZWrite.Sort();
+		for (int32 i = 0; i < Materials.Num(); ++i)
+		{
+			FVRMParsedMaterial& M = Materials[i];
+			if (!bFrom0[i] || !M.bMToon)
+			{
+				continue;
+			}
+			int32& Offset = M.MToon.RenderQueueOffset;
+			if (M.AlphaMode != EVRMAlphaMode::Blend)
+			{
+				Offset = 0;
+			}
+			else if (M.MToon.bTransparentWithZWrite)
+			{
+				Offset = FMath::Clamp(ZWrite.IndexOfByKey(Offset), 0, 9);
+			}
+			else
+			{
+				Offset = FMath::Clamp(-Transparent.IndexOfByKey(Offset), -9, 0);
+			}
 		}
 	}
 }
@@ -345,6 +399,8 @@ TArray<FVRMParsedMaterial> VRM::ParseMaterials(const FJsonObject& Root)
 	const FJsonArray* Properties0 = JArray(JObject(JObject(&Root, TEXT("extensions")), TEXT("VRM")), TEXT("materialProperties"));
 
 	Out.SetNum(Materials->Num());
+	TArray<bool> bFrom0;
+	bFrom0.Init(false, Materials->Num());
 	for (int32 i = 0; i < Materials->Num(); ++i)
 	{
 		FVRMParsedMaterial& M = Out[i];
@@ -371,8 +427,10 @@ TArray<FVRMParsedMaterial> VRM::ParseMaterials(const FJsonObject& Root)
 			if ((*Properties0)[i]->TryGetObject(Props) && Props && Props->IsValid())
 			{
 				ReadMaterialProperties0(**Props, Textures, M);
+				bFrom0[i] = true;
 			}
 		}
 	}
+	MigrateRenderQueues0(Out, bFrom0);
 	return Out;
 }

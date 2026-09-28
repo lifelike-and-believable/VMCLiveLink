@@ -45,7 +45,7 @@ struct FVRMMToon
 {
 	// Shading: shading = linearstep(-1 + Toony, 1 - Toony, dot(N, L) + Shift + ShiftTexture * Scale),
 	// colour = lerp(Shade, Lit, shading).
-	FLinearColor ShadeColor = FLinearColor::White;
+	FLinearColor ShadeColor = FLinearColor::Black;
 	int32 ShadeMultiplyTexture = INDEX_NONE;
 	float ShadingShift = 0.f;
 	int32 ShadingShiftTexture = INDEX_NONE;
@@ -85,6 +85,8 @@ struct FVRMParsedMaterial
 	// glTF core (pbrMetallicRoughness and friends)
 	int32 BaseColorTexture = INDEX_NONE;
 	int32 NormalTexture = INDEX_NONE;
+	/** normalTexture.scale (VRM 0.x: _BumpScale). */
+	float NormalScale = 1.f;
 	int32 MetallicRoughnessTexture = INDEX_NONE; // G=Roughness, B=Metallic
 	int32 OcclusionTexture = INDEX_NONE; // R channel
 	int32 EmissiveTexture = INDEX_NONE;
@@ -97,7 +99,7 @@ struct FVRMParsedMaterial
 	EVRMAlphaMode AlphaMode = EVRMAlphaMode::Opaque;
 	float AlphaCutoff = 0.5f;
 
-	/** The base colour texture's KHR_texture_transform (VRM 0.x: _MainTex scale and offset). MToon applies it to every texture. */
+	/** The base colour texture's KHR_texture_transform (VRM 0.x: _MainTex scale and offset). Applied to every texture of the material, as UniVRM does. */
 	FVRMTextureTransform UVTransform;
 
 	/** KHR_materials_unlit, or a VRM 0.x VRM/Unlit* shader. */
