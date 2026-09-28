@@ -231,7 +231,12 @@ namespace VRMMToonMaterialPrivate
 		/** Resets the graph and the material outputs. */
 		void Reset()
 		{
-			UMaterialEditingLibrary::DeleteAllMaterialExpressions(&Material);
+			// From a copy: removing while walking the material's own list skips every other node.
+			const TArray<TObjectPtr<UMaterialExpression>> Existing(Material.GetExpressions());
+			for (UMaterialExpression* Expression : Existing)
+			{
+				Material.GetExpressionCollection().RemoveExpression(Expression);
+			}
 			if (UMaterialEditorOnlyData* Ed = Material.GetEditorOnlyData())
 			{
 				Ed->BaseColor.Expression = nullptr;
