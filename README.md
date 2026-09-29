@@ -29,6 +29,7 @@ Both plugins are Windows (Win64) only for now: that is the only platform they ar
 - [VRM Interchange README](Plugins/VRMInterchange/README.md): importing VRM avatars, spring bones, materials, Live Link.
 - [Architecture](docs/ARCHITECTURE.md): modules, data flow, threading, coordinates, versioning, tests.
 - [Contributing](CONTRIBUTING.md): building, testing and submitting changes.
+- [Editor test plan](docs/EDITOR_TESTS.md): step-by-step checks that need a person in the editor.
 
 ## Getting Started
 

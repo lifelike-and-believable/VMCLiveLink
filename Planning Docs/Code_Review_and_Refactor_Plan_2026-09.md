@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-29):** 51 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 6, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 107 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-29):** every phase is done: 56 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, and all of Phases 1 to 7), plus the unplanned fixes. Both plugins are version 1.0.0. Every review finding has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 107 VRM and VMC tests. What remains needs the owner: a LICENSE file, the editor checks in [`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md), and the CI runner's DLL block (X-07). See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -1105,6 +1105,13 @@ Each item can be done alongside the phase that changes the behaviour it describe
 - **Steps:** move `postmortems/`, `Planning Docs/Opus4.1 Improvements/`, `Planning Docs/SpringBones_Rewrite_Dev_Plan/`, `VRM_SpringBones_Physics_Analysis.md` and the superseded readiness docs into `docs/archive/`, each with a one-line header ("Historical; superseded by ..."). Keep this plan and the Fab readiness report current.
 - **Acceptance:** the root directory contains only README, CHANGELOG, CONTRIBUTING, LICENSE and current plans.
 
+**Phase 7 status (2026-09-29): done.** P7.2 #178, P7.3 #179, P7.5b #180, P7.4 #181, P7.5 #182. Each was reviewed by the review agent before merging (rule 14); the findings and answers are on each PR. Deviations and what is still owed:
+- **P7.2:** the acceptance (a new user gets from install to a moving character with only the README) needs a person in the editor: `docs/EDITOR_TESTS.md` check E-G1. The review found that a placed character needs **Update Animation in Editor** to move outside Play; the README says so, but it hasn't been seen in the editor. Third-party menu names (VSeeFace, VirtualMotionCapture) and whether Warudo can send VMC are unconfirmed (E-G3, E-G11, E-G12).
+- **P7.4:** which thread UE 5.6 Live Link runs a remapper worker on is unconfirmed; the comments say only that it may run off the game thread.
+- **P7.5:** the repository has no LICENSE file, so the packaged zips carry the README but no licence. `FilterPlugin.ini` already packages `/LICENSE*`, so adding the file at each plugin root is enough. `DocsURL` points to the repository README (the owner's choice for now).
+- **P7.5b:** also archived the three older spring bone plans in `Planning Docs/`, so the folder holds only this plan.
+- **Added:** [`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md), a step-by-step editor test plan covering "Verification still owed" below.
+
 ---
 
 ## B.8 Decisions needed from the owner
@@ -1144,7 +1151,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-29.* Phases 1 to 6 are complete. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 107 automation tests pass.
+*Last updated 2026-09-29.* All phases are complete (Phase 0 with P0.5 in part). `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 107 automation tests pass.
 
 ### Status by task
 
@@ -1191,14 +1198,20 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
 | P5.1 to P5.8 Optimization | #166, #167, #168 | Merged | #166 added the benchmark tests. P5.1, P5.2, P5.3, P5.7 and P5.8 were already delivered by earlier phases; the benchmarks confirm their targets. P5.4 missed its target (see Phase 5 status). Merged without Copilot reviews at the owner's call: Copilot didn't run |
 | P6.1 to P6.4 Usability | #170, #171, #172, #173 | Merged | #171 and #173 were stacked (on #170 and #172) and moved onto `main` after them (rule 13). First runs found: a missing `InputCore` link dependency (#171), log categories that don't exist in Shipping, and an expected warning demoted to Verbose (#172). Merged without Copilot reviews at the owner's call: Copilot didn't run |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, #165, #169, this PR | Merged | |
+| (review agent) REVIEW.md and the code-review agent; Phase 6 review fixes | #175, #176, #177 | Merged | The review agent replaced Copilot's reviews (rule 14). Its reviews of Phase 6 found 3 blocking issues, all fixed |
+| P7.2 VMCLiveLink README | #178 | Merged | Review: 1 blocking (auto-detection needs the remapper's own Reference Skeleton), 7 optional. First run hit the runner's DLL block (X-07); the re-run passed |
+| P7.3 Architecture and contributing docs | #179 | Merged | Review: 4 blocking (CI doesn't fail on test warnings; payloads share the parsed model; signature recompute timing; reimport creates copies by default), 13 optional |
+| P7.5b Archive | #180 | Merged | 45 files moved with a "superseded by" line; three older spring plans also archived |
+| P7.4 API comments | #181 | Merged | Comments only. Review: 2 blocking (VRM 0.x expression binds are stored as the file gives them), 11 optional |
+| P7.5 Packaging, CHANGELOG, 1.0.0 | #182 | Merged | Review: 2 blocking (a performance claim; no LICENSE file, which needs the owner) |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, #165, #169, #174, this PR | Merged | |
 
-**Not started:** Phase 7 (P7.1 is done).
+**Not started:** nothing; every phase is done.
 
 **Recommended next:**
-1. Phase 7 (documentation).
-2. Owner: fix the runner's Application Control block (X-07).
-3. The editor checks below, starting with P4.5's material comparison.
+1. Owner: add a LICENSE file to each plugin root (P7.5), then tag `release/1.0.0` to build the Fab zips.
+2. Run the editor checks in [`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md), starting with E-G1 (the README quick start) and E-B3 (import message threads), and file an issue per failure.
+3. Owner: fix the runner's Application Control block (X-07); it hit #178 as well.
 
 ### How the merges went
 
@@ -1233,6 +1246,11 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 - **Stacking to avoid conflicts:** P1.12 touched the same parser as P1.13, so it was branched from P1.13's PR and moved onto `main` after that merged. That worked, but the merge produced a duplicate function without reporting a conflict (X-07). B.0 rule 13 now requires a diff against `main` before pushing a merged branch.
 
 ### Verification still owed
+
+[`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md) turns this list into step-by-step checks with pass conditions and a results table.
+
+- **In the editor (P6.3 review, #177):** during an import of two files, a warning logged on a worker thread (a texture that fails to decode) lands under its own file on the VRM Import page, not under "outside any one file's import". This confirms that `FOutputDeviceRedirector` serves the capture on the logging thread (E-B3).
+- **In the editor (P7):** the VMC README quick start from scratch (E-G1), the Content Browser Add-menu locations (E-G2), the third-party sender menus (E-G3, E-G11, E-G12) and the editor paths named in the docs (E-I1).
 
 - **In the editor (P6):**
   - Run #170's manual script: port in use, sender stopping and resuming, settings edits, `VMC.Stats`.
