@@ -205,6 +205,8 @@ When **Generate Live Link Actor Scaffold** is enabled, the plugin creates:
 4. Configure your external VMC application to send to Unreal's IP and port
 5. The character will animate in real-time with incoming motion data
 
+The [VMC Live Link README](../VMCLiveLink/README.md) covers sender setup, the source settings, the remapper and troubleshooting.
+
 ### Customizing the Live Link Setup
 
 The generated blueprints are templates you can extend:
