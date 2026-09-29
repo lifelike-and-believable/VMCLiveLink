@@ -1,5 +1,6 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCLiveLinkRemapper.h"
+#include "VMCLiveLinkSource.h"
 #include "VMCLog.h"
 #include "VMCLiveLinkSettings.h"
 
@@ -138,6 +139,82 @@ void UVMCLiveLinkRemapper::MarkDirty()
 	++Revision;
 }
 
+bool UVMCLiveLinkRemapper::GetIncomingNames(TArray<FName>& OutBones, TArray<FName>& OutCurves) const
+{
+	OutBones.Reset();
+	OutCurves.Reset();
+	// A VMC source keeps the names it sent; Live Link may hold the subject's static data renamed.
+	if (FVMCLiveLinkSource::GetPublishedNames(CachedKey, OutBones, OutCurves))
+	{
+		return true;
+	}
+	if (!IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
+	{
+		return false;
+	}
+	ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
+	const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(CachedKey);
+	if (!SDS || !SDS->IsValid() || !SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
+	{
+		return false;
+	}
+	const FLiveLinkSkeletonStaticData& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
+	OutBones = Skel.GetBoneNames();
+	OutCurves = static_cast<const FLiveLinkBaseStaticData&>(Skel).PropertyNames;
+	return true;
+}
+
+void UVMCLiveLinkRemapper::BuildMappingTable(TConstArrayView<FName> Bones, TConstArrayView<FName> Curves, const USkeletalMesh* Reference,
+	TArray<FVMCMappingRow>& OutBones, TArray<FVMCMappingRow>& OutCurves) const
+{
+	// Remap the names with a worker made from the current settings, so the table shows what the
+	// subject gets, normalizer included.
+	FVMCRemapConfig Config;
+	Config.BoneNameMap = BoneNameMap;
+	Config.CurveNameMap = CurveNameMap;
+	Config.bUseRefTranslations = false;
+	Config.bEnableMetaHumanCurveNormalizer = bEnableMetaHumanCurveNormalizer;
+	Config.JoyToSmileStrength = JoyToSmileStrength;
+	Config.BlinkMirrorStrength = BlinkMirrorStrength;
+	Config.bLogProblems = false;
+	FVMCLiveLinkRemapperWorker TableWorker(MoveTemp(Config));
+
+	FLiveLinkStaticDataStruct Static(FLiveLinkSkeletonStaticData::StaticStruct());
+	FLiveLinkSkeletonStaticData& Skel = *Static.Cast<FLiveLinkSkeletonStaticData>();
+	Skel.SetBoneNames(TArray<FName>(Bones.GetData(), Bones.Num()));
+	TArray<int32> Parents;
+	Parents.Init(INDEX_NONE, Bones.Num());
+	Skel.SetBoneParents(Parents);
+	Skel.PropertyNames = TArray<FName>(Curves.GetData(), Curves.Num());
+	TableWorker.RemapStaticData(Static);
+	const TArray<FName>& OutBoneNames = Skel.GetBoneNames();
+	const TArray<FName>& OutCurveNames = Skel.PropertyNames;
+
+	auto Fill = [](TConstArrayView<FName> In, const TArray<FName>& Out, const TMap<FName, FName>& Map, TFunctionRef<bool(FName)> IsOnTarget, TArray<FVMCMappingRow>& Rows)
+	{
+		Rows.Reset(Out.Num());
+		TMap<FName, int32> Uses;
+		for (int32 i = 0; i < Out.Num(); ++i)
+		{
+			FVMCMappingRow& Row = Rows.AddDefaulted_GetRef();
+			Row.Incoming = In.IsValidIndex(i) ? In[i] : NAME_None;
+			Row.Outgoing = Out[i];
+			Row.bSynthesized = !In.IsValidIndex(i);
+			Row.bMapped = !Row.bSynthesized && Map.Contains(In[i]);
+			Row.bNotOnTarget = !IsOnTarget(Out[i]);
+			++Uses.FindOrAdd(Out[i]);
+		}
+		for (FVMCMappingRow& Row : Rows)
+		{
+			Row.bDuplicateTarget = Uses.FindChecked(Row.Outgoing) > 1;
+		}
+	};
+	auto HasBone = [Reference](FName Name) { return !Reference || Reference->GetRefSkeleton().FindBoneIndex(Name) != INDEX_NONE; };
+	auto HasMorph = [Reference](FName Name) { return !Reference || Reference->FindMorphTarget(Name) != nullptr; };
+	Fill(Bones, OutBoneNames, BoneNameMap, HasBone, OutBones);
+	Fill(Curves, OutCurveNames, CurveNameMap, HasMorph, OutCurves);
+}
+
 void UVMCLiveLinkRemapper::DetectAndSeedFromSubject()
 {
 	if (!IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName)) return;
@@ -259,7 +336,7 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 		if (const FName* Out = Config.CurveNameMap.Find(C)) C = *Out;
 	}
 
-	if (!bWarnedDuplicateCurves)
+	if (Config.bLogProblems && !bWarnedDuplicateCurves)
 	{
 		TSet<FName> Seen;
 		TArray<FString> Duplicates;

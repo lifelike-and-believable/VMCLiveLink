@@ -23,6 +23,7 @@ public class VMCLiveLinkEditor : ModuleRules
 			"Slate",
             "SlateCore",
             "EditorStyle",
+            "InputCore",         // EKeys, used by SListView (the remapper's Live Mapping table)
 
 			// Editor-only functionality used by the factory UI and asset tooling
 			"UnrealEd",
