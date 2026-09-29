@@ -20,6 +20,10 @@ enum class EVRMSpringSimulationSpace : uint8
 /**
  * Spring bone anim node (VRM multi-chain). An adapter over FVRMSpringSolver: it maps the spring data
  * to pose bones, feeds the solver the animated pose, and writes back the joint rotations.
+ *
+ * Runs on animation worker threads, one instance per AnimBP instance. It reads SpringData there and
+ * rebuilds its setup when the asset, its EditRevision or its SourceHash changes, or the LOD's bones
+ * do. Positions are in the component's space, in cm.
  */
 USTRUCT(BlueprintInternalUseOnly)
 struct VRMSPRINGBONESRUNTIME_API FAnimNode_VRMSpringBones : public FAnimNode_SkeletalControlBase

@@ -13,17 +13,26 @@ namespace VRM
     
     VRMINTERCHANGE_API struct FVRMValidationResult
     {
+        /** False once any error is added (and for an empty config). */
         bool bIsValid = false;
+        /** Problems that don't stop the springs from running (the import logs them as warnings). */
         TArray<FString> Warnings;
+        /** Problems that do (bad indices, missing data). */
         TArray<FString> Errors;
+        /** Notes, such as counts. */
         TArray<FString> Info;
         
+        /** Adds a warning. */
         void AddWarning(const FString& Message) { Warnings.Add(Message); }
+        /** Adds an error and marks the result invalid. */
         void AddError(const FString& Message) { Errors.Add(Message); bIsValid = false; }
+        /** Adds a note. */
         void AddInfo(const FString& Message) { Info.Add(Message); }
         
+        /** Whether there are any warnings or errors. */
         bool HasIssues() const { return Warnings.Num() > 0 || Errors.Num() > 0; }
         
+        /** One line: valid or not, with the error and warning counts. */
         FString GetSummary() const
         {
             FString Summary = FString::Printf(TEXT("VRM Validation: %s"), bIsValid ? TEXT("VALID") : TEXT("INVALID"));

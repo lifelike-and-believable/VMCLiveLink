@@ -32,6 +32,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM|Assets", meta = (AllowedClasses = "/Script/VRMSpringBonesRuntime.VRMSpringBoneData"))
 	TSoftObjectPtr<UObject> SpringData;
 
+	/** The source file's full path at import. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM|Source")
 	FString SourceFilename;
 

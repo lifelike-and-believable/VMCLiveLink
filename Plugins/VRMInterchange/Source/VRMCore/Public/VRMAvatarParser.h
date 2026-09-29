@@ -40,8 +40,9 @@ namespace VRM
 	 */
 	VRMCORE_API TMap<FName, FString> MakeHumanoidMetadata(const FVRMAvatarData& Avatar);
 
-	/** The metadata keys' prefix and the version key (see MakeHumanoidMetadata). */
+	/** The metadata keys' prefix (see MakeHumanoidMetadata). */
 	inline const TCHAR* const HumanoidMetadataPrefix = TEXT("VRM.Humanoid.");
+	/** The metadata version key (see MakeHumanoidMetadata). */
 	inline const TCHAR* const HumanoidMetadataVersionKey = TEXT("VRM.HumanoidVersion");
 
 	/** An expression preset from its name in a file of the given version (VRM 0.x joy is happy, a is aa, ...). */

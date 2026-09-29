@@ -80,6 +80,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VMC|Devices")
 	bool bCameraSubject = false;
 
+	/** These settings as the source's connection settings. */
 	FVMCConnectionSettings ToConnectionSettings() const;
+	/** Sets these settings from a source's connection settings. */
 	void FromConnectionSettings(const FVMCConnectionSettings& In);
 };

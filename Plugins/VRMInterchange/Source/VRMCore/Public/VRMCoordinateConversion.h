@@ -43,11 +43,12 @@ namespace VRM::Coord
 	/** A per-axis scale: the axes swap like directions, and magnitudes are unchanged. */
 	inline FVector ToUEScale(const FVector& S) { return FVector(S.X, S.Z, S.Y); }
 
+	/** The file's VRM version, which decides its facing. */
 	enum class EVRMVersion : uint8
 	{
 		Unknown,	// not a VRM file; imported as generic glTF, which faces +Z like VRM 1.0
-		VRM0,
-		VRM1,
+		VRM0,		// faces -Z: gets the 180-degree yaw
+		VRM1,		// faces +Z
 	};
 
 	/**
@@ -57,9 +58,12 @@ namespace VRM::Coord
 	 */
 	struct FVRMAxisConvention
 	{
+		/** Unit scale for positions (glTF metres to UE centimetres by default). */
 		float Scale = MetersToCentimeters;
+		/** Turn 180 degrees about UE Z after the axis mapping (VRM 0.x). */
 		bool bYaw180 = false;
 
+		/** The convention for a file of this version. */
 		static FVRMAxisConvention ForVersion(EVRMVersion Version, float InScale = MetersToCentimeters)
 		{
 			FVRMAxisConvention Convention;
@@ -68,6 +72,7 @@ namespace VRM::Coord
 			return Convention;
 		}
 
+		/** A direction or unscaled offset in glTF space, in UE space. */
 		FVector Direction(const FVector& V) const
 		{
 			const FVector D = ToUEDirection(V);
@@ -78,10 +83,11 @@ namespace VRM::Coord
 			const FVector3f D = ToUEDirection(V);
 			return bYaw180 ? FVector3f(-D.X, -D.Y, D.Z) : D;
 		}
+		/** A position in glTF metres, in UE space and units (cm by default). */
 		FVector Position(const FVector& V) const { return Direction(V) * Scale; }
 		FVector3f Position(const FVector3f& V) const { return Direction(V) * Scale; }
 
-		/** Conjugating by a 180-degree yaw about Z negates the rotation's X and Y. */
+		/** A glTF rotation in UE space. Conjugating by a 180-degree yaw about Z negates the rotation's X and Y. */
 		FQuat Rotation(const FQuat& Q) const
 		{
 			const FQuat R = ToUERotation(Q);

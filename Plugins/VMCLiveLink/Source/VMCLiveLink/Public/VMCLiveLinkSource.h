@@ -45,6 +45,7 @@ class VMCLIVELINK_API FVMCLiveLinkSource
     , public TSharedFromThis<FVMCLiveLinkSource>
 {
 public:
+    /** A source with these settings. Nothing is received until Live Link calls ReceiveClient. Game thread. */
     explicit FVMCLiveLinkSource(const FVMCConnectionSettings& InSettings, const FString& InSourceName = TEXT("VMC"));
 
     UE_DEPRECATED(5.6, "Use the FVMCConnectionSettings constructor.")
@@ -55,23 +56,39 @@ public:
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg);
     UE_DEPRECATED(5.6, "Use the FVMCConnectionSettings constructor.")
     FVMCLiveLinkSource(const FString& InSourceName, int32 InPort, bool bInUnityToUE, bool bInMetersToCm, float InYawDeg, FString Subject);
+    /** Removes the receive callbacks and the ticker, even if Live Link never called RequestSourceShutdown. */
     virtual ~FVMCLiveLinkSource();
 
+    /** The settings in use. Game thread. */
     const FVMCConnectionSettings& GetConnectionSettings() const { return Settings; }
 
-    // ILiveLinkSource
+    // ILiveLinkSource. Live Link calls these on the game thread.
+
+    /** Starts receiving on the path Settings.bReceiveThread asks for. The source stays valid if the
+     *  port can't be opened, so its status can say why. */
     virtual void ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid) override;
+    /** False once the source has been shut down. */
     virtual bool IsSourceStillValid() const override { return bIsValid; }
+    /** Stops receiving (returns once no frame is being built) and invalidates the source. Always true. */
     virtual bool RequestSourceShutdown() override;
 
+    /** "VMC (OSC)". */
     virtual FText GetSourceType() const override { return NSLOCTEXT("VMCLiveLink", "SourceType", "VMC (OSC)"); }
     /** The IP address the last packet came from. */
     virtual FText GetSourceMachineName() const override;
+    /** Listening, receiving (frame rate, jitter, sender), no data, or why it can't listen
+     *  (VMCDiagnostics::FormatStatus). */
     virtual FText GetSourceStatus() const override;
 
     // Settings shown in the Live Link panel (UVMCLiveLinkSourceSettings)
+
+    /** UVMCLiveLinkSourceSettings. */
     virtual TSubclassOf<ULiveLinkSourceSettings> GetSettingsClass() const override;
+    /** Shows the source's settings in the panel. The source was created from its connection
+     *  string (also when a Live Link preset is applied), so its settings are the truth. */
     virtual void InitializeSettings(ULiveLinkSourceSettings* InSettings) override;
+    /** Applies an edit: a new port, bind address, path or subject restarts receiving; other settings
+     *  apply to the next frame. Invalid values are logged and the panel goes back to the settings in use. */
     virtual void OnSettingsChanged(ULiveLinkSourceSettings* InSettings, const FPropertyChangedEvent& PropertyChangedEvent) override;
 
     /** VMC.Stats for this source: message rates per address since the last call, and the addresses

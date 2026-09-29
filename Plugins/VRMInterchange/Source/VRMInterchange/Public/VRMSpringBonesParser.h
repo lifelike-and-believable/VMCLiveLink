@@ -6,6 +6,12 @@
 
 class FVRMDocument;
 
+/**
+ * Reads a VRM file's spring bones (VRM 0.x secondaryAnimation or VRM 1.0 VRMC_springBone) into an
+ * FVRMSpringConfig, converted to UE units and axes (see FVRMSpringConfig). Each returns false, with
+ * OutError set, if the data can't be read; a file with no spring bones gives an empty config (Spec
+ * None). Any thread: they touch no UObjects.
+ */
 namespace VRM
 {
     // Parse from a top-level JSON string (GLB chunk or .gltf text)
@@ -19,6 +25,8 @@ namespace VRM
 
     // Convenience: load a .vrm/.glb/.gltf file into a document and parse it as above.
     VRMINTERCHANGE_API bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, FString& OutError);
+    // ... also the node index -> node name map.
     VRMINTERCHANGE_API bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, FString& OutError);
+    // ... also the node parent/children graph.
     VRMINTERCHANGE_API bool ParseSpringBonesFromFile(const FString& Filename, FVRMSpringConfig& OutConfig, TMap<int32, FName>& OutNodeMap, TMap<int32, int32>& OutNodeParent, TMap<int32, FVRMNodeChildren>& OutNodeChildren, FString& OutError);
 }

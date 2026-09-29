@@ -23,8 +23,10 @@
  */
 struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSetup
 {
+	/** One simulated joint. Parameters in the units of FVRMSpringJoint (cm, cm/s, world-space gravity). */
 	struct FJoint
 	{
+		/** The solver bone the joint rotates. */
 		int32 Bone = INDEX_NONE;
 		/** The bone at the joint's tail (the next joint of the chain), or INDEX_NONE for a virtual tail. */
 		int32 TailBone = INDEX_NONE;
@@ -32,13 +34,19 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSetup
 		 *  first joint, if the parent is a joint of another chain (a VRM 0.x branch), the joint
 		 *  follows that joint's simulated transform rather than the animated pose. */
 		int32 ParentBone = INDEX_NONE;
+		/** Pull toward the animated direction (no unit). */
 		float Stiffness = 1.f;
+		/** Fraction of velocity lost per step, 0 to 1. */
 		float Drag = 0.5f;
+		/** Unit direction, world space. */
 		FVector GravityDir = FVector(0, 0, -1);
+		/** cm/s. */
 		float GravityPower = 0.f;
+		/** Tail radius for collisions, cm. */
 		float HitRadius = 0.f;
 	};
 
+	/** One spring: joints simulated root to tip. */
 	struct FChain
 	{
 		/** Root to tip. Each joint after the first is the previous joint's tail. */
@@ -49,19 +57,28 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSetup
 		TArray<int32> Colliders;
 	};
 
+	/** Collider shapes attached to one bone, in that bone's space (cm). */
 	struct FCollider
 	{
 		/** Bone the shapes are attached to, or INDEX_NONE for the component's origin. */
 		int32 Bone = INDEX_NONE;
+		/** Sphere shapes. */
 		TArray<FVRMSpringColliderSphere> Spheres;
+		/** Capsule shapes. */
 		TArray<FVRMSpringColliderCapsule> Capsules;
+		/** Plane shapes. */
 		TArray<FVRMSpringColliderPlane> Planes;
 	};
 
+	/** How many solver bones there are: the length of the pose arrays passed to Reset and Step. */
 	int32 NumBones = 0;
+	/** The springs. */
 	TArray<FChain> Chains;
+	/** The colliders, referred to by FChain::Colliders. */
 	TArray<FCollider> Colliders;
 };
+
+/** How the solver steps (the anim node's settings). */
 
 struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSettings
 {
@@ -69,12 +86,13 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSettings
 	float SubstepHz = 60.f;
 	/** Longest frame simulated; longer frames (hitches) are cut to this. Bounds the steps per frame. */
 	float MaxDeltaTime = 0.1f;
-	/** Length of a virtual tail, for a VRM 0.x joint at the end of a chain. */
+	/** Length of a virtual tail, for a VRM 0.x joint at the end of a chain, in cm. */
 	float VirtualTailLength = 7.f;
 	/** Tails of springs without a center bone live in world space, so moving the character adds
 	 *  inertia. When false they live in component space and only the animation moves them. */
 	bool bWorldSpace = true;
 
+	/** Whether every setting is the same. */
 	bool operator==(const FVRMSpringSolverSettings& Other) const
 	{
 		return SubstepHz == Other.SubstepHz && MaxDeltaTime == Other.MaxDeltaTime
@@ -85,13 +103,24 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSettings
 /** One joint after a frame, for debug drawing. Component space. */
 struct FVRMSpringSolverJointDebug
 {
+	/** The joint's position, cm. */
 	FVector Head = FVector::ZeroVector;
+	/** Where the simulated tail is, cm. */
 	FVector Tail = FVector::ZeroVector;
+	/** Where the tail was a step earlier, cm. */
 	FVector PrevTail = FVector::ZeroVector;
+	/** Where the tail would be without simulation (the animated pose), cm. */
 	FVector RestTail = FVector::ZeroVector;
+	/** The joint's hit radius, cm. */
 	float HitRadius = 0.f;
 };
 
+/**
+ * Simulates spring chains on a pose (see FVRMSpringSolverSetup for the algorithm). Not thread safe:
+ * one instance per anim node instance, stepped by one thread at a time. All positions are in the
+ * component's space, in cm, except that tails are kept in world space (or a center bone's space)
+ * between steps.
+ */
 class VRMSPRINGBONESRUNTIME_API FVRMSpringSolver
 {
 public:
@@ -101,6 +130,7 @@ public:
 	/** Changes the settings without restarting, except that a change of space or of virtual tail
 	 *  length restarts the tails from the next pose. */
 	void SetSettings(const FVRMSpringSolverSettings& InSettings);
+	/** The settings in use. */
 	const FVRMSpringSolverSettings& GetSettings() const { return Settings; }
 
 	/** Restarts every tail from this pose, with no motion. Also captures bone axes and lengths. */
@@ -118,12 +148,15 @@ public:
 	TConstArrayView<FTransform> JointTransforms() const { return OutJoints; }
 	/** The solver bone of each entry of JointTransforms(). */
 	TConstArrayView<int32> JointBones() const { return OutBones; }
+	/** Debug data for each simulated joint after the last Step, in the order of JointBones(). */
 	TConstArrayView<FVRMSpringSolverJointDebug> JointDebug() const { return Debug; }
 
+	/** The chains and colliders from Init. */
 	const FVRMSpringSolverSetup& GetSetup() const { return Setup; }
 	/** Component-space transform of each collider's bone during the last step. */
 	TConstArrayView<FTransform> ColliderTransforms() const { return ColliderCS; }
 
+	/** Whether the tails have state: Reset (or Step) has run since Init. */
 	bool IsInitialized() const { return bHasState; }
 
 	/** Signed distance of a point outside (inside, for an inside shape) a collider shape, less HitRadius;
