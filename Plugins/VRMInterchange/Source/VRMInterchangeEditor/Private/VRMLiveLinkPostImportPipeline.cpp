@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMLiveLinkPostImportPipeline.h"
 
+#include "VRMImportMessages.h"
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -42,6 +43,8 @@ void UVRMLiveLinkPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContain
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
 	// Only this instance's flags count (seeded from the project settings in PostInitProperties).
 	// Either asset is reason enough to run: the retarget actor doesn't need the Live Link actor.
+	// What this pipeline logs belongs to this import's message log page (P6.3).
+	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && (bGenerateLiveLinkEnabledActor || bGenerateLiveLinkRetargetActor))
 	{
 		WaitForSkeletalMesh();

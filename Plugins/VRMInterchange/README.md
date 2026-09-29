@@ -117,9 +117,18 @@ Configure default import behavior in **Edit → Project Settings → Plugins →
 
 During each import, you can override project settings in the Interchange import dialog:
 
-1. Expand the pipeline sections in the import dialog
-2. Adjust settings for **VRM Spring Bones**, **VRM IK Rig**, and **VRM Live Link** pipelines
-3. These override the project defaults for this import only
+1. Expand the VRM pipelines in the import dialog. Their options are in the **VRM Import** category: **Spring Bones**, **IK Rig**, **Live Link Actor**, **Retarget Actor**, **Avatar Description** and the **Materials** options. Each tooltip says which assets it creates and in which folder.
+2. These override the project defaults for this import only.
+
+### After Import
+
+When the import finishes, one notification lists:
+- the assets the VRM pipelines created;
+- those updated in place from the file (what refers to them keeps working; edits to them are replaced);
+- those only pointed at the new mesh (existing Actor and Animation Blueprints; your edits are kept);
+- the avatar's licence and usage permissions.
+
+**Show in Content Browser** selects the assets. **Show problems** (or **Show import log**) opens the **VRM Import** message log. It has one page per import, listing every warning and error the import logged: unresolved bones, lenient spring layouts, non-VRM glTF files, and so on.
 
 ## Using Spring Bones
 
@@ -129,6 +138,15 @@ During each import, you can override project settings in the Interchange import 
 2. Optionally enable **Generate Post Process AnimBP** and **Assign Post Process ABP**
 3. Import your VRM file
 4. The spring bone system will be automatically configured and applied
+
+### Editing Spring Data
+
+Open a spring data asset (`<Mesh>_SpringData`). Changes to it reach running previews and PIE at once, without recompiling the AnimBlueprint. Its **Editing Tools** section has:
+- **Scale All:** multiplies every joint's stiffness, drag and gravity by the factors given. Only the quantities whose factor isn't 1 change.
+- **Reset Spring to File Values:** puts one spring and its joints back to the values the VRM file gave them. Assets imported before this tool existed need a reimport first.
+- **Reimport from Source:** reads the source VRM again and replaces the springs, joints and colliders. Its warnings go to the VRM Import message log.
+
+Each tool can be undone.
 
 ### Manual Setup
 

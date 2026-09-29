@@ -56,7 +56,9 @@ bool UVRMTranslator::CanImportSourceData(const UInterchangeSourceData* InSourceD
 bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) const
 {
     // What the import logs from here on is also shown on a message log page when it finishes (P6.3).
-    VRM::ImportMessages::Begin();
+    const FString SourceFile = GetSourceData() ? GetSourceData()->GetFilename() : FString();
+    VRM::ImportMessages::Begin(SourceFile);
+    const VRM::ImportMessages::FScope MessageScope(SourceFile);
     // The file is read and parsed once (P3.3). The model is built from that document, and the
     // document's JSON and hash go to the pipelines in a UInterchangeVRMNode.
     ParsedModel.Reset();

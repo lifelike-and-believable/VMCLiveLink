@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMAvatarDescriptionPipeline.h"
 
+#include "VRMImportMessages.h"
 #include "Editor.h"
 #include "Engine/SkeletalMesh.h"
 #include "Framework/Application/SlateApplication.h"
@@ -85,6 +86,8 @@ void UVRMAvatarDescriptionPipeline::ExecutePipeline(UInterchangeBaseNodeContaine
 	StagedAvatar = FVRMAvatarData();
 	StagedSourceHash.Reset();
 	LastDescription.Reset();
+	// What this pipeline logs belongs to this import's message log page (P6.3).
+	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
 	if (!BeginImport(SourceDatas, ContentBasePath) || !BaseNodeContainer || !bGenerateAvatarDescription)
 	{
 		return;

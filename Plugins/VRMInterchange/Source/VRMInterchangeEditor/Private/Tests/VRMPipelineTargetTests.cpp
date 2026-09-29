@@ -10,6 +10,7 @@
 #include "Misc/Paths.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "UObject/Package.h"
+#include "VRMImportReport.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMIKRigPostImportPipeline.h"
 #include "VRMLiveLinkPostImportPipeline.h"
@@ -167,6 +168,7 @@ bool FVRMPipelinePostImportSpringData::RunTest(const FString& Parameters)
 	TestEqual(TEXT("No overwrite: one more asset"), CountSpringAssets(), AfterFirst + 1);
 	TestTrue(TEXT("... the first one is still there"), FindObject<UVRMSpringBoneData>(nullptr, *AssetPath) == Created);
 	TestTrue(TEXT("At least one asset was made"), AfterFirst > Before);
+	FVRMImportReport::Get().Discard(); // the post-import report these calls started (P6.3)
 	return true;
 }
 
@@ -207,6 +209,7 @@ bool FVRMPipelinePostImportIKRig::RunTest(const FString& Parameters)
 	Execute(Again);
 	Again->HandleImportedAsset(Mesh, true);
 	TestTrue(TEXT("Overwrite reuses the IK Rig"), FindObject<UIKRigDefinition>(nullptr, *RigPath) == Rig);
+	FVRMImportReport::Get().Discard(); // the post-import report these calls started (P6.3)
 	return true;
 }
 

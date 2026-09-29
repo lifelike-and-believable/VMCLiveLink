@@ -166,10 +166,15 @@ void FVRMImportReport::Flush()
 {
 	TArray<FFile> Shown = MoveTemp(Files);
 	Discard();
-	const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take();
 	if (Shown.Num() == 0)
 	{
 		return;
+	}
+	// Each file's own messages (imports that overlap keep theirs apart), plus any logged outside an import.
+	TArray<VRM::ImportMessages::FMessage> Messages;
+	for (const FFile& File : Shown)
+	{
+		Messages.Append(VRM::ImportMessages::Take(File.SourceFile));
 	}
 
 	// The message log page: what was made, then every warning and error the import logged.

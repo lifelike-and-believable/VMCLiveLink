@@ -20,6 +20,12 @@ TSharedRef<IDetailCustomization> FVRMSpringBoneDataCustomization::MakeInstance()
 	return MakeShared<FVRMSpringBoneDataCustomization>();
 }
 
+TSharedRef<FVRMSpringBoneDataCustomization::FToolState> FVRMSpringBoneDataCustomization::GetToolState()
+{
+	static TSharedRef<FToolState> ToolState = MakeShared<FToolState>();
+	return ToolState;
+}
+
 void FVRMSpringBoneDataCustomization::CustomizeDetails(const TSharedPtr<IDetailLayoutBuilder>& DetailBuilder)
 {
 	Builder = DetailBuilder;
@@ -37,6 +43,15 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 		{
 			Assets.Add(Data);
 		}
+	}
+
+	// Another asset: start its tools afresh (the scale factors are kept, they're only inputs).
+	UObject* FirstAsset = Assets.Num() > 0 ? Assets[0].Get() : nullptr;
+	if (State->ForAsset.Get() != FirstAsset)
+	{
+		State->ForAsset = FirstAsset;
+		State->SpringToReset = 0;
+		State->LastResult = FText::GetEmpty();
 	}
 
 	IDetailCategoryBuilder& Tools = DetailBuilder.EditCategory(TEXT("Editing Tools"), LOCTEXT("EditingTools", "Editing Tools"), ECategoryPriority::Important);
@@ -62,19 +77,24 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 		.MinDesiredWidth(300.f)
 		[
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0, 0, 2, 0)[ ScaleBox(&StiffnessScale, LOCTEXT("StiffnessScaleTip", "Multiplies every joint's stiffness")) ]
-			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(2, 0)[ ScaleBox(&DragScale, LOCTEXT("DragScaleTip", "Multiplies every joint's drag")) ]
-			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(2, 0)[ ScaleBox(&GravityScale, LOCTEXT("GravityScaleTip", "Multiplies every joint's gravity power")) ]
+			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0, 0, 2, 0)[ ScaleBox(&State->StiffnessScale, LOCTEXT("StiffnessScaleTip", "Multiplies every joint's stiffness")) ]
+			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(2, 0)[ ScaleBox(&State->DragScale, LOCTEXT("DragScaleTip", "Multiplies every joint's drag")) ]
+			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(2, 0)[ ScaleBox(&State->GravityScale, LOCTEXT("GravityScaleTip", "Multiplies every joint's gravity power")) ]
 			+ SHorizontalBox::Slot().AutoWidth().Padding(2, 0, 0, 0)
 			[
 				SNew(SButton)
 					.Text(LOCTEXT("ApplyScale", "Apply"))
-					.ToolTipText(LOCTEXT("ApplyScaleTip", "Multiplies every joint's and spring's stiffness, drag and gravity power by these factors (stiffness and drag stay within 0 to 1)."))
+					.ToolTipText(LOCTEXT("ApplyScaleTip", "Multiplies every joint's and spring's stiffness, drag and gravity power by these factors (drag stays within 0 to 1; stiffness and gravity at least 0). Only the quantities whose factor isn't 1 change."))
 					.OnClicked_Lambda([this]()
 					{
-						const float S = StiffnessScale, D = DragScale, G = GravityScale;
-						LastResult = FText::Format(LOCTEXT("Scaled", "Scaled stiffness x{0}, drag x{1}, gravity x{2}."), FText::AsNumber(S), FText::AsNumber(D), FText::AsNumber(G));
-						return Run(LOCTEXT("ScaleTx", "Scale Spring Parameters"), [S, D, G](UVRMSpringBoneData& Data) { Data.ScaleParameters(S, D, G); });
+						const float S = State->StiffnessScale, D = State->DragScale, G = State->GravityScale;
+						State->LastResult = FText::Format(LOCTEXT("Scaled", "Scaled stiffness x{0}, drag x{1}, gravity x{2}."), FText::AsNumber(S), FText::AsNumber(D), FText::AsNumber(G));
+						return Run(LOCTEXT("ScaleTx", "Scale Spring Parameters"), [S, D, G](UVRMSpringBoneData& Data)
+						{
+							Data.Modify();
+							Data.ScaleParameters(S, D, G);
+							return true;
+						});
 					})
 			]
 		];
@@ -82,7 +102,7 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 	// Reset one spring
 	const UVRMSpringBoneData* First = Assets.Num() > 0 ? Assets[0].Get() : nullptr;
 	const int32 NumSprings = First ? First->SpringConfig.Springs.Num() : 0;
-	SpringToReset = FMath::Clamp(SpringToReset, 0, FMath::Max(0, NumSprings - 1));
+	State->SpringToReset = FMath::Clamp(State->SpringToReset, 0, FMath::Max(0, NumSprings - 1));
 	Tools.AddCustomRow(LOCTEXT("ResetFilter", "Reset Spring File Source Values"))
 		.NameContent()
 		[
@@ -98,8 +118,8 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 					.Font(Font)
 					.MinValue(0).MaxValue(FMath::Max(0, NumSprings - 1))
 					.ToolTipText(LOCTEXT("SpringIndexTip", "The spring to reset (its index in Springs)"))
-					.Value_Lambda([this] { return SpringToReset; })
-					.OnValueChanged_Lambda([this](int32 NewValue) { SpringToReset = NewValue; })
+					.Value_Lambda([this] { return State->SpringToReset; })
+					.OnValueChanged_Lambda([this](int32 NewValue) { State->SpringToReset = NewValue; })
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0, 0, 4, 0)
 			[
@@ -108,8 +128,8 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 					.Text_Lambda([this]()
 					{
 						const UVRMSpringBoneData* Data = Assets.Num() > 0 ? Assets[0].Get() : nullptr;
-						return Data && Data->SpringConfig.Springs.IsValidIndex(SpringToReset)
-							? FText::FromString(Data->SpringConfig.Springs[SpringToReset].Name)
+						return Data && Data->SpringConfig.Springs.IsValidIndex(State->SpringToReset)
+							? FText::FromString(Data->SpringConfig.Springs[State->SpringToReset].Name)
 							: FText::GetEmpty();
 					})
 			]
@@ -125,9 +145,23 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 					})
 					.OnClicked_Lambda([this]()
 					{
-						const int32 Index = SpringToReset;
-						LastResult = FText::Format(LOCTEXT("ResetDone", "Spring {0} reset to the file's values."), FText::AsNumber(Index));
-						return Run(LOCTEXT("ResetTx", "Reset Spring to File Values"), [Index](UVRMSpringBoneData& Data) { Data.ResetSpringToSource(Index); });
+						const int32 Index = State->SpringToReset;
+						TArray<FString> Skipped;
+						const FReply Reply = Run(LOCTEXT("ResetTx", "Reset Spring to File Values"), [Index, &Skipped](UVRMSpringBoneData& Data)
+						{
+							if (!Data.HasSourceValues() || !Data.SpringConfig.Springs.IsValidIndex(Index))
+							{
+								Skipped.Add(Data.GetName());
+								return false;
+							}
+							Data.Modify();
+							return Data.ResetSpringToSource(Index);
+						});
+						State->LastResult = Skipped.Num() == 0
+							? FText::Format(LOCTEXT("ResetDone", "Spring {0} reset to the file's values."), FText::AsNumber(Index))
+							: FText::Format(LOCTEXT("ResetSkipped", "Spring {0} not reset in {1}: no such spring, or no file values recorded (reimport first)."),
+								FText::AsNumber(Index), FText::FromString(FString::Join(Skipped, TEXT(", "))));
+						return Reply;
 					})
 			]
 		];
@@ -176,12 +210,14 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 						const FReply Reply = Run(LOCTEXT("ReimportTx", "Reimport Spring Data"), [&Errors](UVRMSpringBoneData& Data)
 						{
 							FString Error;
-							if (!UVRMSpringBonesPostImportPipeline::ReimportFromSource(&Data, Error))
+							if (!UVRMSpringBonesPostImportPipeline::ReimportFromSource(&Data, Error)) // calls Modify only when it replaces the data
 							{
 								Errors.Add(FString::Printf(TEXT("%s: %s"), *Data.GetName(), *Error));
+								return false;
 							}
+							return true;
 						});
-						LastResult = Errors.Num() > 0
+						State->LastResult = Errors.Num() > 0
 							? FText::FromString(FString::Join(Errors, TEXT("\n")))
 							: LOCTEXT("Reimported", "Reimported from the source file.");
 						return Reply;
@@ -195,26 +231,31 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 			SNew(STextBlock)
 				.Font(IDetailLayoutBuilder::GetDetailFontItalic())
 				.AutoWrapText(true)
-				.Text_Lambda([this] { return LastResult; })
-				.Visibility_Lambda([this] { return LastResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+				.Text_Lambda([this] { return State->LastResult; })
+				.Visibility_Lambda([this] { return State->LastResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 		];
 }
 
-FReply FVRMSpringBoneDataCustomization::Run(const FText& TransactionName, TFunctionRef<void(UVRMSpringBoneData&)> Action)
+FReply FVRMSpringBoneDataCustomization::Run(const FText& TransactionName, TFunctionRef<bool(UVRMSpringBoneData&)> Action)
 {
+	int32 Changed = 0;
 	{
-		const FScopedTransaction Transaction(TransactionName);
+		FScopedTransaction Transaction(TransactionName);
 		for (const TWeakObjectPtr<UVRMSpringBoneData>& Weak : Assets)
 		{
-			if (UVRMSpringBoneData* Data = Weak.Get())
+			if (UVRMSpringBoneData* Data = Weak.Get(); Data && Action(*Data))
 			{
-				Data->Modify();
-				Action(*Data);
 				Data->MarkPackageDirty();
+				++Changed;
 			}
 		}
+		if (Changed == 0)
+		{
+			Transaction.Cancel(); // no empty undo entry
+		}
 	}
-	if (const TSharedPtr<IDetailLayoutBuilder> Pinned = Builder.Pin())
+	// Reimport can change the number of springs, so rebuild the rows.
+	if (const TSharedPtr<IDetailLayoutBuilder> Pinned = Changed > 0 ? Builder.Pin() : nullptr)
 	{
 		Pinned->ForceRefreshDetails();
 	}

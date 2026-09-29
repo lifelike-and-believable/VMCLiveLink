@@ -280,19 +280,25 @@ bool UVRMSpringBoneData::HasSourceValues() const
 
 void UVRMSpringBoneData::ScaleParameters(float StiffnessScale, float DragScale, float GravityScale)
 {
+    // Only the quantities being scaled change. Stiffness has no upper bound (VRM 1.0 gives none,
+    // and files use values above 1), so scaling doesn't cut it to 1; drag stays within 0..1.
+    const bool bStiffness = StiffnessScale != 1.f;
+    const bool bDrag = DragScale != 1.f;
+    const bool bGravity = GravityScale != 1.f;
+    auto Scale = [&](float& Stiffness, float& Drag, float& GravityPower)
+    {
+        if (bStiffness) { Stiffness = FMath::Max(0.f, Stiffness * StiffnessScale); }
+        if (bDrag) { Drag = FMath::Clamp(Drag * DragScale, 0.f, 1.f); }
+        if (bGravity) { GravityPower = FMath::Max(0.f, GravityPower * GravityScale); }
+    };
     for (FVRMSpringJoint& Joint : SpringConfig.Joints)
     {
-        Joint.Stiffness *= StiffnessScale;
-        Joint.Drag *= DragScale;
-        Joint.GravityPower *= GravityScale;
+        Scale(Joint.Stiffness, Joint.Drag, Joint.GravityPower);
     }
     for (FVRMSpring& Spring : SpringConfig.Springs)
     {
-        Spring.Stiffness *= StiffnessScale;
-        Spring.Drag *= DragScale;
-        Spring.GravityPower *= GravityScale;
+        Scale(Spring.Stiffness, Spring.Drag, Spring.GravityPower);
     }
-    SanitizeParameters();
     ++EditRevision;
 }
 
