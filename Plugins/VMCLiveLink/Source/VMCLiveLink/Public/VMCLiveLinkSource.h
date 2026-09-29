@@ -88,6 +88,9 @@ public:
      */
     static bool GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves);
 
+    /** Whether a VMC source publishes Key (whether or not it has sent anything yet). Game thread. */
+    static bool PublishesSubject(const FLiveLinkSubjectKey& Key);
+
 #if WITH_DEV_AUTOMATION_TESTS
     /** Tests: sets what GetPublishedNames reports, as if static data with these names had been pushed. */
     void SetPublishedNamesForTest(const TArray<FName>& Bones, const TArray<FName>& Curves);

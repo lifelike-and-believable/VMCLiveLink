@@ -226,6 +226,15 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
     return VMCDiagnostics::FormatStatus(In);
 }
 
+bool FVMCLiveLinkSource::PublishesSubject(const FLiveLinkSubjectKey& Key)
+{
+    FScopeLock RegistryLock(&GVMCSourcesLock);
+    return GVMCSources.ContainsByPredicate([&Key](const FVMCLiveLinkSource* Source)
+    {
+        return Source->SourceGuid == Key.Source && Source->Settings.SubjectName == Key.SubjectName.Name;
+    });
+}
+
 bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves)
 {
     FScopeLock RegistryLock(&GVMCSourcesLock);

@@ -271,6 +271,10 @@ private:
 	/** MapBonesFromHumanoidMetadata for a given mesh. */
 	bool ApplyHumanoidMetadata(USkeletalMesh* Ref);
 
+	/** The subject's incoming names for seeding the maps: the VMC source's (GetIncomingNames), or else
+	 *  the static data Live Link holds, for subjects from other sources. */
+	bool GetSubjectNamesForSeeding(TArray<FName>& OutBones, TArray<FName>& OutCurves) const;
+
 	/** Map entries a preset seeds. None and Custom seed nothing. */
 	static void GetPresetMaps(ELLRemapPreset InPreset, TMap<FName, FName>& OutBones, TMap<FName, FName>& OutCurves);
 

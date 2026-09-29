@@ -2,6 +2,7 @@
 #include "SVMCMappingTable.h"
 
 #include "Engine/SkeletalMesh.h"
+#include "VMCLiveLinkSource.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -100,7 +101,9 @@ void SVMCMappingTable::Refresh(bool bForce)
 	Items.Reset();
 	if (!bHaveNames)
 	{
-		Summary = LOCTEXT("NoData", "The subject hasn't received anything yet. Start the sender, and check the source's status in the Live Link panel.");
+		Summary = FVMCLiveLinkSource::PublishesSubject(R->GetSubjectKey())
+			? LOCTEXT("NoData", "The subject hasn't received anything yet. Start the sender, and check the source's status in the Live Link panel.")
+			: LOCTEXT("NotVMC", "This table lists what a VMC source sends; this subject doesn't come from a VMC Live Link source.");
 		List->RequestListRefresh();
 		return;
 	}

@@ -136,8 +136,9 @@ bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 	Settings.BindAddress = TEXT("127.0.0.1");
 	Settings.bReceiveThread = true;
 
-	// A free port: bind any, note it, let it go, and listen there. Another program on the shared
-	// runner can take the port in between, so try a few times.
+	// A free port: bind any, note it, let it go, and listen there. Checking the port again before
+	// using it narrows the window in which another program on the shared runner could take it (the
+	// source binds only in ReceiveClient, so it doesn't close it).
 	// No Live Link client: the source receives and counts, but can't push frames (and doesn't need
 	// to for what's checked here).
 	const FGuid SourceGuid = FGuid::NewGuid();
@@ -229,6 +230,8 @@ bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 	Remapper->bAutoDetectMappingFromReference = false;
 	Remapper->Initialize({ SourceGuid, Settings.SubjectName });
 	TestTrue(TEXT("The remapper's incoming names"), Remapper->GetIncomingNames(Bones, Curves) && Bones.Num() == 2 && Curves.Num() == 1);
+	TestTrue(TEXT("A VMC subject"), FVMCLiveLinkSource::PublishesSubject({ SourceGuid, Settings.SubjectName }));
+	TestFalse(TEXT("Not a VMC subject"), FVMCLiveLinkSource::PublishesSubject({ FGuid::NewGuid(), Settings.SubjectName }));
 
 	Source->RequestSourceShutdown();
 	return true;
