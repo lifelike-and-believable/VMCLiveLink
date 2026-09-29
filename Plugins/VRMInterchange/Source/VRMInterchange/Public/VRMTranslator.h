@@ -47,6 +47,12 @@ namespace VRM
      * Normal; linear TC_Masks for Data.
      */
     VRMINTERCHANGE_API TOptional<UE::Interchange::FImportImage> DecodeTextureImage(const TArray64<uint8>& CompressedBytes, ETextureUsage Usage);
+
+    /**
+     * The skeletal mesh payload for the model's merged mesh (MorphIndex INDEX_NONE), or for one of
+     * its morph targets (the mesh moved by that target's deltas). False if MorphIndex is out of range.
+     */
+    VRMINTERCHANGE_API bool BuildMeshPayload(const FVRMParsedModel& Model, int32 MorphIndex, UE::Interchange::FMeshPayloadData& Out);
 }
 
 #include "VRMTranslator.generated.h"

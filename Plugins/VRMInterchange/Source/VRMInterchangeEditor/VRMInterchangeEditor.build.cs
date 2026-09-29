@@ -63,6 +63,9 @@ public class VRMInterchangeEditor : ModuleRules
             // UMaterialEditingLibrary, to build the MToon materials (P4.5); RHI for the compile test
             "MaterialEditor",
             "RHI",
+
+            // FMeshDescription, for the mesh payload benchmark (Phase 5)
+            "MeshDescription",
         });
 
         // The tests in Private/Tests include this module's private headers. VRMInterchange's headers
