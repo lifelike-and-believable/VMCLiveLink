@@ -14,6 +14,7 @@
  */
 struct VMCLIVELINK_API FVMCConnectionSettings
 {
+	/** VMC's usual port. */
 	static constexpr int32 DefaultPort = 39539;
 
 	/** UDP port to listen on (1 to 65535). */
@@ -64,6 +65,7 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	/** Checks port, bind address, subject name and allowed senders. */
 	bool Validate(TArray<FString>* OutErrors = nullptr) const;
 
+	/** Whether every setting is the same. */
 	bool operator==(const FVMCConnectionSettings& Other) const;
 	bool operator!=(const FVMCConnectionSettings& Other) const { return !(*this == Other); }
 };

@@ -7,33 +7,52 @@
 #include "VRMSpringDataCustomVersion.h"
 #include "VRMSpringBoneData.generated.h"
 
-// Runtime-available data asset storing parsed spring bone configuration.
+/**
+ * A VRM avatar's spring bones (hair, clothes, accessories): the springs, their joints and the
+ * colliders, parsed from the file at import and converted to UE units (cm) and axes. The spring bone
+ * anim node (FAnimNode_VRMSpringBones) simulates it; see FVRMSpringConfig for each field's unit and
+ * space.
+ *
+ * Edited on the game thread (details panel, editing tools); edits to joint and spring parameters,
+ * springs and colliders, and the editing tools, bump EditRevision, which
+ * running anim nodes compare against to rebuild their setup. Saved data is versioned with
+ * FVRMSpringDataCustomVersion.
+ */
 UCLASS(BlueprintType)
 class VRMSPRINGBONESRUNTIME_API UVRMSpringBoneData : public UDataAsset
 {
     GENERATED_BODY()
 public:
+    /** The springs, joints and colliders (UE units and axes). */
     UPROPERTY(EditAnywhere, Category="Spring Bones", meta=(ShowOnlyInnerProperties))
     FVRMSpringConfig SpringConfig;
 
+    /** The source file's node hierarchy: each glTF node's parent node index. */
     UPROPERTY(VisibleAnywhere, Category="VRM|Hierarchy")
     TMap<int32, int32> NodeParent;
 
+    /** The source file's node hierarchy: each glTF node's children. */
     UPROPERTY(VisibleAnywhere, Category="VRM|Hierarchy")
     TMap<int32, FVRMNodeChildren> NodeChildren;
 
+    /** Per joint (index into SpringConfig.Joints), the glTF node its tail points at: the next joint
+     *  of its spring when that is a child, else the first child that is any spring's joint, else
+     *  INDEX_NONE for a virtual tail. BuildResolvedChildren. */
     UPROPERTY(VisibleAnywhere, Category="VRM|Hierarchy")
     TArray<int32> ResolvedChildNodeIndexPerJoint;
 
     UPROPERTY(VisibleAnywhere, Category="Spring Bones", meta=(ToolTip="Mapping from VRM/glTF node indices to Unreal bone names"))
     TMap<int32, FName> NodeToBoneMap;
 
+    /** MD5 of the source file's bytes at import, as text. */
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     FString SourceHash;
 
+    /** The source file's full path at import (Reimport from Source reads it again). */
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     FString SourceFilename;
 
+    /** Goes up with edits to parameters, springs and colliders, so running anim nodes rebuild their setup. */
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     int32 EditRevision = 0;
 
@@ -53,10 +72,13 @@ public:
     UPROPERTY()
     TArray<FVRMSpringJoint> SourceJoints;
 
+    /** The springs as the source file gave them; see SourceJoints. */
     UPROPERTY()
     TArray<FVRMSpring> SourceSprings;
 
+    /** Registers the custom version and, on load, records the version the asset was saved with. */
     virtual void Serialize(FArchive& Ar) override;
+    /** Upgrades data saved by an older version (see FVRMSpringDataCustomVersion), or flags bNeedsReimport. */
     virtual void PostLoad() override;
 
     /** Records the current joints and springs as the file's values (the import calls it). */
@@ -90,13 +112,18 @@ public:
     static void CopySpringParametersToJoints(FVRMSpringConfig& Config);
 
 #if WITH_EDITOR
+    /** Clamps edited values to their ranges and bumps EditRevision. */
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+    /** Applies a spring-level value (FVRMSpring's editing helpers) to that spring's joints. */
     virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
+    /** Fills ResolvedChildNodeIndexPerJoint from the springs and the node hierarchy. */
     void BuildResolvedChildren();
 #endif
 
+    /** SourceHash and EditRevision together: changes when the file or any edit changes. */
     FString GetEffectiveHash() const { return SourceHash + TEXT("_") + FString::FromInt(EditRevision); }
 
+    /** The skeleton bone for a glTF node index, or None if the node isn't a bone. */
     FName GetBoneNameForNode(int32 NodeIndex) const
     {
         if (const FName* BoneName = NodeToBoneMap.Find(NodeIndex))
@@ -106,6 +133,7 @@ public:
         return NAME_None;
     }
 
+    /** Replaces NodeToBoneMap (the import sets it). */
     void SetNodeToBoneMapping(const TMap<int32, FName>& InNodeToBoneMap)
     {
         NodeToBoneMap = InNodeToBoneMap;

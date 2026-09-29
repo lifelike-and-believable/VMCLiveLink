@@ -15,6 +15,7 @@
 #include "VMCLiveLinkRemapper.generated.h"
 
 
+/** Naming schemes UVMCLiveLinkRemapper::ApplyPreset can seed the maps with (see the README's preset table). */
 UENUM(BlueprintType)
 enum class ELLRemapPreset : uint8
 {
@@ -33,16 +34,21 @@ enum class ELLRemapPreset : uint8
 /** Everything a worker remaps with. Copied when the worker is created; the worker never changes it. */
 struct FVMCRemapConfig
 {
+	/** Incoming bone name to target bone name. */
 	TMap<FName, FName> BoneNameMap;
+	/** Incoming curve name to target curve name. */
 	TMap<FName, FName> CurveNameMap;
 
-	/** Local rest translation of each bone of the target skeleton, by target (remapped) name. */
+	/** Local rest translation of each bone of the target skeleton (cm, parent bone space), by target (remapped) name. */
 	TMap<FName, FVector> RefTranslations;
 	/** Give bones the stream sends without a translation their target skeleton's rest translation. */
 	bool bUseRefTranslations = true;
 
+	/** Add missing ARKit blink, smile and pucker curves (UVMCLiveLinkRemapper::bEnableMetaHumanCurveNormalizer). */
 	bool  bEnableMetaHumanCurveNormalizer = false;
+	/** Scale of an added smile side, 0 to 1. */
 	float JoyToSmileStrength = 1.0f;
+	/** Scale of an added blink side, 0 to 1. */
 	float BlinkMirrorStrength = 1.0f;
 
 	/** Log problems found in the static data (duplicate targets). Off for the details panel's
@@ -70,11 +76,17 @@ struct FVMCMappingRow
 class FVMCLiveLinkRemapperWorker final : public ILiveLinkSubjectRemapperWorker
 {
 public:
+	/** A worker for this configuration, which it never changes. */
 	explicit FVMCLiveLinkRemapperWorker(FVMCRemapConfig InConfig) : Config(MoveTemp(InConfig)) {}
 
+	/** The configuration it remaps with. */
 	const FVMCRemapConfig& GetConfig() const { return Config; }
 
+	/** Renames bones and curves, appends the normalizer's curves, and resolves what RemapFrameData
+	 *  needs by index. May run off the game thread. */
 	virtual void RemapStaticData(FLiveLinkStaticDataStruct& InOutStaticData) override;
+	/** Gives rotation-only bones their rest translations (cm, parent space) and fills the added
+	 *  curves, by index. May run off the game thread. */
 	virtual void RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData) override;
 
 private:
@@ -117,8 +129,11 @@ class VMCLIVELINK_API UVMCLiveLinkRemapper final : public ULiveLinkSubjectRemapp
 public:
 	// Remapper API
 	virtual void Initialize(const FLiveLinkSubjectKey& InSubjectKey) override;
+	/** The Animation role. */
 	virtual TSubclassOf<ULiveLinkRole> GetSupportedRole() const override { return ULiveLinkAnimationRole::StaticClass(); }
+	/** Always valid: empty maps pass every name through. */
 	virtual bool IsValidRemapper() const override { return true; }
+	/** The worker made by the last CreateWorker. */
 	virtual FWorkerSharedPtr GetWorker() const override { return Worker; }
 	/** A new worker from the current settings. Live Link calls it again whenever the remapper is dirty. */
 	virtual FWorkerSharedPtr CreateWorker() override;
@@ -127,6 +142,7 @@ public:
 	uint32 GetRevision() const { return Revision; }
 
 #if WITH_EDITOR
+	/** Any edit makes Live Link build a new worker. */
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& Evt) override
 	{
 		Super::PostEditChangeProperty(Evt);
@@ -135,15 +151,25 @@ public:
 #endif
 
 	// Utilities
+	/** Makes Live Link build a new worker and republish the static data. */
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void ForceRefreshStaticData() { MarkDirty(); }
 
+	/** Lists every name the subject is receiving in the maps (mapped to itself), then applies the
+	 *  preset that fits them (Seed From Subject). Game thread. */
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void DetectAndSeedFromSubject();
 
+	/**
+	 * Adds a preset's entries to the maps (Apply Preset). Entries earlier presets added and the user
+	 * hasn't edited are removed first; edited ones are kept. With a reference skeleton and incoming
+	 * names, the body bones are also mapped to UE mannequin-style names found on the mesh. Game thread.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void ApplyPreset(ELLRemapPreset InPreset);
 
+	/** Merges {"Curves": {incoming: target, ...}, "Bones": {...}} into the curve and bone maps
+	 *  (either object may be absent). Game thread. */
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void LoadCustomCurveMapFromJSON(const FString& JsonText);
 
@@ -159,6 +185,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mapping", meta=(DisplayName="Capture Signature On Save"))
 	bool bCaptureSignatureOnSave = true;
 
+	/** Replaces the maps with the asset's; with bAlsoCaptureSignature, also records the reference
+	 *  skeleton's signature in the asset. Game thread. */
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	void ApplyMappingAsset(UVMCLiveLinkMappingAsset* Asset, bool bAlsoCaptureSignature = false);
 

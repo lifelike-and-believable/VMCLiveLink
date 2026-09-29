@@ -19,9 +19,11 @@
  */
 namespace VRM::ImportMessages
 {
+	/** One collected log line. */
 	struct FMessage
 	{
 		ELogVerbosity::Type Verbosity = ELogVerbosity::Warning; // Error or Warning
+		/** The message text, without a leading "[VRMInterchange] " tag. */
 		FString Text;
 	};
 
@@ -47,6 +49,7 @@ namespace VRM::ImportMessages
 	class VRMINTERCHANGE_API FScope
 	{
 	public:
+		/** Pushes File onto this thread's scope stack; the destructor pops it. */
 		explicit FScope(const FString& File);
 		~FScope();
 		FScope(const FScope&) = delete;

@@ -7,14 +7,18 @@
 #include "AnimNode_VRMSpringBones.h"
 #include "AnimGraphNode_VRMSpringBones.generated.h"
 
+/** The "VRM Spring Bones" AnimGraph node: the editor side of FAnimNode_VRMSpringBones. */
 UCLASS()
 class UAnimGraphNode_VRMSpringBones : public UAnimGraphNode_SkeletalControlBase
 {
 	GENERATED_BODY()
 public:
+    /** The runtime node this graph node compiles to. */
     UPROPERTY(EditAnywhere, Category = Settings)
     FAnimNode_VRMSpringBones Node;
 
+    // UAnimGraphNode_Base. Validation warns when the spring data is unset, empty, needs a reimport, or names
+    // bones the skeleton doesn't have.
     virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0, 0.6f, 1.f); }
     virtual FText GetTooltipText() const override;
     virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
