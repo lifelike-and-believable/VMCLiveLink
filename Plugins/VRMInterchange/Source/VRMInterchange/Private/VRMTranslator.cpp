@@ -24,6 +24,7 @@
 // Include payload types here (keep header light)
 #include "Mesh/InterchangeMeshPayload.h"
 #include "Texture/InterchangeTexturePayloadData.h"
+#include "Memory/SharedBuffer.h"
 
 #include "ImageUtils.h"
 #include "IImageWrapperModule.h"
@@ -679,33 +680,54 @@ namespace VRM
             return {};
         }
 
-        TArray<uint8> BGRA8;
-        if (!Wrapper->GetRaw(ERGBFormat::BGRA, 8, BGRA8))
+        const bool bNormal = EnumHasAnyFlags(Usage, ETextureUsage::Normal);
+        const bool bData = EnumHasAnyFlags(Usage, ETextureUsage::Data);
+
+        // 16-bit PNGs keep their precision as RGBA16 for linear uses (normal maps, data); colour
+        // textures are sRGB, which RGBA16 sources don't take, so they stay BGRA8 (P5.6).
+        const bool bKeep16 = (bNormal || bData) && ImageFormat == EImageFormat::PNG && Wrapper->GetBitDepth() == 16;
+        const ERGBFormat RawFormat = bKeep16 ? ERGBFormat::RGBA : ERGBFormat::BGRA;
+        const int32 BitDepth = bKeep16 ? 16 : 8;
+
+        // Decoded once, then handed to the image without a copy (P5.6).
+        TArray64<uint8> Raw;
+        if (!Wrapper->GetRaw(RawFormat, BitDepth, Raw))
         {
             return {};
         }
 
-        const bool bNormal = EnumHasAnyFlags(Usage, ETextureUsage::Normal);
-        const bool bData = EnumHasAnyFlags(Usage, ETextureUsage::Data);
         if (bNormal)
         {
             // glTF normal maps are +Y (OpenGL); Unreal expects -Y (DirectX).
-            for (int32 i = 1; i < BGRA8.Num(); i += 4)
+            if (bKeep16)
             {
-                BGRA8[i] = 255 - BGRA8[i];
+                uint16* Channels = reinterpret_cast<uint16*>(Raw.GetData());
+                const int64 Count = Raw.Num() / int64(sizeof(uint16));
+                for (int64 i = 1; i < Count; i += 4)
+                {
+                    Channels[i] = uint16(65535 - Channels[i]);
+                }
+            }
+            else
+            {
+                for (int64 i = 1; i < Raw.Num(); i += 4)
+                {
+                    Raw[i] = uint8(255 - Raw[i]);
+                }
             }
         }
 
         FImportImage Image;
-        Image.Init2DWithParams(Wrapper->GetWidth(), Wrapper->GetHeight(), /*NumMips*/ 1, ETextureSourceFormat::TSF_BGRA8, /*bSRGB*/ !(bNormal || bData));
+        Image.Init2DWithParams(Wrapper->GetWidth(), Wrapper->GetHeight(), /*NumMips*/ 1,
+            bKeep16 ? ETextureSourceFormat::TSF_RGBA16 : ETextureSourceFormat::TSF_BGRA8,
+            /*bSRGB*/ !(bNormal || bData), /*bShouldAllocateRawData*/ false);
         Image.CompressionSettings = bNormal ? TC_Normalmap : (bData ? TC_Masks : TC_Default);
-
-        TArrayView64<uint8> Dest = Image.GetArrayViewOfRawData();
-        if (Dest.Num() != BGRA8.Num())
+        const int64 Expected = int64(Wrapper->GetWidth()) * Wrapper->GetHeight() * (bKeep16 ? 8 : 4);
+        if (Raw.Num() != Expected)
         {
             return {};
         }
-        FMemory::Memcpy(Dest.GetData(), BGRA8.GetData(), BGRA8.Num());
+        Image.RawData = MakeUniqueBufferFromArray(MoveTemp(Raw));
         return Image;
     }
 }

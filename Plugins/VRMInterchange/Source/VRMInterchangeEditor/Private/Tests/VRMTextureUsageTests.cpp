@@ -93,6 +93,39 @@ bool FVRMTextureDecode::RunTest(const FString& Parameters)
 	}
 
 	TestFalse(TEXT("Empty bytes don't decode"), VRM::DecodeTextureImage(TArray64<uint8>(), ETextureUsage::Color).IsSet());
+
+	// A 16-bit PNG (P5.6): normal maps and data keep 16 bits (RGBA16, green flipped for normals);
+	// colour is sRGB, so it becomes BGRA8.
+	const uint16 RGBA16[] = { 1000, 20000, 30000, 65535, 60000, 40000, 5000, 65535 };
+	TSharedPtr<IImageWrapper> Writer16 = Module.CreateImageWrapper(EImageFormat::PNG);
+	if (!TestTrue(TEXT("16-bit PNG writer"), Writer16.IsValid() && Writer16->SetRaw(RGBA16, sizeof(RGBA16), 2, 1, ERGBFormat::RGBA, 16)))
+	{
+		return false;
+	}
+	const TArray64<uint8> Png16 = Writer16->GetCompressed();
+	auto Channel16 = [](UE::Interchange::FImportImage& Image, int32 Index) { return reinterpret_cast<const uint16*>(Image.GetArrayViewOfRawData().GetData())[Index]; };
+
+	TOptional<UE::Interchange::FImportImage> Normal16 = VRM::DecodeTextureImage(Png16, ETextureUsage::Normal);
+	if (TestTrue(TEXT("16-bit normal decodes"), Normal16.IsSet()))
+	{
+		TestTrue(TEXT("16-bit normal stays 16-bit"), Normal16->Format == TSF_RGBA16);
+		TestFalse(TEXT("16-bit normal is linear"), Normal16->bSRGB);
+		TestEqual(TEXT("16-bit normal keeps red"), int32(Channel16(*Normal16, 0)), 1000);
+		TestEqual(TEXT("16-bit normal green is flipped"), int32(Channel16(*Normal16, 1)), 65535 - 20000);
+		TestEqual(TEXT("16-bit normal, pixel 1 green flipped"), int32(Channel16(*Normal16, 5)), 65535 - 40000);
+	}
+	TOptional<UE::Interchange::FImportImage> Data16 = VRM::DecodeTextureImage(Png16, ETextureUsage::Data);
+	if (TestTrue(TEXT("16-bit data decodes"), Data16.IsSet()))
+	{
+		TestTrue(TEXT("16-bit data stays 16-bit"), Data16->Format == TSF_RGBA16);
+		TestEqual(TEXT("16-bit data keeps green"), int32(Channel16(*Data16, 1)), 20000);
+	}
+	TOptional<UE::Interchange::FImportImage> Color16 = VRM::DecodeTextureImage(Png16, ETextureUsage::Color);
+	if (TestTrue(TEXT("16-bit colour decodes"), Color16.IsSet()))
+	{
+		TestTrue(TEXT("16-bit colour becomes BGRA8"), Color16->Format == TSF_BGRA8);
+		TestTrue(TEXT("16-bit colour is sRGB"), Color16->bSRGB);
+	}
 	return true;
 }
 
