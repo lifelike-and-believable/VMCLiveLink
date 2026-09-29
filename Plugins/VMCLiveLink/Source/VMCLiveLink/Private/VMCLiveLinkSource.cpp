@@ -6,8 +6,11 @@
 #include "VMCFrameAssembler.h"
 #include "VMCOscParser.h"
 #include "VMCSenderFilter.h"
+#include "VMCSourceDiagnostics.h"
 #include "VMCUdpReceiver.h"
 #include "IPAddress.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/OutputDevice.h"
 
 // Live Link
 #include "ILiveLinkClient.h"
@@ -58,6 +61,16 @@ namespace
 
     // Scene time rate for /VMC/Ext/T (the sender's clock carries no rate of its own).
     const FFrameRate SenderTimeRate(60, 1);
+
+    // Every VMC source that exists, for VMC.Stats. Sources are created and destroyed on the game
+    // thread, where the command runs, but the lock costs nothing and keeps that from mattering.
+    FCriticalSection GVMCSourcesLock;
+    TArray<FVMCLiveLinkSource*> GVMCSources;
+
+    FAutoConsoleCommandWithOutputDevice GVMCStatsCommand(
+        TEXT("VMC.Stats"),
+        TEXT("Prints each VMC source's messages per second for each address since the last VMC.Stats, and the addresses it received that the plugin doesn't use."),
+        FConsoleCommandWithOutputDeviceDelegate::CreateStatic(&FVMCLiveLinkSource::ReportAllStats));
 }
 
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
@@ -86,6 +99,11 @@ void FVMCLiveLinkSource::InitSkeleton()
 {
     Assembler = MakeUnique<FVMCFrameAssembler>();
     SenderFilter = MakeUnique<FVMCSenderFilter>();
+    MessageStats = MakeUnique<FVMCMessageStats>();
+    MessageStats->Reset(FPlatformTime::Seconds());
+
+    FScopeLock Lock(&GVMCSourcesLock);
+    GVMCSources.Add(this);
 }
 
 // ---------------- Lifecycle (game thread) ----------------
@@ -116,6 +134,10 @@ FVMCLiveLinkSource::~FVMCLiveLinkSource()
     // Callbacks are bound to this (the OSC delegate with AddRaw, the receive thread and the ticker),
     // so they must be removed even if Live Link never called RequestSourceShutdown. The OSC server
     // is a UObject, so skip it if the UObject system is already gone (very late teardown).
+    {
+        FScopeLock Lock(&GVMCSourcesLock);
+        GVMCSources.RemoveSingleSwap(this);
+    }
     Receiver.Reset();
     if (UObjectInitialized())
     {
@@ -152,6 +174,7 @@ bool FVMCLiveLinkSource::StartReceiving()
         IgnoredSenders = 0;
         SenderStateText.Reset();
     }
+    MessageStats->Reset(FPlatformTime::Seconds());
 
     if (!Settings.bReceiveThread)
     {
@@ -178,70 +201,56 @@ void FVMCLiveLinkSource::StopReceiving()
 
 FText FVMCLiveLinkSource::GetSourceStatus() const
 {
-    // Copy under the lock (the receive thread takes it for every frame), format after.
-    double Last = 0.0, Interval = 0.0, Jitter = 0.0;
-    FString StateText, Locked;
-    int32 Ignored = 0, Devices = 0;
+    FVMCSourceStatusInputs In;
+    In.bValid = bIsValid;
+    In.bListening = bListening;
+    In.bReceivedFrame = bStaticSent;
+    In.BindAddress = Settings.BindAddress;
+    In.Port = Settings.Port;
+    In.bReceiveThread = Settings.bReceiveThread;
+    {
+        // Copy under the lock (the receive thread takes it for every frame), format after.
+        FScopeLock Lock(&StatsLock);
+        In.SecondsSinceLastFrame = FPlatformTime::Seconds() - LastFrameSeconds;
+        In.MeanFrameInterval = MeanFrameInterval;
+        In.Jitter = MeanIntervalDeviation;
+        In.SenderState = SenderStateText;
+        In.Sender = LastSender;
+        In.bLockedToSender = !LockedSender.IsEmpty();
+        In.IgnoredSenders = IgnoredSenders;
+        In.DeviceSubjects = NumDeviceSubjects;
+    }
+    return VMCDiagnostics::FormatStatus(In);
+}
+
+FText FVMCLiveLinkSource::GetSourceMachineName() const
+{
+    FString Sender;
     {
         FScopeLock Lock(&StatsLock);
-        Last = LastFrameSeconds;
-        Interval = MeanFrameInterval;
-        Jitter = MeanIntervalDeviation;
-        StateText = SenderStateText;
-        Locked = LockedSender;
-        Ignored = IgnoredSenders;
-        Devices = NumDeviceSubjects;
+        Sender = LastSender;
     }
-    FText Notes; // "; sender: calibrating; from 192.168.1.20; ignoring 1 other sender", or empty
-    {
-        TArray<FString> Parts;
-        if (!StateText.IsEmpty())
-        {
-            Parts.Add(FString::Printf(TEXT("sender: %s"), *StateText));
-        }
-        if (!Locked.IsEmpty())
-        {
-            Parts.Add(FString::Printf(TEXT("from %s"), *Locked));
-        }
-        if (Devices > 0)
-        {
-            Parts.Add(FString::Printf(TEXT("%d device/camera subject%s"), Devices, Devices == 1 ? TEXT("") : TEXT("s")));
-        }
-        if (Ignored > 0)
-        {
-            Parts.Add(FString::Printf(TEXT("ignoring %d other sender%s"), Ignored, Ignored == 1 ? TEXT("") : TEXT("s")));
-        }
-        if (Parts.Num() > 0)
-        {
-            Notes = FText::FromString(TEXT("; ") + FString::Join(Parts, TEXT("; ")));
-        }
-    }
+    return Sender.IsEmpty() ? NSLOCTEXT("VMCLiveLink", "NoSender", "No sender yet") : FText::FromString(Sender);
+}
 
-    if (!bIsValid)
-    {
-        return NSLOCTEXT("VMCLiveLink", "Status_Stopped", "Stopped");
-    }
-    if (!bListening)
-    {
-        return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_NotListening", "Can't listen on port {0}"), FText::AsNumber(Settings.Port, &FNumberFormattingOptions::DefaultNoGrouping()));
-    }
-    if (!bStaticSent)
-    {
-        return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_Waiting", "Waiting for first frame{0}"), Notes);
-    }
+FString FVMCLiveLinkSource::GetStatsReport()
+{
+    return FString::Printf(TEXT("VMC source '%s' (subject %s, %s:%d, %s):\n%s"), *SourceName, *Settings.SubjectName.ToString(),
+        *Settings.BindAddress, Settings.Port, *GetSourceStatus().ToString(), *MessageStats->Report(FPlatformTime::Seconds()));
+}
 
-    const double Silent = FPlatformTime::Seconds() - Last;
-    if (Silent > 1.0)
+void FVMCLiveLinkSource::ReportAllStats(FOutputDevice& Ar)
+{
+    FScopeLock Lock(&GVMCSourcesLock);
+    if (GVMCSources.Num() == 0)
     {
-        return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_NoData", "No data for {0} s{1}"), FText::AsNumber(FMath::FloorToInt(Silent)), Notes);
+        Ar.Log(TEXT("VMC.Stats: no VMC sources."));
+        return;
     }
-    FNumberFormattingOptions OneDecimal;
-    OneDecimal.SetMinimumFractionalDigits(1).SetMaximumFractionalDigits(1);
-    return FText::Format(NSLOCTEXT("VMCLiveLink", "Status_Receiving", "Receiving: {0} fps, jitter {1} ms ({2}){3}"),
-        FText::AsNumber(Interval > 0.0 ? 1.0 / Interval : 0.0, &OneDecimal),
-        FText::AsNumber(Jitter * 1000.0, &OneDecimal),
-        Settings.bReceiveThread ? NSLOCTEXT("VMCLiveLink", "Path_Thread", "receive thread") : NSLOCTEXT("VMCLiveLink", "Path_Game", "game thread"),
-        Notes);
+    for (FVMCLiveLinkSource* Source : GVMCSources)
+    {
+        Ar.Log(Source->GetStatsReport());
+    }
 }
 
 bool FVMCLiveLinkSource::Tick(float DeltaTime)
@@ -406,7 +415,21 @@ void FVMCLiveLinkSource::OnOscMessageReceived(const FOSCMessage& Msg, const FStr
     {
         return;
     }
-    const VMCProtocol::EAddress Kind = VMCProtocol::ClassifyAddress(Msg.GetAddress().GetFullPath());
+    if (FromIP != LastSenderSeen)
+    {
+        NoteSender(FromIP);
+    }
+    MessageStats->CountPacket(); // the OSC plugin hands over messages, not packets: count each
+    const FString Address = Msg.GetAddress().GetFullPath();
+    const VMCProtocol::EAddress Kind = VMCProtocol::ClassifyAddress(Address);
+    if (Kind == VMCProtocol::EAddress::Other)
+    {
+        MessageStats->CountUnknown(Address);
+    }
+    else
+    {
+        MessageStats->CountMessage(Kind);
+    }
     VMCProtocol::FArgs Args;
     VMCProtocol::ReadArgs(Msg, Args);
     if (const TSharedPtr<const FSnapshot> Snap = GetSnapshot())
@@ -423,14 +446,31 @@ void FVMCLiveLinkSource::OnPacket(TConstArrayView<uint8> Packet, double ArrivalS
     {
         return;
     }
+    // Only turn the address into text when the sender changes (packets arrive hundreds of times a second).
+    const uint32 SenderHash = Sender.GetTypeHash();
+    if (SenderHash != LastSenderHash || LastSenderSeen.IsEmpty())
+    {
+        LastSenderHash = SenderHash;
+        NoteSender(Sender.ToString(/*bAppendPort*/ false));
+    }
     const TSharedPtr<const FSnapshot> Snap = GetSnapshot();
     if (!Snap)
     {
         return;
     }
+    MessageStats->CountPacket();
     const bool bOk = VMCOscParser::ParsePacket(Packet, [this, ArrivalSeconds, &Snap](FAnsiStringView Address, TConstArrayView<VMCProtocol::FArg> Args)
     {
-        ProcessMessage(VMCProtocol::ClassifyAddress(Address), Args, ArrivalSeconds, *Snap);
+        const VMCProtocol::EAddress Kind = VMCProtocol::ClassifyAddress(Address);
+        if (Kind == VMCProtocol::EAddress::Other)
+        {
+            MessageStats->CountUnknown(FString(Address));
+        }
+        else
+        {
+            MessageStats->CountMessage(Kind);
+        }
+        ProcessMessage(Kind, Args, ArrivalSeconds, *Snap);
     });
     if (!bOk && !bWarnedMalformed)
     {
@@ -441,6 +481,13 @@ void FVMCLiveLinkSource::OnPacket(TConstArrayView<uint8> Packet, double ArrivalS
 }
 
 // ---------------- Frame building (receive thread, or game thread) ----------------
+
+void FVMCLiveLinkSource::NoteSender(const FString& Sender)
+{
+    LastSenderSeen = Sender;
+    FScopeLock Lock(&StatsLock);
+    LastSender = Sender;
+}
 
 bool FVMCLiveLinkSource::AcceptSender(const FString& Sender)
 {
