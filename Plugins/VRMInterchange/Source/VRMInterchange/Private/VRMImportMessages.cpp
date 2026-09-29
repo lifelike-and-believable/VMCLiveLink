@@ -62,6 +62,12 @@ namespace VRM::ImportMessages
 
 	TArray<FMessage> Take()
 	{
+		// The log may be written on a thread of its own: deliver what is queued before taking it.
+		// Not under the lock, since delivering calls Serialize, which takes it.
+		if (GLog && IsInGameThread())
+		{
+			GLog->Flush();
+		}
 		FCapture& Capture = GetCapture();
 		FScopeLock Lock(&Capture.Mutex);
 		Capture.bCollecting = false;
