@@ -2,7 +2,7 @@
 
 **Stream motion capture from VMC senders into Unreal Engine through Live Link.**
 
-VMC Live Link receives the [VMC protocol](https://protocol.vmc.info/english) (OSC over UDP), which VSeeFace, VirtualMotionCapture, Warudo and other VTuber and motion capture tools send. It publishes the stream as a Live Link subject, so an Animation Blueprint can drive a character with it. The body pose, facial expressions (blend shapes), tracked devices and the sender's camera are all supported.
+VMC Live Link receives the [VMC protocol](https://protocol.vmc.info/english) (OSC over UDP), which VSeeFace, VirtualMotionCapture and other VTuber and motion capture tools send. It publishes the stream as a Live Link subject, so an Animation Blueprint can drive a character with it. The body pose, facial expressions (blend shapes), tracked devices and the sender's camera are all supported.
 
 - **Live Link source** with a settings panel, a status line that shows the frame rate, jitter and sender, and a `VMC.Stats` console command.
 - **Remapper** that renames VMC's bones and curves for your mesh, with presets, reusable mapping assets and a live mapping table showing which names reach the mesh.
@@ -39,7 +39,7 @@ It works on its own. [VRM Interchange](../VRMInterchange/README.md), the compani
    - Set **Target → Reference Skeleton** to the skeletal mesh you want to drive.
    - For a mesh imported with VRM Interchange, click **Map Bones From Humanoid Metadata**. Otherwise, see [The Remapper](#the-remapper).
    - Open **Live Mapping**: every bone and curve received is listed, with a note on any that don't reach the mesh.
-5. **Drive the character.** In the mesh's Animation Blueprint, add a **Live Link Pose** node, set its subject to `VMC_Subject` and connect it to the output pose. Place the character in the level: it moves in the editor viewport as soon as data arrives.
+5. **Drive the character.** In the mesh's Animation Blueprint, add a **Live Link Pose** node, set its subject to `VMC_Subject` and connect it to the output pose. Place the character in the level, select its skeletal mesh component and tick **Update Animation in Editor** (in **Animation**) so it animates outside Play; or press **Play** or **Simulate**. It moves as soon as data arrives.
 
 To keep the source and the remapper settings between editor sessions, save a **Live Link preset** from the Live Link panel (**Presets → Save As Preset**). Set it as the default in **Project Settings → Plugins → Live Link → Default Live Link Preset** to load it at startup.
 
@@ -69,7 +69,7 @@ In **Settings → Detailed settings**, enable **OSC motion sending** and enter t
 
 ### Warudo
 
-Warudo can send the character's motion over the VMC protocol. Enable its VMC sender, set the address and port, and choose which character to send. See Warudo's documentation for where the sender is in your version.
+Warudo is mainly a VMC receiver. If your version can send VMC (built in or through a plug-in), point the sender at this computer's address and port. Warudo streams aren't tested with this plugin; see Warudo's documentation.
 
 ### Blender (VMC4B and others)
 
@@ -125,7 +125,7 @@ Select the subject in the Live Link panel to edit its remapper. The details are 
 
 ### Target
 
-- **Reference Skeleton:** the mesh the stream drives. Its bones and morph targets are what the Live Mapping table checks names against. If empty, the project's **Default Reference Skeleton** (VMC Live Link project settings) is used.
+- **Reference Skeleton:** the mesh the stream drives. Its bones and morph targets are what the Live Mapping table checks names against, and the mapping tools map onto it. If empty, the project's **Default Reference Skeleton** (VMC Live Link project settings) is used for the Live Mapping table, the rest translations and **Map Bones From Humanoid Metadata**; the other mapping tools need this one set.
 - **Use Reference Translations:** VMC senders send most bones with a rotation only. With this on, each bone gets the reference skeleton's rest translation, so the limbs have the mesh's proportions. `root` and `Hips` always use the stream's translations, since they carry the motion.
 
 ### Mapping
@@ -139,12 +139,13 @@ Select the subject in the Live Link panel to edit its remapper. The details are 
   | ARKit (MetaHuman-friendly) | Senders that send ARKit names: maps them to themselves, so they are listed. |
   | VMC / VRM 0.x expressions (ARKit targets) | VRM 0.x expressions to ARKit curves: `Blink_L` → `eyeBlinkLeft`, `Joy` → `mouthSmileLeft`, `A` → `jawOpen`, `U` → `mouthPucker`, `O` → `mouthFunnel`, and the brows. |
   | VMC / VRM 1.0 expressions (ARKit targets) | The same for VRM 1.0 names: `blinkLeft`, `happy`, `sad`, `aa`, `ou`, `oh`. |
-  | VMC / VRoid | Unity humanoid bones to VRoid Studio's skeleton (`Hips` → `J_Bip_C_Hips`, fingers included). |
+  | VMC / VRoid | Unity humanoid bones to VRoid Studio's skeleton (`Hips` → `J_Bip_C_Hips`, fingers included), and VRM 0.x expressions to VRoid's `Fcl_*` morph targets (`Joy` → `Fcl_ALL_Joy`, `A` → `Fcl_MTH_A`, `Blink_L` → `Fcl_EYE_Close_L`, ...). |
   | Rokoko (ARKit names) | ARKit names, plus Rokoko's `mouthSmile_L`/`_R`. |
+  | Custom (JSON) | Nothing is added; for maps loaded with `LoadCustomCurveMapFromJSON`. Applying it still removes the previous preset's unedited entries. |
 
   Expressions with no single ARKit equivalent (`I`, `E`, `Angry`, `Surprised`, ...) are left unmapped, so they pass through under their own names. Applying a different preset removes the previous preset's entries that you haven't edited.
 - **Mapping Asset:** a saved pair of maps (below).
-- **Auto Detect Mapping From Reference:** while both maps are empty, the remapper finds the mapping asset made for the reference skeleton and applies it when the subject is created.
+- **Auto Detect Mapping From Reference:** while both maps are empty, the remapper finds the mapping asset made for the reference skeleton and applies it when the subject is created. This needs the remapper's own **Reference Skeleton** to be set at that point (for example, from a saved Live Link preset); otherwise use **Auto-Detect Mapping**.
 
 To drive a VRM avatar's expressions by their own names, leave expression curves unmapped and use the **VRM Expressions** AnimGraph node from VRM Interchange, which handles both VRM versions' names.
 
@@ -152,7 +153,7 @@ To drive a VRM avatar's expressions by their own names, leave expression curves 
 
 | Button | What it does |
 |---|---|
-| **Apply Preset** | Adds the selected preset's entries to the maps. Entries you edited are kept. |
+| **Apply Preset** | Adds the selected preset's entries to the maps. Entries you edited are kept. With a Reference Skeleton set and data arriving, it also maps the body bones to UE mannequin-style names it finds on the mesh (`pelvis`, `spine_01`, `upperarm_l`, ...), replacing those bone entries. |
 | **Seed From Subject** | Lists every name the subject is receiving in the maps (as itself, ready to edit) and applies the preset that fits them. |
 | **Map Bones From Humanoid Metadata** | Replaces the bone map with the humanoid map stored on the reference skeleton. VRM Interchange writes it on import (`VRM.Humanoid.*` metadata), so this maps every bone exactly. Curves are left alone. |
 | **Apply Mapping Asset** | Replaces the maps with the selected mapping asset's. |
@@ -164,7 +165,7 @@ Every button can be undone.
 
 ### Mapping Assets
 
-A **VMC Live Link Mapping Asset** (Content Browser: **Add → VMC LiveLink → VMC LiveLink Mapping Asset**) stores a bone map and a curve map for reuse. It also stores the *signatures* of the skeletons it is for, computed from their bone names, so **Auto-Detect Mapping** can find it for a skeleton with the same bones, even under another name. Make one for each rig you drive, then new subjects for that rig map themselves.
+A **VMC Live Link Mapping Asset** (Content Browser: the **Add** menu; search for *VMC LiveLink Mapping Asset*) stores a bone map and a curve map for reuse. It also stores the *signatures* of the skeletons it is for, computed from their bone names, so **Auto-Detect Mapping** can find it for a skeleton with the same bones, even under another name. Make one for each rig you drive. For a new subject, set the remapper's **Reference Skeleton** and click **Auto-Detect Mapping** to apply it; a subject restored from a Live Link preset with its Reference Skeleton set picks it up by itself.
 
 ### Normalizer
 
@@ -190,7 +191,7 @@ Tick **Only names that don't reach the mesh** to list just the problems. The tab
 
 ### Meshes Whose Rest Pose Isn't a T-Pose With Unrotated Bones
 
-VMC senders send each bone's rotation relative to a humanoid rest pose with no bone rotations (VRM's normalized T-pose). A mesh imported with VRM Interchange has this rest pose, so renaming is enough. A mesh whose bones are rotated at rest, such as the UE mannequin and most FBX rigs, twists if driven directly. Drive a VRM-style skeleton with the stream and retarget it to the mesh with an IK Retargeter instead. **Add → VMC LiveLink → VMC Retarget Actor** in the Content Browser creates a copy of the plugin's template retarget actor to start from.
+VMC senders send each bone's rotation relative to a humanoid rest pose with no bone rotations (VRM's normalized T-pose). A mesh imported with VRM Interchange has this rest pose, so renaming is enough. A mesh whose bones are rotated at rest, such as the UE mannequin and most FBX rigs, twists if driven directly. Drive a VRM-style skeleton with the stream and retarget it to the mesh with an IK Retargeter instead. **VMC Retarget Actor**, in the Content Browser's **Add** menu, creates a copy of the plugin's template retarget actor to start from.
 
 ## Supported Messages
 
@@ -202,7 +203,7 @@ VMC senders send each bone's rotation relative to a humanoid rest pose with no b
 | `/VMC/Ext/Blend/Val` | name, value | Yes | Published as a curve of that name. |
 | `/VMC/Ext/Blend/Apply` | none | Yes | Ends the frame: the pose and curves are pushed to Live Link. A sender that never sends it produces no frames. |
 | `/VMC/Ext/OK` | loaded [, calibration state, calibration mode [, tracking]] | Yes | Shown in the source status (*no avatar loaded*, *calibrating*, *tracking lost*). |
-| `/VMC/Ext/T` | time | Yes | Read, not used for timing: frames are timestamped on arrival. |
+| `/VMC/Ext/T` | time | Yes | Passed on as each frame's scene time, at 60 fps. Frames are timed (world time) by their arrival. |
 | `/VMC/Ext/Hmd/Pos`, `Con/Pos`, `Tra/Pos` | serial, position xyz, rotation xyzw | Yes | Device subjects, when **Device Subjects** is on. |
 | `/VMC/Ext/Hmd/Pos/Local`, `Con/Pos/Local`, `Tra/Pos/Local` | serial, position xyz, rotation xyzw | No | Counted by `VMC.Stats`, otherwise ignored; the world-space forms are used. |
 | `/VMC/Ext/Cam` | name, position xyz, rotation xyzw, field of view | Yes | A Camera subject, when **Camera Subject** is on. |
@@ -223,7 +224,7 @@ This is a rotation of the axes, not a mirror, so left stays left. A character fa
 
 **Worked example.** A sender puts the hips 1 m up and 0.5 m forward: Unity (0, 1, 0.5). The source publishes (0, 50, 100) cm: 50 cm along +Y (the character's forward) and 100 cm up. A head turned 30° to the character's right is a Unity rotation of +30° about Y, quaternion (0, 0.259, 0, 0.966). It becomes (0, 0, 0.259, 0.966): +30° about UE Z, which turns +Y (forward) toward −X, the character's right.
 
-**Yaw offset** turns the root (and device subjects) about UE Z after the conversion; positive values turn +X toward +Y, like a positive UE yaw. Use 180 to turn the character to face −Y.
+**Yaw offset** turns the root (and the device and camera subjects) about UE Z after the conversion; positive values turn +X toward +Y, like a positive UE yaw. Use 180 to turn the character to face −Y.
 
 Bone transforms are local to the bone's parent in the humanoid hierarchy. The root transform and devices are in the sender's world space.
 
@@ -242,6 +243,7 @@ Another program, or another VMC source, is listening on that port; for example, 
 
 ### The subject is receiving but the character doesn't move
 
+- In the editor viewport, a placed character only animates with **Update Animation in Editor** ticked on its skeletal mesh component, or during **Play** or **Simulate**.
 - The Animation Blueprint's **Live Link Pose** node must use the subject's name (`VMC_Subject` by default).
 - Open the remapper's **Live Mapping** table. If the bones say *No bone of this name on the reference mesh*, the names don't match the mesh: map them (see [The Remapper](#the-remapper)).
 - The sender must end each frame with `/VMC/Ext/Blend/Apply`. `VMC.Stats` shows whether it does.
@@ -258,7 +260,7 @@ The bone names don't reach the mesh. Check the Live Mapping table, and for a VRM
 
 ### The character faces the wrong way, or is tiny or huge
 
-Use **Yaw Offset Deg** to turn it (180 turns it round). A tiny character moving in centimetre steps means **Convert Metres to Centimetres** is off. If the limbs have the wrong lengths, set the remapper's **Reference Skeleton** and turn on **Use Reference Translations**.
+Use **Yaw Offset Deg** to turn it (180 turns it round). A character sunk into the floor, whose root barely moves, means **Convert Metres to Centimetres** is off (with **Prefer Incoming Translations** on, the whole character is tiny instead). If the limbs have the wrong lengths, set the remapper's **Reference Skeleton**, turn on **Use Reference Translations** and turn off **Prefer Incoming Translations**.
 
 ### Expressions flicker or stick
 
@@ -272,7 +274,7 @@ Keep **Receive Thread** on. Its status shows the jitter; a few milliseconds is n
 
 ## Performance
 
-- Receiving costs about 10 µs of CPU per frame for 55 bones and 60 curves (measured by the `VMC.Perf.StreamFrame` test), on the receive thread by default, so it costs the game thread nothing.
+- Building a frame from its messages costs about 10 µs of CPU for 55 bones and 60 curves (measured by the `VMC.Perf.StreamFrame` test, which leaves out the socket, packet parsing and the push to Live Link). It runs on the receive thread by default, so it costs the game thread nothing.
 - Parsing makes no heap allocation per message.
 - The remapper resolves its maps when the names change, not every frame, and copies each frame by index.
 - Static data (the bone and curve names) is sent to Live Link only when a new name arrives or a setting changes.
@@ -299,7 +301,7 @@ Run it with `--help` for the other options (VRM 1.0 names, v2.1 root, packets wi
 - Windows (Win64) only for now.
 - The v2.1 root scale and offset (mixed-reality calibration) and the `/Local` device messages are ignored.
 - A source receives one sender stream on one port. Use one source per sender.
-- Frames are timestamped when they arrive; the sender's `/VMC/Ext/T` clock isn't used.
+- Frames are timed by their arrival; the sender's `/VMC/Ext/T` only becomes their scene time, at an assumed 60 fps.
 - The generated Animation Blueprints in VRM Interchange don't add the VRM Expressions node; add it by hand.
 
 ## License
