@@ -11,7 +11,7 @@
  * Each import has its own bucket, from Begin(File) to Take(File), so imports that overlap (several
  * files imported together) keep their messages apart. A message goes to the bucket of the file the
  * logging thread is working on (FScope), and is dropped if that bucket is closed. One logged outside
- * any scope while an import is open goes to the next Take that asks for it. A bucket nothing takes
+ * any scope while an import is open is kept apart, for TakeUnscoped. A bucket nothing takes
  * (an import that failed or made no report) is closed after BucketLifetimeSeconds.
  *
  * Attribution relies on the capture being called on the logging thread: an output device that can be
@@ -34,11 +34,14 @@ namespace VRM::ImportMessages
 	/** Opens (or empties) the bucket for File. The translator calls it when an import of File starts. */
 	VRMINTERCHANGE_API void Begin(const FString& File);
 
+	/** Closes File's bucket and returns its messages, oldest first. */
+	VRMINTERCHANGE_API TArray<FMessage> Take(const FString& File);
+
 	/**
-	 * Closes File's bucket and returns its messages, oldest first. With bIncludeUnscoped, also those
-	 * logged outside any scope since the last Take that included them.
+	 * Returns what was logged outside any scope while an import was open, oldest first, and forgets
+	 * it. The report shows these apart from every file's own messages.
 	 */
-	VRMINTERCHANGE_API TArray<FMessage> Take(const FString& File, bool bIncludeUnscoped = true);
+	VRMINTERCHANGE_API TArray<FMessage> TakeUnscoped();
 
 	/** While one exists on a thread, what that thread logs belongs to File. Scopes nest. */
 	class VRMINTERCHANGE_API FScope

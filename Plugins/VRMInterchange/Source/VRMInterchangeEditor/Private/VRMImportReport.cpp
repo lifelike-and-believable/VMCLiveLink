@@ -204,13 +204,19 @@ void FVRMImportReport::Flush()
 		{
 			const FFile& File = Shown[Index];
 			Log.Info(FText::FromString(FString::Printf(TEXT("%s\n%s"), *FPaths::GetCleanFilename(File.SourceFile), *Describe(File))));
-			// The last file's take also collects what was logged outside any import.
-			const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(File.SourceFile, /*bIncludeUnscoped*/ Index == Shown.Num() - 1);
+			const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(File.SourceFile);
 			if (Messages.Num() == 0)
 			{
 				Log.Info(LOCTEXT("NoProblems", "No warnings."));
 			}
 			AddMessages(Messages);
+		}
+		// Not any one file's, so not shown as if it were.
+		const TArray<VRM::ImportMessages::FMessage> Unscoped = VRM::ImportMessages::TakeUnscoped();
+		if (Unscoped.Num() > 0)
+		{
+			Log.Info(LOCTEXT("Unscoped", "Logged during the import, outside any one file's import:"));
+			AddMessages(Unscoped);
 		}
 	}
 

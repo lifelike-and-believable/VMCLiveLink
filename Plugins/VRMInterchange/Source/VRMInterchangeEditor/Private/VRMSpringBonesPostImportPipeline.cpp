@@ -176,7 +176,7 @@ bool UVRMSpringBonesPostImportPipeline::ReimportFromSource(UVRMSpringBoneData* D
         const VRM::ImportMessages::FScope MessageScope(MessageKey);
         bParsed = ParseAndFillDataAsset(*Document, Parsed);
     }
-    const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(MessageKey, /*bIncludeUnscoped*/ false);
+    const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(MessageKey);
     if (Messages.Num() > 0)
     {
         FMessageLog Log(FVRMImportReport::LogName);

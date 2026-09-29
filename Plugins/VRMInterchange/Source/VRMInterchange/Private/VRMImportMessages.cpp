@@ -126,15 +126,20 @@ namespace VRM::ImportMessages
 		Capture.NumOpen = Capture.Buckets.Num();
 	}
 
-	TArray<FMessage> Take(const FString& File, bool bIncludeUnscoped)
+	/** Delivers anything still queued for buffered devices (this capture is served directly, but a
+	 *  flush costs little and keeps that assumption from mattering). Not under the lock, since
+	 *  delivering calls Serialize, which takes it. */
+	static void FlushLog()
 	{
-		// Deliver anything still queued for buffered devices first (this capture is served directly,
-		// but a flush costs little and keeps that assumption from mattering). Not under the lock,
-		// since delivering calls Serialize, which takes it.
 		if (GLog && IsInGameThread())
 		{
 			GLog->Flush();
 		}
+	}
+
+	TArray<FMessage> Take(const FString& File)
+	{
+		FlushLog();
 		FCapture& Capture = GetCapture();
 		FScopeLock Lock(&Capture.Mutex);
 		TArray<FMessage> Out;
@@ -143,13 +148,18 @@ namespace VRM::ImportMessages
 		{
 			Out = MoveTemp(Bucket.Messages);
 		}
-		if (bIncludeUnscoped)
-		{
-			Out.Append(Capture.Unscoped); // shown once, with the first import taken after them
-			Capture.Unscoped.Reset();
-		}
 		PruneStale(Capture, FPlatformTime::Seconds());
 		Capture.NumOpen = Capture.Buckets.Num();
+		return Out;
+	}
+
+	TArray<FMessage> TakeUnscoped()
+	{
+		FlushLog();
+		FCapture& Capture = GetCapture();
+		FScopeLock Lock(&Capture.Mutex);
+		TArray<FMessage> Out = MoveTemp(Capture.Unscoped);
+		Capture.Unscoped.Reset();
 		return Out;
 	}
 

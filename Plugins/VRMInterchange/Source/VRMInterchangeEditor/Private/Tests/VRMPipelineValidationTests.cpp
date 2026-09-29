@@ -178,7 +178,7 @@ bool FVRMEndToEndParsingValidation::RunTest(const FString& Parameters)
             {
                 if (!TestTrue(TEXT("Joint index valid"), Config.Joints.IsValidIndex(JointIndex))) continue;
                 const FVRMSpringJoint& Joint = Config.Joints[JointIndex];
-                TestTrue(TEXT("Joint stiffness in valid range"), Joint.Stiffness >= 0.0f && Joint.Stiffness <= 1.0f);
+                TestTrue(TEXT("Joint stiffness in valid range (no upper bound in VRM 1.0)"), Joint.Stiffness >= 0.0f);
                 TestTrue(TEXT("Joint drag in valid range"), Joint.Drag >= 0.0f && Joint.Drag <= 1.0f);
                 TestTrue(TEXT("Joint gravity power reasonable (UE units)"), Joint.GravityPower >= 0.0f && Joint.GravityPower <= 100.0f);
             }

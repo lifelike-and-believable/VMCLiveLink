@@ -76,7 +76,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
             UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] %s"), *LoadError);
         }
         UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to read VRM."));
-        VRM::ImportMessages::Take(SourceFile, /*bIncludeUnscoped*/ false); // no pipeline will report this import
+        VRM::ImportMessages::Take(SourceFile); // no pipeline will report this import
         return false;
     }
     // Read-only from here on; the payload calls share it, possibly from other threads.

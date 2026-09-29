@@ -49,10 +49,9 @@ bool FVRMImportMessagesTest::RunTest(const FString& Parameters)
 	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] import report test, through the log"));
 
 	const TArray<FMessage> A = Take(FileA);
-	if (!TestEqual(TEXT("A's warning, then the unscoped one"), A.Num(), 2)) return false;
+	if (!TestEqual(TEXT("A's warning only"), A.Num(), 1)) return false;
 	TestEqual(TEXT("A's warning, without the log prefix"), A[0].Text, FString(TEXT("warning in A")));
 	TestEqual(TEXT("A warning"), int32(A[0].Verbosity), int32(ELogVerbosity::Warning));
-	TestEqual(TEXT("Unscoped message goes to the next Take"), A[1].Text, FString(TEXT("outside any import")));
 	TestTrue(TEXT("B still open"), IsCollecting());
 	{
 		// A's report has been shown: what A logs later isn't put on B's page.
@@ -65,6 +64,12 @@ bool FVRMImportMessagesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("An error"), int32(B[0].Verbosity), int32(ELogVerbosity::Error));
 	TestFalse(TEXT("All taken: not collecting"), IsCollecting());
 	TestEqual(TEXT("Nothing more once taken"), Take(FileB).Num(), 0);
+
+	// What was logged outside any scope is kept apart from both files
+	const TArray<FMessage> Unscoped = TakeUnscoped();
+	if (!TestEqual(TEXT("The unscoped message"), Unscoped.Num(), 1)) return false;
+	TestEqual(TEXT("Unscoped text"), Unscoped[0].Text, FString(TEXT("outside any import")));
+	TestEqual(TEXT("Nothing more once taken"), TakeUnscoped().Num(), 0);
 	return true;
 }
 
