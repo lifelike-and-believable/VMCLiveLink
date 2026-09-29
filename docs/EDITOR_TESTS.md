@@ -14,11 +14,11 @@ How to use it:
 - **VRM files:**
   - a VRoid Studio export in **VRM 0.x** and one in **VRM 1.0** (the same character in both is ideal), with hair and skirt springs and about 60 blend shapes;
   - a VRM whose bones are *not* named by VRoid (`J_Bip_*`), for example a UniVRM export of a custom rig;
-  - a plain `.glb` without VRM extensions.
+  - a plain glTF binary (`.glb`) without VRM extensions, **renamed to `Plain.vrm`**: the VRM importer only takes `.vrm` files, so a `.glb` would go to the engine's own glTF importer.
 - **Senders:** VSeeFace (webcam tracking is enough); VirtualMotionCapture with at least one tracker or controller if you have SteamVR hardware (else skip those checks).
 - Python 3 for `scripts/vmc_sender.py`.
 - Reference renders for the material check (E-D1): the same VRM in three-vrm (<https://pixiv.github.io/three-vrm/>) or UniVRM.
-- Optional: a spring data asset and a VRM import saved before #115 and #137 (an older checkout of the project), for the upgrade checks E-F6 and E-A6.
+- Optional: a spring data asset and a VRM import saved before #115 and #137 (an older checkout of the project), for the upgrade checks E-F6 and E-A7.
 
 Throughout, "the output log" is **Window → Output Log**, and "the Live Link panel" is **Window → Virtual Production → Live Link**.
 
@@ -41,7 +41,13 @@ Pass if the notification appears once, the plugin changed no project setting bef
 2. Place both skeletal meshes in the default level, side by side, next to the UE mannequin (`SKM_Manny` from the Third Person template, or any mannequin).
 3. Look at them from the front, then turn on **Show → Advanced → Bones**.
 
-Pass if both characters face the same way as the mannequin (+Y), neither is mirrored (the parting of the hair and any asymmetric accessory are on the same side as in the VRoid preview), the skin deforms nowhere (no stretched vertices at hands, hair or skirt), rigid accessories sit where they belong, and the skeletons have the expected bones. This closes **T-05** (VRM 0.x and 1.0 facing) and **T-02** (one skin per mesh in VRoid exports: note in the results whether the import log reports more than one skin).
+Pass if both characters face the same way as the mannequin (+Y), neither is mirrored (the parting of the hair and any asymmetric accessory are on the same side as in the VRoid preview), the skin deforms nowhere (no stretched vertices at hands, hair or skirt), rigid accessories sit where they belong, and the skeletons have the expected bones. This closes **T-05** (VRM 0.x and 1.0 facing).
+
+For **T-02** (how many skins VRoid exports have), count them in each file from the repository root, and record the numbers:
+```
+python -c "import json,struct,sys;d=open(sys.argv[1],'rb').read();n=struct.unpack('<I',d[12:16])[0];print(len(json.loads(d[20:20+n]).get('skins',[])))" YourModel.vrm
+```
+With more than one skin, the pass condition above is what confirms that every skin imports correctly (hair and skirt bones present and weighted).
 
 **E-A2. Spring colliders on the body.** *(P1.11)*
 1. Open `/Game/Test/V1/.../LiveLink/ABP_LL_...` (or any AnimBP with the spring bone node) and preview the mesh; or place the Live Link actor in the level and press **Simulate**.
@@ -49,10 +55,10 @@ Pass if both characters face the same way as the mannequin (+Y), neither is mirr
 
 Pass if the collider spheres and capsules sit on the head, chest, arms and legs where the VRoid preview shows them, for both versions, and the spring chains run along the hair and skirt.
 
-**E-A3. Plain glTF.**
-1. Import the `.glb` into `/Game/Test/Glb`.
+**E-A3. Plain glTF through the VRM importer.**
+1. Import `Plain.vrm` (the plain `.glb` renamed) into `/Game/Test/Glb`.
 
-Pass if it imports as a skeletal mesh facing +Y, with no VRM assets (no spring data or avatar description), and its import report page (E-B1) shows a warning about it.
+Pass if it imports as a skeletal mesh facing +Y, with no spring data or avatar description, and its VRM Import page (E-B1) has the warning "has no VRM or VRMC_vrm extension: not a VRM file, importing as generic glTF".
 
 **E-A4. Reimport.** *(P3.3)*
 1. Right-click the VRM 1.0 skeletal mesh → **Reimport**.
@@ -85,7 +91,7 @@ Pass if it opens and shows its springs.
 2. Click **Show in Content Browser** on the notification.
 3. Open **Window → Message Log** and choose **VRM Import**.
 
-Pass if one notification appears saying what was imported, Show in Content Browser selects the new assets, and the VRM Import log has a page for the import listing its assets and warnings (or "No warnings."). Repeat with the `.glb`: its page shows its warning. Note in the results whether the listing is called "VRM Import" (CONTRIBUTING and ARCHITECTURE name it so).
+Pass if one notification appears saying what was imported, Show in Content Browser selects the new assets, and the VRM Import log has a page for the import listing its assets and warnings (or "No warnings."). Repeat with `Plain.vrm`: its page shows the "not a VRM file" warning. Note in the results whether the listing is called "VRM Import" (CONTRIBUTING and ARCHITECTURE name it so).
 
 **E-B2. Two files at once.** *(P6.3)*
 1. Drag the VRM 0.x and VRM 1.0 files into `/Game/Test/Pair` in one drag.
@@ -94,7 +100,7 @@ Pass if one notification covers both files and the message log page has a sectio
 
 **E-B3. A warning logged on a worker thread is filed under its own file.** *(the open question from #177's review: thread-local attribution)*
 
-Texture payloads are built on Interchange's worker threads, so a warning logged while decoding a texture shows whether the capture sees worker-thread log lines on the logging thread.
+Texture payloads are normally built on Interchange's worker threads, so a warning logged while decoding a texture shows whether the capture sees worker-thread log lines on the logging thread. The check only answers the question if the payload really ran off the game thread, so step 4 confirms that.
 
 1. Make a copy of a fixture with a damaged texture. From the repository root:
    ```
@@ -103,8 +109,11 @@ Texture payloads are built on Interchange's worker threads, so a warning logged 
    This changes one byte of the first embedded PNG's signature, so the file still loads but that image can't be decoded.
 2. Drag `BrokenTexture.vrm` and the VRM 1.0 file into `/Game/Test/Threads` **in one drag**.
 3. Open the VRM Import message log page for this import. Also search the output log for `Could not decode texture`.
+4. To see which thread built the texture payload: run the editor with `-trace=cpu`, repeat step 2 into a new folder, open the trace in Unreal Insights, and find the Interchange texture payload task in the Timing view (search for "Payload" or "Texture"); note the thread it ran on.
 
-Pass if the "Could not decode texture ..." warning appears **in BrokenTexture.vrm's section** and not in the other file's section. If it appears under "Logged during the import, outside any one file's import:", the attribution assumption is wrong (the log line reached the capture on another thread): record it as a Fail. If it appears nowhere on the page but is in the output log, also Fail. Delete `BrokenTexture.vrm` afterwards.
+Other warnings and errors in BrokenTexture.vrm's section are expected (it is a minimal test file with a partial humanoid); only where the decode warning appears matters.
+
+Pass if the "Could not decode texture ..." warning appears **in BrokenTexture.vrm's section** and not in the other file's section, and step 4 shows the payload on a worker thread. If the payload ran on the game thread, record **Skipped (inconclusive)**: the attribution wasn't tested. If it appears under "Logged during the import, outside any one file's import:", the attribution assumption is wrong (the log line reached the capture on another thread): record it as a Fail. If it appears nowhere on the page but is in the output log, also Fail. Delete `BrokenTexture.vrm` afterwards.
 
 ---
 
@@ -129,10 +138,10 @@ Pass if the retarget root is the hips, the chains are named like the mannequin's
 Pass if the mesh and AnimBlueprint are set on both and the placed actor shows the character.
 
 **E-C4. Update Existing.** *(P3.4)*
-1. Reimport the VRM 1.0 file into the same folder with **Actors: Update Existing**, **IK Rig: Update Existing** and **Spring Bones: Update Existing** ticked.
-2. Reimport again with them unticked.
+1. Drag the VRM 1.0 file again into its folder from E-A1 (a second import, not the Reimport action). In the dialog tick **Actors: Update Existing**, **IK Rig: Update Existing**, **Spring Bones: Update Existing** and **Spring Bones: Update Existing AnimBlueprint**.
+2. Import it again the same way with all four unticked.
 
-Pass if the first reimport updates the same assets (no new ones appear), and the second creates new assets with unique names.
+Pass if after step 1 the folder has the same Live Link actor, retarget actor, AnimBlueprints, IK Rig and spring data asset as before (no copies with `_1`-style names), and after step 2 each of those has a new copy with a unique name.
 
 ---
 
@@ -163,7 +172,7 @@ Pass if the texture is linear with **Normalmap** compression, and the bumps ligh
 **E-E1. Morph target normals.** *(P4.6)*
 1. Open the VRM 1.0 skeletal mesh; in the **Morph Target Preview**, set a mouth shape (for example `Fcl_MTH_A`) to 1 under a side light.
 
-Pass if the mouth's shading follows the new shape (no dark or flat patches). A morph without normal deltas keeps its shading.
+Pass if the mouth's shading follows the new shape (no dark or flat patches).
 
 **E-E2. VRM Expressions node.** *(P4.2)*
 1. In the VRM 0.x character's Live Link AnimBP, add a **VRM Expressions** node after the Live Link Pose node, and set its Avatar Description to the character's `<Mesh>_Avatar`. Compile.
@@ -209,7 +218,7 @@ Pass if it shows **Needs Reimport** and its AnimBlueprint's compile warns about 
 
 **E-F7. Editing tools.** *(P6.4)*
 1. Open a spring data asset while a preview or Simulate runs.
-2. In **Editing Tools**, scale stiffness by 2 and click **Apply**; reset spring 0 with **Reset Spring to File Values**; click **Reimport from Source**. Undo each (Ctrl+Z).
+2. In **Editing Tools**: on the Scale All row, set stiffness to 2 and click **Apply**; on the Reset Spring to File Values row, pick spring 0 and click **Reset**; on the Reimport from Source row, click **Reimport**. Undo each (Ctrl+Z).
 
 Pass if each change shows in the running preview without recompiling, each undo restores the previous values, and Reimport from Source posts a message log page.
 
@@ -232,10 +241,13 @@ Pass if both are found. Record the category each is under (VMC LiveLink, Animati
 
 **E-G3. VSeeFace.** *(P1.1, P1.3, P1.5, P4.4, VMC-01)*
 1. In VSeeFace, **Settings → General settings**, OSC/VMC protocol section: enable the VMC protocol sender, address `127.0.0.1`, port 39539. Record the exact menu names.
-2. With the E-G1 set-up, set the remapper's **Reference Skeleton** to the VRoid VRM 0.x mesh and click **Map Bones From Humanoid Metadata**.
+2. Place the VRM 0.x character's Live Link actor (its AnimBlueprint has the Live Link Pose node) and, on the subject's remapper, set **Reference Skeleton** to the VRM 0.x mesh and click **Map Bones From Humanoid Metadata**.
 3. Move and turn your head, raise your hands (if hand tracking is on), lean.
 
-Pass if the body follows with no other set-up (P4.4), the head turns the right way (not mirrored), and root motion arrives: lean or step and the hips move. This confirms **VMC-01** (the `Root/Pos` layout from a real sender). Also record a capture for later checks: point VSeeFace at port 39540 and run `python scripts/vmc_sender.py record --listen 39540 --out vseeface.vmcrec` for 30 s, then `python scripts/vmc_sender.py dump vseeface.vmcrec --limit 3` and note the `Root/Pos` argument count.
+4. Run `VMC.Stats` in the console, and search the output log for `ignoring a malformed VMC message` and `arrived without a name`.
+5. Record a capture: point VSeeFace at port 39540, run `python scripts/vmc_sender.py record --listen 39540 --out vseeface.vmcrec` for 30 s, then `python scripts/vmc_sender.py dump vseeface.vmcrec --limit 50` and find a `/VMC/Ext/Root/Pos` line.
+
+Pass if the body follows with no other set-up (P4.4) and the head turns the right way (not mirrored). **VMC-01** (the `Root/Pos` layout from a real sender) passes if the dump shows `Root/Pos` with a name and 7 floats (8 arguments) or a name and 13 floats (14 arguments, v2.1), VMC.Stats lists `/VMC/Ext/Root/Pos`, and neither log line from step 4 appears. (Hip movement alone doesn't show it: the hips move with `Bone/Pos` even if `Root/Pos` were dropped.)
 
 **E-G4. Receive thread comparison.** *(P3.1, D-1)*
 1. With `python scripts/vmc_sender.py send --fps 60` and then with VSeeFace, read the source's status (frame rate and jitter) with **Receive Thread** on, then off.
@@ -249,7 +261,7 @@ While receiving, in the source's details: change the port (and the sender's), re
 Pass if receiving resumes after each change, the renamed subject appears and the old one goes, and the character keeps moving after pointing its AnimBP at the new subject name.
 
 **E-G6. Status texts and VMC.Stats.** *(P6.1)*
-1. Start a second program on port 39539 first (for example `python -c "import socket,time; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(('0.0.0.0',39539)); time.sleep(600)"`), then add a VMC source on 39539.
+1. Remove every VMC source from the Live Link panel (a source holds its port). Start a second program on port 39539 first (for example `python -c "import socket,time; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(('0.0.0.0',39539)); time.sleep(600)"`), then add a VMC source on 39539.
 2. Stop that program, change the source's port to 39540 and back.
 3. Start and stop the sender.
 4. Run `VMC.Stats` in the console while receiving.
@@ -272,7 +284,7 @@ Pass if the Live Mapping table shows the names intact (not `?`).
 
 Pass if the status names the first sender, says *ignoring 1 other sender*, and the subject doesn't jump between the two.
 
-**E-G10. Calibration state.** *(P4.7)*
+**E-G10. Calibration state.** *(P4.7, needs SteamVR hardware)*
 1. In VirtualMotionCapture, send while starting a calibration.
 
 Pass if the source's status shows *sender: calibrating* during calibration and the note goes when it ends.
@@ -297,7 +309,7 @@ Pass or Skip each, recording what you found:
 **E-H1. Live Mapping table.** *(P6.2)*
 1. Stream VSeeFace. Set the remapper's Reference Skeleton to the VRM 0.x mesh.
 2. Map two incoming curves to the same name in the Curve Name Map (for example `Joy` and `Fun` both to `Fcl_ALL_Joy`).
-3. Set the Reference Skeleton to the VRM 1.0 mesh (which lacks some VRoid morph targets).
+3. Set the Reference Skeleton to the non-VRoid VRM's mesh, whose morph targets aren't named `Fcl_*`.
 4. Tick **Only names that don't reach the mesh**.
 
 Pass if the table lists every received name, marks the two curves *Another curve has this name too*, marks missing targets *No morph target of this name on the reference mesh*, and the filter shows only those.
@@ -308,11 +320,20 @@ Pass if the table lists every received name, marks the two curves *Another curve
 Pass if each does what its tooltip says and each undo restores the maps.
 
 **E-H3. Save, then auto-detect on a fresh subject.** *(P3.2, P7.2 review)*
-1. Save a mapping asset for the VRM 0.x mesh (Create Mapping Asset...).
-2. Remove the source, add a new one, and on its subject's new remapper set the Reference Skeleton to the same mesh and click **Auto-Detect Mapping**.
-3. Save a Live Link preset with that Reference Skeleton set, restart the editor and load the preset.
 
-Pass if Auto-Detect Mapping applies the saved asset in step 2, and the subject from the preset has its maps without clicking anything in step 3.
+Use a mesh without VRM humanoid metadata (the mannequin `SKM_Manny`), so the metadata can't fill the maps instead of the mapping asset.
+1. While streaming, set the remapper's Reference Skeleton to `SKM_Manny`, click **Seed From Subject**, then **Create Mapping Asset...** (name it `MA_Manny`).
+2. Empty both maps and clear the **Mapping Asset** field, leaving only the Reference Skeleton. Click **Auto-Detect Mapping**.
+3. Empty both maps and clear Mapping Asset again. Save a Live Link preset, restart the editor and load the preset.
+
+Pass if in step 2 the maps fill and Mapping Asset shows `MA_Manny`, and in step 3 the loaded subject's remapper has `MA_Manny`'s maps and its Mapping Asset set without clicking anything.
+
+**E-H4. Which thread runs the remapper worker.** *(P7.4 review; needs Visual Studio)*
+1. Build the editor in Development Editor from Visual Studio and run it under the debugger.
+2. Set a breakpoint in `FVMCLiveLinkRemapperWorker::RemapFrameData` (and one in `RemapStaticData`), and stream to a subject with a VMC remapper, with **Receive Thread** on.
+3. When each breakpoint hits, read the thread's name in **Debug → Windows → Threads**.
+
+Pass when recorded: the thread names (for example the VMC receive thread, or the game thread). The API comments say only that the worker may run off the game thread; this records which thread it is.
 
 ---
 
@@ -331,7 +352,7 @@ Pass or Fail each:
 ## J. Performance
 
 **E-J1. Large import.** *(P5)*
-1. Start Unreal Insights with the memory and CPU channels (`-trace=cpu,memory`), import the large VRoid model (about 60 morph targets).
+1. Start the editor with `-trace=cpu,memory` (and Unreal Insights open to record it), then import the large VRoid model (about 60 morph targets).
 
 Pass if the import finishes; record the import time and peak memory, and compare with the benchmark (60 morph-target payloads in about 85 ms).
 
@@ -358,7 +379,7 @@ Copy this table into the issue or document where you record the run.
 | E-A7 | | |
 | E-B1 | | listing name |
 | E-B2 | | |
-| E-B3 | | worker-thread attribution |
+| E-B3 | | worker-thread attribution; payload thread |
 | E-C1 | | |
 | E-C2 | | |
 | E-C3 | | |
@@ -390,6 +411,7 @@ Copy this table into the issue or document where you record the run.
 | E-H1 | | |
 | E-H2 | | |
 | E-H3 | | |
+| E-H4 | | thread names |
 | E-I1 | | |
 | E-J1 | | time, peak memory |
 | E-J2 | | ms per frame |

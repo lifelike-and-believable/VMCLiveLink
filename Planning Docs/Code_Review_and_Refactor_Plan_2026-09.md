@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-29):** every phase is done: 56 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, and all of Phases 1 to 7), plus the unplanned fixes. Both plugins are version 1.0.0. Every review finding has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 107 VRM and VMC tests. What remains needs the owner: a LICENSE file, the editor checks in [`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md), and the CI runner's DLL block (X-07). See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-29):** every phase is done except P7.5's LICENSE acceptance (it needs a LICENSE file from the owner): 56 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, and all of Phases 1 to 7), plus the unplanned fixes. Both plugins are version 1.0.0. Every review finding has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 107 VRM and VMC tests. What remains needs the owner: a LICENSE file, the editor checks in [`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md), and the CI runner's DLL block (X-07). See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -1250,12 +1250,12 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 [`docs/EDITOR_TESTS.md`](../docs/EDITOR_TESTS.md) turns this list into step-by-step checks with pass conditions and a results table.
 
 - **In the editor (P6.3 review, #177):** during an import of two files, a warning logged on a worker thread (a texture that fails to decode) lands under its own file on the VRM Import page, not under "outside any one file's import". This confirms that `FOutputDeviceRedirector` serves the capture on the logging thread (E-B3).
-- **In the editor (P7):** the VMC README quick start from scratch (E-G1), the Content Browser Add-menu locations (E-G2), the third-party sender menus (E-G3, E-G11, E-G12) and the editor paths named in the docs (E-I1).
+- **In the editor (P7):** the VMC README quick start from scratch (E-G1), the Content Browser Add-menu locations (E-G2), the third-party sender menus (E-G3, E-G11, E-G12), the editor paths named in the docs (E-I1), and which thread runs the remapper worker (E-H4, under the debugger).
 
 - **In the editor (P6):**
   - Run #170's manual script: port in use, sender stopping and resuming, settings edits, `VMC.Stats`.
   - Watch a VSeeFace stream in the remapper's Live Mapping table, with two curves mapped to one name and a reference mesh missing some targets.
-  - Import `Alice.vrm` and a plain `.glb`: one notification each, Show in Content Browser works, and the VRM Import log has a page each (the `.glb` page with its warning).
+  - Import `Alice.vrm` and a plain `.glb` renamed to `.vrm` (the VRM importer takes only `.vrm`): one notification each, Show in Content Browser works, and the VRM Import log has a page each (the plain file's page with its "not a VRM file" warning).
   - Use the spring data Editing Tools while a preview runs, and undo each.
 - **In the editor (P5):** import a large VRoid model (about 60 morph targets) with Unreal Insights running (memory and CPU channels) and record the import time and peak memory, to confirm the benchmark results on a real file.
 - **In the editor (P4.5):** import a VRoid VRM 0.x and a VRM 1.0 avatar into a default level and compare with three-vrm or UniVRM renders of the same models: toon ramp and shade colours, cutout hair and transparent parts, rim, outlines (world and screen width). Check the fallback light in a level without an atmosphere sun light, and that the generated materials save and reload.
