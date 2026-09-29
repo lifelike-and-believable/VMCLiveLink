@@ -35,12 +35,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
 	FString PipelineDisplayName = TEXT("VRM Material Instance Hierarchy");
 
-	/** Parent each per-material instance to the character material instance. */
-	UPROPERTY(EditAnywhere, Category = "VRM Materials")
+	/** Parent each per-material instance to the character material instance, so one edit changes every material of the character. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Materials: Share a Character Parent"))
 	bool bParentMaterialsToCharacterInstance = true;
 
-	/** Draw the MToon outline, as the skeletal mesh's overlay material. */
-	UPROPERTY(EditAnywhere, Category = "VRM Materials")
+	/** Draw the MToon outline, as the skeletal mesh's overlay material (MI_VRM_<Material>__Outline). */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Materials: MToon Outline"))
 	bool bApplyMToonOutline = true;
 
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;

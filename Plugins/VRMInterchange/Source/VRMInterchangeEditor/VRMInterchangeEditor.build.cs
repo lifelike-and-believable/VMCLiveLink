@@ -41,9 +41,11 @@ public class VRMInterchangeEditor : ModuleRules
 
             "Projects",
 
-            // Editor notifications (pipeline registration prompt)
+            // Editor notifications (pipeline registration prompt, the import report)
             "Slate",
             "SlateCore",
+            "ContentBrowser", // the import report's "Show in Content Browser"
+            "MessageLog",     // the "VRM Import" message log (P6.3)
 
             // Runtime plugin module this editor module depends on
             "VRMInterchange",

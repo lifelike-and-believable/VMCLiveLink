@@ -34,20 +34,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
 	FString PipelineDisplayName = "Live Link Actor Set-up";
 
-	/** Generate the LiveLink-enabled Actor + AnimBP scaffold assets */
-	UPROPERTY(EditAnywhere, Category = "VRM Character")
+	/** Creates BP_LL_VRM_<Mesh>, an actor showing the character driven by Live Link, and its AnimBlueprint ABP_LL_VRM_<Mesh>, in <import folder>/<file name>/LiveLink. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Live Link Actor"))
 	bool bGenerateLiveLinkEnabledActor = true;
 
-	/** Generate the actor that retargets the Live Link pose to the UE5 mannequin */
-	UPROPERTY(EditAnywhere, Category = "VRM Character")
+	/** Creates BP_LL_VRM_To_UE5_<Mesh> in <import folder>/<file name>/LiveLink: an actor that retargets the character's Live Link pose to the UE5 mannequin. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Retarget Actor"))
 	bool bGenerateLiveLinkRetargetActor = true;
 
-	/** If assets with these names exist, reuse them (they are wired to the new mesh again); otherwise the new ones get unique names */
-	UPROPERTY(EditAnywhere, Category="VRM Character")
+	/** If the actors and AnimBlueprint exist, reuse them: they are pointed at the new mesh and your edits are kept. Otherwise the new ones get unique names. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Actors: Update Existing"))
 	bool bOverwriteExisting = false;
 
-	/** Subfolder under the character LiveLink folder to place the AnimBP */
-	UPROPERTY(EditAnywhere, Category="VRM Character")
+	/** Folder under <import folder>/<file name>/LiveLink for the AnimBlueprint. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Actors: AnimBlueprint Folder"))
 	FString AnimationSubFolder = TEXT("Animation");
 #endif
 

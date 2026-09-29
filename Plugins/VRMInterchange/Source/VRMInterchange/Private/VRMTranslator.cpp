@@ -1,5 +1,6 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMTranslator.h"
+#include "VRMImportMessages.h"
 #include "VRMInterchangeLog.h"
 #include "VRMDocument.h"
 #include "InterchangeVRMNode.h"
@@ -54,6 +55,8 @@ bool UVRMTranslator::CanImportSourceData(const UInterchangeSourceData* InSourceD
 
 bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) const
 {
+    // What the import logs from here on is also shown on a message log page when it finishes (P6.3).
+    VRM::ImportMessages::Begin();
     // The file is read and parsed once (P3.3). The model is built from that document, and the
     // document's JSON and hash go to the pipelines in a UInterchangeVRMNode.
     ParsedModel.Reset();

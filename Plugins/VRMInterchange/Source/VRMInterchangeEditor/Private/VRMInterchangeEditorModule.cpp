@@ -14,6 +14,8 @@
 #include "VRMAvatarDescriptionPipeline.h"
 #include "VRMImportPipelineRegistration.h"
 #include "VRMInterchangeSettings.h"
+#include "VRMImportReport.h"
+#include "MessageLogModule.h"
 
 #define LOCTEXT_NAMESPACE "VRMInterchangeEditor"
 
@@ -26,6 +28,13 @@ void FVRMInterchangeEditorModule::StartupModule()
 	UVRMLiveLinkPostImportPipeline::StaticClass();
 	UVRMMaterialPostImportPipeline::StaticClass();
 	UVRMAvatarDescriptionPipeline::StaticClass();
+
+	// Where each import's warnings are listed (P6.3)
+	FMessageLogModule& MessageLog = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
+	FMessageLogInitializationOptions LogOptions;
+	LogOptions.bShowPages = true;
+	LogOptions.bAllowClear = true;
+	MessageLog.RegisterLogListing(FVRMImportReport::LogName, LOCTEXT("VRMImportLog", "VRM Import"), LogOptions);
 
 	// The editor module never edits project settings by itself. Registering the VRM import
 	// pipelines is done from Project Settings > Plugins > VRM Interchange, or from the prompt below.
@@ -41,6 +50,11 @@ void FVRMInterchangeEditorModule::StartupModule()
 
 void FVRMInterchangeEditorModule::ShutdownModule()
 {
+	FVRMImportReport::Get().Discard();
+	if (FMessageLogModule* MessageLog = FModuleManager::GetModulePtr<FMessageLogModule>("MessageLog"))
+	{
+		MessageLog->UnregisterLogListing(FVRMImportReport::LogName);
+	}
 	if (PostEngineInitHandle.IsValid())
 	{
 		FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitHandle);

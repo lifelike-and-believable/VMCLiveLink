@@ -11,6 +11,7 @@
 #include "VRMAvatarDescription.h"
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
+#include "VRMImportReport.h"
 #include "VRMInterchangeLog.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMParsedModel.h"
@@ -158,12 +159,8 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 
 	const FString License = VRM::DescribeLicense(StagedAvatar.Meta);
 	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] %s: %s"), *Description->GetPathName(), *License);
-	if (bShowLicenseNotification && !License.IsEmpty() && !FApp::IsUnattended() && FSlateApplication::IsInitialized())
+	if (bShowLicenseNotification && !License.IsEmpty())
 	{
-		FNotificationInfo Info(FText::FromString(FString::Printf(TEXT("VRM avatar imported: %s"), *Mesh->GetName())));
-		Info.SubText = FText::FromString(License);
-		Info.ExpireDuration = 10.f;
-		Info.bUseLargeFont = false;
-		FSlateNotificationManager::Get().AddNotification(Info);
+		FVRMImportReport::Get().SetLicense(License); // shown with the import's notification (P6.3)
 	}
 }
