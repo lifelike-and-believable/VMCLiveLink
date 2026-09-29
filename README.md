@@ -23,6 +23,13 @@ Whether you’re crafting an XR dance performance, streaming a VTuber show, or b
 
 Both plugins are Windows (Win64) only for now: that is the only platform they are built and tested on. Mac and Linux can be added once they are built and tested there.
 
+## Documentation
+
+- [VMC Live Link README](Plugins/VMCLiveLink/README.md): setup, senders, the remapper, troubleshooting.
+- [VRM Interchange README](Plugins/VRMInterchange/README.md): importing VRM avatars, spring bones, materials, Live Link.
+- [Architecture](docs/ARCHITECTURE.md): modules, data flow, threading, coordinates, versioning, tests.
+- [Contributing](CONTRIBUTING.md): building, testing and submitting changes.
+
 ## Getting Started
 
 1. Clone the repo (requires [Git LFS](https://git-lfs.github.com/)):
