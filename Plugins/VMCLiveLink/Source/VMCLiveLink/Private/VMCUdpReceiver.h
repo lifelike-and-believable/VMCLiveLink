@@ -23,6 +23,13 @@ public:
 	/** Binds and starts the thread. Returns null, with a reason in OutError, if the socket can't be opened. */
 	static TUniquePtr<FVMCUdpReceiver> Start(const FString& BindAddress, int32 Port, FOnPacket OnPacket, const FString& ThreadName, FString& OutError);
 
+	/**
+	 * Whether Start could bind BindAddress:Port now: opens a socket there and closes it again. False,
+	 * with a reason in OutError, if the address isn't valid or the port is taken (by another program
+	 * or another VMC source).
+	 */
+	static bool CanBind(const FString& BindAddress, int32 Port, FString& OutError);
+
 	/** Stops the thread (waits for it) and closes the socket. */
 	virtual ~FVMCUdpReceiver() override;
 
