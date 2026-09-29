@@ -13,29 +13,7 @@ namespace VRM::ImportMessages
 	public:
 		virtual void Serialize(const TCHAR* Text, ELogVerbosity::Type Verbosity, const FName& Category) override
 		{
-			if (!bCollecting.load(std::memory_order_relaxed))
-			{
-				return;
-			}
-			const ELogVerbosity::Type Level = ELogVerbosity::Type(Verbosity & ELogVerbosity::VerbosityMask);
-			if (Level > ELogVerbosity::Warning || Level == ELogVerbosity::NoLogging)
-			{
-				return;
-			}
-			// By name: builds without logging have no category objects to ask (FNoLoggingCategory).
-			static const FName InterchangeCategory(TEXT("LogVRMInterchange"));
-			static const FName SpringCategory(TEXT("LogVRMSpring"));
-			if (Category != InterchangeCategory && Category != SpringCategory)
-			{
-				return;
-			}
-			FString Message(Text);
-			Message.RemoveFromStart(TEXT("[VRMInterchange] "));
-			FScopeLock Lock(&Mutex);
-			if (Messages.Num() < MaxMessages)
-			{
-				Messages.Add({ Level == ELogVerbosity::Warning ? ELogVerbosity::Warning : ELogVerbosity::Error, MoveTemp(Message) });
-			}
+			Receive(Text, Verbosity, Category);
 		}
 
 		virtual bool CanBeUsedOnAnyThread() const override { return true; }
@@ -50,6 +28,34 @@ namespace VRM::ImportMessages
 	{
 		static FCapture Capture;
 		return Capture;
+	}
+
+	void Receive(const TCHAR* Text, ELogVerbosity::Type Verbosity, const FName& Category)
+	{
+		FCapture& Capture = GetCapture();
+		if (!Capture.bCollecting.load(std::memory_order_relaxed))
+		{
+			return;
+		}
+		const ELogVerbosity::Type Level = ELogVerbosity::Type(Verbosity & ELogVerbosity::VerbosityMask);
+		if (Level > ELogVerbosity::Warning || Level == ELogVerbosity::NoLogging)
+		{
+			return;
+		}
+		// By name: builds without logging have no category objects to ask (FNoLoggingCategory).
+		static const FName InterchangeCategory(TEXT("LogVRMInterchange"));
+		static const FName SpringCategory(TEXT("LogVRMSpring"));
+		if (Category != InterchangeCategory && Category != SpringCategory)
+		{
+			return;
+		}
+		FString Message(Text);
+		Message.RemoveFromStart(TEXT("[VRMInterchange] "));
+		FScopeLock Lock(&Capture.Mutex);
+		if (Capture.Messages.Num() < MaxMessages)
+		{
+			Capture.Messages.Add({ Level == ELogVerbosity::Warning ? ELogVerbosity::Warning : ELogVerbosity::Error, MoveTemp(Message) });
+		}
 	}
 
 	void Begin()
