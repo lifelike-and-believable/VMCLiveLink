@@ -181,7 +181,7 @@ Also: rotation is set twice in `PushFrame` (lines 383-388 and 410-417 repeat the
 
 ### VMC-20 (P2) Input validation and exposure
 - Argument types are never checked: `GetFloat()`/`GetString()` are called without `IsFloat()`/`IsString()` checks (`Source.cpp:34-36, 238-239`). Malformed packets produce zeros or empty names instead of being rejected.
-- The listener binds `0.0.0.0` (all interfaces) with no allowlist. For a live-show tool on shared networks, a bind-address option and a sender allowlist are useful. Rate limiting is already tracked in `PRODUCTION_READINESS_ACTION_ITEMS.md` §2.1.
+- The listener binds `0.0.0.0` (all interfaces) with no allowlist. For a live-show tool on shared networks, a bind-address option and a sender allowlist are useful. Rate limiting is already tracked in `docs/archive/PRODUCTION_READINESS_ACTION_ITEMS.md` §2.1.
 
 ### VMC-21 (P2) Windows-only platform allowlist
 - `VMCLiveLink.uplugin` limits both modules to `Win64`. OSC and Live Link are cross-platform, so macOS and Linux editors are excluded for no stated reason.
@@ -1090,7 +1090,7 @@ Each item can be done alongside the phase that changes the behaviour it describe
 - **Acceptance:** a new user can go from install to a moving character using only this README.
 
 ### P7.3 Architecture and developer docs
-- **Steps:** add `docs/ARCHITECTURE.md` with module diagrams for both plugins, the data flow (OSC → parser → assembler → Live Link → remapper → AnimBP; `.vrm` → `FVRMDocument` → Interchange nodes → pipelines → assets), the threading model, coordinate conventions (with a worked example), asset versioning and the test strategy. Add `CONTRIBUTING.md` (build, test, fixtures, header rule, PR checklist from B.0), which is already outlined in `PRODUCTION_READINESS_ACTION_ITEMS.md` §2.4.
+- **Steps:** add `docs/ARCHITECTURE.md` with module diagrams for both plugins, the data flow (OSC → parser → assembler → Live Link → remapper → AnimBP; `.vrm` → `FVRMDocument` → Interchange nodes → pipelines → assets), the threading model, coordinate conventions (with a worked example), asset versioning and the test strategy. Add `CONTRIBUTING.md` (build, test, fixtures, header rule, PR checklist from B.0), which is already outlined in `docs/archive/PRODUCTION_READINESS_ACTION_ITEMS.md` §2.4.
 - **Acceptance:** documents exist, are linked from the root README, and describe the post-refactor structure.
 
 ### P7.4 API documentation

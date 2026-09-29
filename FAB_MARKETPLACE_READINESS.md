@@ -35,7 +35,7 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 | `DocsURL` / `SupportURL` | Empty | Empty | Not strictly required, but expected for a paid/listed plugin and improves review odds | ⚠️ Empty |
 | `MarketplaceURL` | Empty | Empty | Populated by Epic after first listing, not a submission blocker | ➖ N/A pre-submission |
 | `IsBetaVersion` / `IsExperimentalVersion` | `false` / `false` | `false` / `false` | Fab requires these off for a public listing | ✅ |
-| Version number | `0.1.0` | `0.1.0` | No hard rule, but a `0.x` version signals "not production" to reviewers and buyers | ⚠️ Consider bumping to `1.0.0` for the public launch (also flagged in `PRODUCTION_READINESS_ANALYSIS.md` §7.1) |
+| Version number | `0.1.0` | `0.1.0` | No hard rule, but a `0.x` version signals "not production" to reviewers and buyers | ⚠️ Consider bumping to `1.0.0` for the public launch (also flagged in `docs/archive/PRODUCTION_READINESS_ANALYSIS.md` §7.1) |
 
 ## 2. Code Plugin Packaging Requirements
 
@@ -63,7 +63,7 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 - **VMCLiveLink** has a plugin icon (`Plugins/VMCLiveLink/Resources/Icon128.png`). ✅
 - **VRMInterchange has no `Resources/Icon128.png` at all** — it will fall back to Unreal's generic default plugin icon in the editor's Plugins browser, and Fab listings need their own thumbnail/icon art regardless (the in-editor icon and the Fab store thumbnail are separate assets, but a plugin with no icon at all is a visible gap even in-editor). ❌ **Action needed**
 - No marketing screenshots, demo video, or Fab store thumbnail/gallery images found anywhere in the repo for either plugin (expected — these are typically produced outside the source tree, but flagging since Fab submission requires them). ❌ **Action needed** — not a code task; needs actual content creation
-- No example/sample content package (a demo map, sample `.vrm` file, or example Live Link setup) ships with either plugin. `PRODUCTION_READINESS_ANALYSIS.md` §6.3 already flags this ("Example Content: ❌ Recommended") — worth prioritizing since reviewers and buyers both lean heavily on example content to evaluate a plugin quickly. ⚠️
+- No example/sample content package (a demo map, sample `.vrm` file, or example Live Link setup) ships with either plugin. `docs/archive/PRODUCTION_READINESS_ANALYSIS.md` §6.3 already flags this ("Example Content: ❌ Recommended") — worth prioritizing since reviewers and buyers both lean heavily on example content to evaluate a plugin quickly. ⚠️
 
 ## 6. Publisher/Process Requirements (per search results — verify against the linked docs directly)
 
@@ -75,7 +75,7 @@ These aren't things this repo can satisfy — they're account/business steps on 
 
 ## 7. Cross-check Against Existing Repo Analysis
 
-`PRODUCTION_READINESS_ANALYSIS.md` §6.3 ("Fab Marketplace Requirements") already contains an internal checklist reaching similar conclusions independently: copyright headers/metadata/docs marked done, but **plugin icons, Shipping-config testing, and example content marked as open items** — this report corroborates that assessment and adds the specific finding that VRMInterchange has no icon file at all (VMCLiveLink does), plus the licensing and platform-declaration details that document didn't cover.
+`docs/archive/PRODUCTION_READINESS_ANALYSIS.md` §6.3 ("Fab Marketplace Requirements") already contains an internal checklist reaching similar conclusions independently: copyright headers/metadata/docs marked done, but **plugin icons, Shipping-config testing, and example content marked as open items** — this report corroborates that assessment and adds the specific finding that VRMInterchange has no icon file at all (VMCLiveLink does), plus the licensing and platform-declaration details that document didn't cover.
 
 ---
 
@@ -85,7 +85,7 @@ These aren't things this repo can satisfy — they're account/business steps on 
 2. **Add a `Resources/Icon128.png` to `Plugins/VRMInterchange`** — currently missing entirely.
 3. **Manually verify a clean Shipping-config package build** for both plugins on an actual Windows/UE 5.6 machine (cannot be verified from this sandbox — no UE toolchain here).
 4. **Produce listing assets**: Fab store thumbnail, screenshots, and ideally a short demo video for both plugins — not a code task.
-5. **Add example content** (sample `.vrm` file + demo map/setup) — flagged independently by both this report and the existing `PRODUCTION_READINESS_ANALYSIS.md`.
+5. **Add example content** (sample `.vrm` file + demo map/setup) — flagged independently by both this report and the existing `docs/archive/PRODUCTION_READINESS_ANALYSIS.md`.
 6. **Declare `SupportedTargetPlatforms` explicitly** in both `.uplugin` files (currently implicit via module-level `IncludeListPlatforms`), and state "Windows only" plainly in both listings unless cross-platform support is added first.
 7. **Decide on version number** — bump `0.1.0` → `1.0.0` for public launch, or keep as-is and accept it reads as pre-release to buyers.
 8. **Complete the publisher-side steps** (Distribution Agreement, Trader Verification, pricing) — independent of this repo, needs to happen on the Fab dashboard directly.
