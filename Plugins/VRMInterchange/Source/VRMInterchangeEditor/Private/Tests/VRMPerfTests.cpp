@@ -12,6 +12,7 @@
 #include "Math/RandomStream.h"
 #include "Mesh/InterchangeMeshPayload.h"
 #include "Modules/ModuleManager.h"
+#include "StaticMeshAttributes.h"
 #include "Texture/InterchangeTexturePayloadData.h"
 #include "VRMSpringSolver.h"
 #include "VRMTranslator.h"
@@ -108,27 +109,56 @@ bool FVRMPerfMeshPayload::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Base triangles"), Data.MeshDescription.Triangles().Num(), NumTris);
 	}
 
-	const double MorphStart = FPlatformTime::Seconds();
-	for (int32 m = 0; m < NumMorphs; ++m)
+	// Morph targets, rebuilt from scratch and (as the translator does since P5.5) from the base payload.
+	UE::Interchange::FMeshPayloadData Base;
+	VRM::BuildMeshPayload(Model, INDEX_NONE, Base);
+	double MorphTotal = 0.0;
+	double MorphFromBaseTotal = 0.0;
+	for (const bool bFromBase : { false, true })
 	{
-		UE::Interchange::FMeshPayloadData Data;
-		if (!TestTrue(TEXT("Morph payload builds"), VRM::BuildMeshPayload(Model, m, Data)))
+		const double Start = FPlatformTime::Seconds();
+		for (int32 m = 0; m < NumMorphs; ++m)
 		{
-			return false;
+			UE::Interchange::FMeshPayloadData Data;
+			if (!TestTrue(TEXT("Morph payload builds"), VRM::BuildMeshPayload(Model, m, Data, bFromBase ? &Base : nullptr)))
+			{
+				return false;
+			}
+			if (m == 0)
+			{
+				TestEqual(TEXT("Morph vertices"), Data.MeshDescription.Vertices().Num(), NumVerts);
+				TestEqual(TEXT("Morph triangles"), Data.MeshDescription.Triangles().Num(), NumTris);
+			}
 		}
-		if (m == 0)
-		{
-			TestEqual(TEXT("Morph vertices"), Data.MeshDescription.Vertices().Num(), NumVerts);
-		}
+		(bFromBase ? MorphFromBaseTotal : MorphTotal) = FPlatformTime::Seconds() - Start;
 	}
-	const double MorphTotal = FPlatformTime::Seconds() - MorphStart;
+
+	// Both ways give the same morph target: positions, and normals for a target with normal deltas.
+	{
+		UE::Interchange::FMeshPayloadData Scratch, FromBase;
+		VRM::BuildMeshPayload(Model, 0, Scratch);
+		VRM::BuildMeshPayload(Model, 0, FromBase, &Base);
+		FStaticMeshAttributes A(Scratch.MeshDescription), B(FromBase.MeshDescription);
+		bool bSamePositions = true;
+		for (int32 v = 0; v < NumVerts && bSamePositions; v += 997)
+		{
+			bSamePositions = A.GetVertexPositions()[FVertexID(v)].Equals(B.GetVertexPositions()[FVertexID(v)]);
+		}
+		bool bSameNormals = true;
+		for (int32 c = 0; c < NumTris * 3 && bSameNormals; c += 997)
+		{
+			bSameNormals = A.GetVertexInstanceNormals()[FVertexInstanceID(c)].Equals(B.GetVertexInstanceNormals()[FVertexInstanceID(c)]);
+		}
+		TestTrue(TEXT("From the base: same positions"), bSamePositions);
+		TestTrue(TEXT("From the base: same normals (target 0 has normal deltas)"), bSameNormals);
+	}
 
 	UE::Interchange::FMeshPayloadData Bad;
 	TestFalse(TEXT("Out-of-range morph"), VRM::BuildMeshPayload(Model, NumMorphs, Bad));
 
 	Report(*this, FString::Printf(TEXT("mesh payload, base (%d vertices, %d triangles)"), NumVerts, NumTris), BaseBest * 1000.0, TEXT("ms"));
-	Report(*this, FString::Printf(TEXT("mesh payload, %d morph targets"), NumMorphs), MorphTotal * 1000.0, TEXT("ms"));
-	Report(*this, TEXT("mesh payload, per morph target"), MorphTotal * 1000.0 / NumMorphs, TEXT("ms"));
+	Report(*this, FString::Printf(TEXT("mesh payload, %d morph targets rebuilt"), NumMorphs), MorphTotal * 1000.0, TEXT("ms"));
+	Report(*this, FString::Printf(TEXT("mesh payload, %d morph targets from the base"), NumMorphs), MorphFromBaseTotal * 1000.0, TEXT("ms"));
 	return true;
 }
 

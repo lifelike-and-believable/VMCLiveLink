@@ -56,6 +56,10 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     // The file is read and parsed once (P3.3). The model is built from that document, and the
     // document's JSON and hash go to the pipelines in a UInterchangeVRMNode.
     ParsedModel.Reset();
+    {
+        FScopeLock Lock(&BasePayloadLock);
+        BasePayload.Reset();
+    }
     FString LoadError;
     const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(GetSourceData()->GetFilename(), LoadError);
     const TSharedRef<FVRMParsedModel> Model = MakeShared<FVRMParsedModel>();
@@ -437,8 +441,28 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
         }
     }
 
+    // The base payload is built once and copied: a morph target shares its topology (P5.5).
+    TSharedPtr<const UE::Interchange::FMeshPayloadData> Base;
+    {
+        FScopeLock Lock(&BasePayloadLock);
+        if (!BasePayload.IsValid())
+        {
+            TSharedRef<UE::Interchange::FMeshPayloadData> Built = MakeShared<UE::Interchange::FMeshPayloadData>();
+            if (!VRM::BuildMeshPayload(*ParsedModel, INDEX_NONE, *Built))
+            {
+                return {};
+            }
+            BasePayload = Built;
+        }
+        Base = BasePayload;
+    }
+    if (MorphIndex == INDEX_NONE)
+    {
+        return *Base;
+    }
+
     UE::Interchange::FMeshPayloadData Data;
-    if (!VRM::BuildMeshPayload(*ParsedModel, MorphIndex, Data))
+    if (!VRM::BuildMeshPayload(*ParsedModel, MorphIndex, Data, Base.Get()))
     {
         return {};
     }
@@ -447,7 +471,8 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
 
 namespace VRM
 {
-    bool BuildMeshPayload(const FVRMParsedModel& Parsed, int32 MorphIndex, UE::Interchange::FMeshPayloadData& Data)
+    bool BuildMeshPayload(const FVRMParsedModel& Parsed, int32 MorphIndex, UE::Interchange::FMeshPayloadData& Data,
+        const UE::Interchange::FMeshPayloadData* Base)
     {
         const FVRMParsedMesh& PMesh = Parsed.Mesh;
         const FVRMParsedMorph* PMorph = nullptr;
@@ -458,6 +483,44 @@ namespace VRM
                 return false;
             }
             PMorph = &PMesh.Morphs[MorphIndex];
+        }
+
+        // A morph target from the base payload: same vertices, triangles, UVs and weights; only
+        // the positions and (with NORMAL deltas) the normals differ. The base's vertex i is model
+        // vertex i, and its vertex instance c is the corner Indices[c] (both created in order below).
+        if (PMorph && Base
+            && Base->MeshDescription.Vertices().Num() == PMesh.Positions.Num()
+            && Base->MeshDescription.VertexInstances().Num() == PMesh.Indices.Num())
+        {
+            Data = *Base;
+            FStaticMeshAttributes Attributes(Data.MeshDescription);
+            if (PMorph->DeltaPositions.Num() == PMesh.Positions.Num())
+            {
+                TVertexAttributesRef<FVector3f> Positions = Attributes.GetVertexPositions();
+                for (int32 vi = 0; vi < PMesh.Positions.Num(); ++vi)
+                {
+                    Positions[FVertexID(vi)] = PMesh.Positions[vi] + PMorph->DeltaPositions[vi];
+                }
+            }
+            if (PMorph->DeltaNormals.Num() == PMesh.Normals.Num())
+            {
+                TArray<FVector3f> Morphed;
+                Morphed.SetNumUninitialized(PMesh.Normals.Num());
+                for (int32 n = 0; n < PMesh.Normals.Num(); ++n)
+                {
+                    Morphed[n] = (PMesh.Normals[n] + PMorph->DeltaNormals[n]).GetSafeNormal(UE_SMALL_NUMBER, PMesh.Normals[n]);
+                }
+                TVertexInstanceAttributesRef<FVector3f> InstanceNormals = Attributes.GetVertexInstanceNormals();
+                for (int32 c = 0; c < PMesh.Indices.Num(); ++c)
+                {
+                    const int32 Vertex = int32(PMesh.Indices[c]);
+                    if (Morphed.IsValidIndex(Vertex))
+                    {
+                        InstanceNormals[FVertexInstanceID(c)] = Morphed[Vertex];
+                    }
+                }
+            }
+            return true;
         }
 
         FMeshDescription& MD = Data.MeshDescription;
@@ -554,8 +617,8 @@ namespace VRM
             for (int32 vi = 0; vi < NumVerts; ++vi)
             {
                 const FVRMParsedMesh::FWeight& W = PMesh.SkinWeights[vi];
-                TArray<UE::AnimationCore::FBoneWeight> BW;
-                BW.Reserve(4);
+                // At most four influences: on the stack, not a heap allocation per vertex (P5.4)
+                TArray<UE::AnimationCore::FBoneWeight, TInlineAllocator<4>> BW;
                 for (int32 k = 0; k < 4; ++k)
                 {
                     const float w = W.Weight[k];

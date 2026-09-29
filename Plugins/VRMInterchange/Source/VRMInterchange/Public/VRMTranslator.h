@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "InterchangeTranslatorBase.h"
 #include "VRMParsedModel.h"
+#include "HAL/CriticalSection.h"
 
 #if __has_include("Mesh/InterchangeMeshPayloadInterface.h")
   #include "Mesh/InterchangeMeshPayloadInterface.h"
@@ -51,8 +52,12 @@ namespace VRM
     /**
      * The skeletal mesh payload for the model's merged mesh (MorphIndex INDEX_NONE), or for one of
      * its morph targets (the mesh moved by that target's deltas). False if MorphIndex is out of range.
+     *
+     * For a morph target, Base (the model's base payload, from this function) saves rebuilding the
+     * topology: the payload is a copy of it with the target's positions and normals (P5.5).
      */
-    VRMINTERCHANGE_API bool BuildMeshPayload(const FVRMParsedModel& Model, int32 MorphIndex, UE::Interchange::FMeshPayloadData& Out);
+    VRMINTERCHANGE_API bool BuildMeshPayload(const FVRMParsedModel& Model, int32 MorphIndex, UE::Interchange::FMeshPayloadData& Out,
+        const UE::Interchange::FMeshPayloadData* Base = nullptr);
 }
 
 #include "VRMTranslator.generated.h"
@@ -84,6 +89,11 @@ private:
     // The model Translate built, shared read-only with the payload calls that follow it. Interchange
     // translators are const but keep their translation for the payload calls, hence mutable.
     mutable TSharedPtr<const FVRMParsedModel> ParsedModel;
+
+    // The base mesh payload, built once on the first mesh payload request and copied for the base
+    // and every morph target (P5.5). Payload calls may run in parallel, hence the lock.
+    mutable TSharedPtr<const UE::Interchange::FMeshPayloadData> BasePayload;
+    mutable FCriticalSection BasePayloadLock;
 
     FString MakeNodeUid(const TCHAR* Suffix) const;
 };

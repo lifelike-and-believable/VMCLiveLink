@@ -66,6 +66,7 @@ public class VRMInterchangeEditor : ModuleRules
 
             // FMeshDescription, for the mesh payload benchmark (Phase 5)
             "MeshDescription",
+            "StaticMeshDescription", // FStaticMeshAttributes, to compare morph payloads
         });
 
         // The tests in Private/Tests include this module's private headers. VRMInterchange's headers
