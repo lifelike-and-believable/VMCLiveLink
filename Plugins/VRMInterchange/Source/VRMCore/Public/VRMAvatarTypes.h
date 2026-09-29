@@ -106,7 +106,7 @@ struct VRMCORE_API FVRMMaterialColorBind
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Property;
 
-	/** The colour at full expression (linear). */
+	/** The colour at full expression. VRM 1.0: linear. VRM 0.x: as the file gives it (gamma-encoded). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FLinearColor TargetValue = FLinearColor::White;
 };
@@ -121,11 +121,12 @@ struct VRMCORE_API FVRMTextureTransformBind
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Material;
 
-	/** UV scale at full expression. */
+	/** UV scale at full expression. VRM 1.0: glTF convention. VRM 0.x: Unity _ST scale, as the file gives it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVector2D Scale = FVector2D(1.0, 1.0);
 
-	/** UV offset at full expression. */
+	/** UV offset at full expression, in UV units. VRM 1.0: glTF convention (origin top left). VRM 0.x: Unity
+	 *  _ST offset (origin bottom left), as the file gives it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVector2D Offset = FVector2D::ZeroVector;
 };

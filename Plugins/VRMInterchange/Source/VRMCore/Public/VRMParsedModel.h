@@ -59,7 +59,7 @@ struct FVRMParsedMesh
     /** The morph targets, each with a delta for every vertex. */
     TArray<FVRMParsedMorph> Morphs;
 
-    /** Material of a mesh without per-triangle materials. */
+    /** Unused: TriMaterialIndex is always filled. */
     int32 MaterialIndex = 0;
 };
 

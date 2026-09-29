@@ -16,6 +16,7 @@ class VRMINTERCHANGEEDITOR_API UVRMInterchangeSettings : public UDeveloperSettin
 {
     GENERATED_BODY()
 public:
+	/** Sets the defaults (config values then override them). */
 	UVRMInterchangeSettings();
 
     // Spring Bones ---------------------------------------------------------------

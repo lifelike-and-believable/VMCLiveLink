@@ -63,7 +63,7 @@ namespace VRM
 #include "VRMTranslator.generated.h"
 
 /**
- * The Interchange translator for .vrm files (and .glb/.gltf with VRM extensions). Translate reads
+ * The Interchange translator for .vrm files. Translate reads
  * the file once (FVRMDocument), builds the model in UE space (VRM::BuildParsedModel), and creates
  * the Interchange nodes: skeleton, skeletal mesh, morph targets, textures and materials, plus an
  * UInterchangeVRMNode for the pipelines. Mesh and texture payloads are then built from the kept

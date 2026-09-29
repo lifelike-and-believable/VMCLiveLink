@@ -13,7 +13,8 @@
  * anim node (FAnimNode_VRMSpringBones) simulates it; see FVRMSpringConfig for each field's unit and
  * space.
  *
- * Edited on the game thread (details panel, editing tools); every edit bumps EditRevision, which
+ * Edited on the game thread (details panel, editing tools); edits to joint and spring parameters,
+ * springs and colliders, and the editing tools, bump EditRevision, which
  * running anim nodes compare against to rebuild their setup. Saved data is versioned with
  * FVRMSpringDataCustomVersion.
  */
@@ -35,7 +36,8 @@ public:
     TMap<int32, FVRMNodeChildren> NodeChildren;
 
     /** Per joint (index into SpringConfig.Joints), the glTF node its tail points at: the next joint
-     *  of its spring when that is a child, else INDEX_NONE for a virtual tail. BuildResolvedChildren. */
+     *  of its spring when that is a child, else the first child that is any spring's joint, else
+     *  INDEX_NONE for a virtual tail. BuildResolvedChildren. */
     UPROPERTY(VisibleAnywhere, Category="VRM|Hierarchy")
     TArray<int32> ResolvedChildNodeIndexPerJoint;
 
@@ -50,7 +52,7 @@ public:
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     FString SourceFilename;
 
-    /** Goes up with every edit, so running anim nodes rebuild their setup. */
+    /** Goes up with edits to parameters, springs and colliders, so running anim nodes rebuild their setup. */
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     int32 EditRevision = 0;
 

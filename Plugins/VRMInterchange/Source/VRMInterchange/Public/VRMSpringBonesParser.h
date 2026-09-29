@@ -9,8 +9,8 @@ class FVRMDocument;
 /**
  * Reads a VRM file's spring bones (VRM 0.x secondaryAnimation or VRM 1.0 VRMC_springBone) into an
  * FVRMSpringConfig, converted to UE units and axes (see FVRMSpringConfig). Each returns false, with
- * OutError set, if the data can't be read; a file with no spring bones gives an empty config (Spec
- * None). Any thread: they touch no UObjects.
+ * OutError set, if the data can't be read, and also when the file has no spring bones (OutConfig is
+ * then empty, Spec None). Any thread: they touch no UObjects.
  */
 namespace VRM
 {

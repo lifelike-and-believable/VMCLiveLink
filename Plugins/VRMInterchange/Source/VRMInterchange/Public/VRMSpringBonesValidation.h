@@ -13,7 +13,7 @@ namespace VRM
     
     VRMINTERCHANGE_API struct FVRMValidationResult
     {
-        /** False once any error is added (and for an empty config). */
+        /** False once any error is added (and when Spec is None). */
         bool bIsValid = false;
         /** Problems that don't stop the springs from running (the import logs them as warnings). */
         TArray<FString> Warnings;

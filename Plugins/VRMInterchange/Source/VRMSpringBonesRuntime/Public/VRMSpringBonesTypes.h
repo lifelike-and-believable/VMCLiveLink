@@ -134,9 +134,10 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpring
     UPROPERTY(VisibleAnywhere, Category="VRM") TArray<int32> JointIndices;
     /** Indices into FVRMSpringConfig::ColliderGroups. */
     UPROPERTY(VisibleAnywhere, Category="VRM") TArray<int32> ColliderGroupIndices;
-    /** glTF node of the spring's center: tails are simulated in its space instead of world space. */
+    /** glTF node of the spring's center: tails are simulated in its space instead of the node's
+     *  simulation space (world, or component if the node says so). */
     UPROPERTY(VisibleAnywhere, Category="VRM") int32 CenterNodeIndex = INDEX_NONE;
-    /** The skeleton bone for CenterNodeIndex, or None for world space. */
+    /** The skeleton bone for CenterNodeIndex, or None for the simulation space. */
     UPROPERTY(VisibleAnywhere, Category="VRM") FName CenterBoneName;
 
     // Editing helpers: the solver reads each joint's own parameters (FVRMSpringJoint). Changing one of

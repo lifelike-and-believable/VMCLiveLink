@@ -73,8 +73,8 @@ struct FVRMMToon
 
 	// Outline
 	EVRMOutlineWidthMode OutlineWidthMode = EVRMOutlineWidthMode::None;
-	/** As the file gives it: metres (WorldCoordinates) or a fraction of the screen height
-	 *  (ScreenCoordinates). The outline material takes it in the same unit. */
+	/** Metres (WorldCoordinates) or a fraction of the screen height (ScreenCoordinates); VRM 0.x values
+	 *  are converted to these. The outline material takes it in the same unit. */
 	float OutlineWidth = 0.f;
 	int32 OutlineWidthMultiplyTexture = INDEX_NONE;
 	FLinearColor OutlineColor = FLinearColor::Black;

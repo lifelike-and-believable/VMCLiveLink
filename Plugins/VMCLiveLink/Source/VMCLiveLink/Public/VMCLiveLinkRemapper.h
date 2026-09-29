@@ -39,7 +39,7 @@ struct FVMCRemapConfig
 	/** Incoming curve name to target curve name. */
 	TMap<FName, FName> CurveNameMap;
 
-	/** Local rest translation of each bone of the target skeleton, by target (remapped) name. */
+	/** Local rest translation of each bone of the target skeleton (cm, parent bone space), by target (remapped) name. */
 	TMap<FName, FVector> RefTranslations;
 	/** Give bones the stream sends without a translation their target skeleton's rest translation. */
 	bool bUseRefTranslations = true;
@@ -83,10 +83,10 @@ public:
 	const FVMCRemapConfig& GetConfig() const { return Config; }
 
 	/** Renames bones and curves, appends the normalizer's curves, and resolves what RemapFrameData
-	 *  needs by index. Live Link calls it on the thread that pushes static data. */
+	 *  needs by index. May run off the game thread. */
 	virtual void RemapStaticData(FLiveLinkStaticDataStruct& InOutStaticData) override;
 	/** Gives rotation-only bones their rest translations (cm, parent space) and fills the added
-	 *  curves, by index. Called on the thread that pushes the frame (the source's receive thread by default). */
+	 *  curves, by index. May run off the game thread. */
 	virtual void RemapFrameData(const FLiveLinkStaticDataStruct& InStatic, FLiveLinkFrameDataStruct& InOutFrameData) override;
 
 private:

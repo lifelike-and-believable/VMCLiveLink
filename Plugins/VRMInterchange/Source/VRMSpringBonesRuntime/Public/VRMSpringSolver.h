@@ -79,7 +79,6 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSetup
 };
 
 /** How the solver steps (the anim node's settings). */
-
 struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSettings
 {
 	/** Simulation steps per second. */
@@ -109,7 +108,7 @@ struct FVRMSpringSolverJointDebug
 	FVector Tail = FVector::ZeroVector;
 	/** Where the tail was a step earlier, cm. */
 	FVector PrevTail = FVector::ZeroVector;
-	/** Where the tail would be without simulation (the animated pose), cm. */
+	/** Where the tail would be if the joint followed its parent rigidly, cm. */
 	FVector RestTail = FVector::ZeroVector;
 	/** The joint's hit radius, cm. */
 	float HitRadius = 0.f;

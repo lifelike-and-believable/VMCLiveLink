@@ -87,8 +87,8 @@ public:
     /** Shows the source's settings in the panel. The source was created from its connection
      *  string (also when a Live Link preset is applied), so its settings are the truth. */
     virtual void InitializeSettings(ULiveLinkSourceSettings* InSettings) override;
-    /** Applies an edit: a new port, bind address, path or subject restarts receiving; other settings
-     *  apply to the next frame. Invalid values are logged and the panel goes back to the settings in use. */
+    /** Applies an edit: a new port, bind address, path, subject, sender rule or device/camera setting
+     *  restarts receiving; other settings apply to the next frame. Invalid values are logged and the panel goes back to the settings in use. */
     virtual void OnSettingsChanged(ULiveLinkSourceSettings* InSettings, const FPropertyChangedEvent& PropertyChangedEvent) override;
 
     /** VMC.Stats for this source: message rates per address since the last call, and the addresses
