@@ -46,6 +46,8 @@ public class VRMInterchangeEditor : ModuleRules
             "SlateCore",
             "ContentBrowser", // the import report's "Show in Content Browser"
             "MessageLog",     // the "VRM Import" message log (P6.3)
+            "PropertyEditor", // the spring data asset's editing tools (P6.4)
+            "InputCore",      // key handling in the details widgets
 
             // Runtime plugin module this editor module depends on
             "VRMInterchange",

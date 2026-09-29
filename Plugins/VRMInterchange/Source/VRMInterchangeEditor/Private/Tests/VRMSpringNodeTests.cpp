@@ -275,4 +275,78 @@ bool FVRMSpringNodeLOD::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringDataScaleReset, "VRM.SpringBones.Editing.ScaleAndReset",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMSpringDataScaleReset::RunTest(const FString& Parameters)
+{
+	using namespace VRMSpringNodeTests;
+	// P6.4: scale every spring at once, then put a spring back to the file's values.
+	UVRMSpringBoneData* Data = MakeHair(0.2f);
+	TestFalse(TEXT("No file values recorded yet"), Data->HasSourceValues());
+	TestFalse(TEXT("So no reset"), Data->ResetSpringToSource(0));
+	Data->CaptureSourceValues();
+	TestTrue(TEXT("File values recorded"), Data->HasSourceValues());
+
+	const int32 RevisionBefore = Data->EditRevision;
+	Data->ScaleParameters(2.f, 3.f, 0.5f);
+	const FVRMSpringJoint& Joint = Data->SpringConfig.Joints[0];
+	TestEqual(TEXT("Stiffness scaled"), Joint.Stiffness, 0.4f, 1.0e-5f);
+	TestEqual(TEXT("Drag scaled and clamped to 1"), Joint.Drag, 1.f, 1.0e-5f);
+	TestEqual(TEXT("Gravity scaled"), Joint.GravityPower, 250.f, 1.0e-3f);
+	TestTrue(TEXT("Running nodes see a new revision"), Data->EditRevision > RevisionBefore);
+
+	TestTrue(TEXT("Reset"), Data->ResetSpringToSource(0));
+	TestEqual(TEXT("Stiffness back"), Data->SpringConfig.Joints[1].Stiffness, 0.2f, 1.0e-5f);
+	TestEqual(TEXT("Drag back"), Data->SpringConfig.Joints[1].Drag, 0.4f, 1.0e-5f);
+	TestEqual(TEXT("Gravity back"), Data->SpringConfig.Joints[1].GravityPower, 500.f, 1.0e-3f);
+	TestFalse(TEXT("No such spring"), Data->ResetSpringToSource(5));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringNodeLiveEdit, "VRM.SpringBones.Node.LiveEdit",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMSpringNodeLiveEdit::RunTest(const FString& Parameters)
+{
+	using namespace VRMSpringNodeTests;
+	// P6.4's acceptance: editing the asset changes a running node's simulation, with no recompile or
+	// rebuild call. Sideways gravity swings the chain; with gravity scaled to 0 and full stiffness it
+	// returns to its rest pose (straight down, x = 0).
+	FMemMark Mark(FMemStack::Get());
+	FRig Rig;
+	FPose Pose(Rig, { 0, 1, 2, 3 });
+	FAnimNode_VRMSpringBones Node;
+	UVRMSpringBoneData* Data = MakeHair(0.2f);
+	Node.SpringData = Data;
+	Node.RebuildForBones(Pose.Bones);
+
+	TArray<FBoneTransform> Out;
+	for (int32 Frame = 0; Frame < 30; ++Frame)
+	{
+		Step(Node, Pose, Out);
+	}
+	auto MaxSideways = [&Out]()
+	{
+		double Max = 0.0;
+		for (const FBoneTransform& Bone : Out)
+		{
+			Max = FMath::Max(Max, FMath::Abs(Bone.Transform.GetTranslation().X));
+		}
+		return Max;
+	};
+	if (!TestEqual(TEXT("Both simulated joints are written"), Out.Num(), 2)) return false;
+	const double Before = MaxSideways();
+	TestTrue(FString::Printf(TEXT("Gravity swings the chain sideways (%.2f cm)"), Before), Before > 1.0);
+
+	Data->ScaleParameters(10.f, 1.f, 0.f); // stiffness clamps to 1, gravity off
+	for (int32 Frame = 0; Frame < 90; ++Frame)
+	{
+		Step(Node, Pose, Out);
+	}
+	const double After = MaxSideways();
+	TestTrue(FString::Printf(TEXT("The edit reaches the running node: back to rest (%.2f cm)"), After), After < 0.5);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

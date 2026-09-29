@@ -120,10 +120,67 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
     }
 }
 
+void UVRMSpringBonesPostImportPipeline::CopySpringData(const UVRMSpringBoneData& Parsed, UVRMSpringBoneData& Dest, bool bReplacingExisting)
+{
+    Dest.SpringConfig = Parsed.SpringConfig;
+    Dest.NodeParent   = Parsed.NodeParent;
+    Dest.NodeChildren = Parsed.NodeChildren;
+    Dest.SetNodeToBoneMapping(Parsed.NodeToBoneMap);
+    if (Dest.NodeChildren.Num() > 0)
+    {
+        Dest.BuildResolvedChildren();
+    }
+    Dest.SourceFilename = Parsed.SourceFilename;
+    Dest.SourceHash     = Parsed.SourceHash;
+    Dest.bNeedsReimport = false; // freshly parsed, so current (FVRMSpringDataCustomVersion)
+    Dest.CaptureSourceValues();  // what "Reset Spring to File Values" goes back to (P6.4)
+    if (bReplacingExisting)
+    {
+        // A new effective hash makes running spring nodes pick up the replaced data.
+        ++Dest.EditRevision;
+    }
+}
+
+bool UVRMSpringBonesPostImportPipeline::ReimportFromSource(UVRMSpringBoneData* Data, FString& OutError)
+{
+    if (!Data)
+    {
+        OutError = TEXT("no spring data");
+        return false;
+    }
+    if (Data->SourceFilename.IsEmpty())
+    {
+        OutError = TEXT("the spring data doesn't record its source file");
+        return false;
+    }
+    FString LoadError;
+    const TSharedPtr<const FVRMDocument> Document = FVRMDocument::LoadFile(Data->SourceFilename, LoadError);
+    if (!Document.IsValid())
+    {
+        OutError = FString::Printf(TEXT("can't read '%s': %s"), *Data->SourceFilename, *LoadError);
+        return false;
+    }
+    UVRMSpringBoneData* Parsed = NewObject<UVRMSpringBoneData>(GetTransientPackage(), NAME_None);
+    if (!ParseAndFillDataAsset(*Document, Parsed))
+    {
+        OutError = FString::Printf(TEXT("'%s' has no valid spring bone data"), *Data->SourceFilename);
+        return false;
+    }
+    int32 ResolvedColliders = 0, ResolvedJoints = 0, ResolvedCenters = 0;
+    ResolveBoneNames(*Document, Parsed->SpringConfig, ResolvedColliders, ResolvedJoints, ResolvedCenters);
+    Parsed->SourceFilename = Data->SourceFilename;
+    Parsed->SourceHash = LexToString(Document->GetSourceHash());
+
+    Data->Modify();
+    CopySpringData(*Parsed, *Data, /*bReplacingExisting*/ true);
+    Data->MarkPackageDirty();
+    return true;
+}
+
 // ParseAndFillDataAsset
 // - Parses the document's spring config into a runtime asset container
 // - The container is transient here; the asset is created in OnSkeletalMeshImported
-bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest) const
+bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest)
 {
     if (!Dest) return false;
     const FString& Filename = Document.GetFilename();
@@ -170,7 +227,7 @@ bool UVRMSpringBonesPostImportPipeline::ParseAndFillDataAsset(const FVRMDocument
     return Dest->SpringConfig.IsValid();
 }
 
-bool UVRMSpringBonesPostImportPipeline::ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const
+bool UVRMSpringBonesPostImportPipeline::ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters)
 {
     OutResolvedColliders = OutResolvedJoints = OutResolvedCenters = 0;
     if (!InOut.IsValid()) return false;
@@ -302,22 +359,7 @@ void UVRMSpringBonesPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Sk
         if (SpringDataAsset)
         {
             // Replaced in place when reused, so anim nodes and ABPs pointing at it keep working.
-            SpringDataAsset->SpringConfig = StagedSpringData->SpringConfig;
-            SpringDataAsset->NodeParent   = StagedSpringData->NodeParent;
-            SpringDataAsset->NodeChildren = StagedSpringData->NodeChildren;
-            SpringDataAsset->SetNodeToBoneMapping(StagedSpringData->NodeToBoneMap);
-            if (SpringDataAsset->NodeChildren.Num() > 0)
-            {
-                SpringDataAsset->BuildResolvedChildren();
-            }
-            SpringDataAsset->SourceFilename = StagedSpringData->SourceFilename;
-            SpringDataAsset->SourceHash     = StagedSpringData->SourceHash;
-            SpringDataAsset->bNeedsReimport = false; // freshly parsed, so current (FVRMSpringDataCustomVersion)
-            if (bReused)
-            {
-                // A new effective hash makes running spring nodes pick up the replaced data.
-                ++SpringDataAsset->EditRevision;
-            }
+            CopySpringData(*StagedSpringData, *SpringDataAsset, bReused);
             SpringDataAsset->MarkPackageDirty();
         }
     }

@@ -120,50 +120,7 @@ void UVRMSpringBoneData::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
     if (bBump)
     {
         ++EditRevision;
-
-        // Clamp Spring tunables
-        for (FVRMSpring& Spring : SpringConfig.Springs)
-        {
-            Spring.Stiffness = FMath::Clamp(Spring.Stiffness, 0.f, 1.f);
-            Spring.Drag = FMath::Clamp(Spring.Drag, 0.f, 1.f);
-            // A zero direction falls back to down, as on import (VRMSpringBonesParser.cpp).
-            Spring.GravityDir = Spring.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
-            Spring.GravityPower = FMath::Max(0.f, Spring.GravityPower);
-            Spring.HitRadius = FMath::Max(0.f, Spring.HitRadius);
-        }
-
-        for (FVRMSpringJoint& Joint : SpringConfig.Joints)
-        {
-            Joint.Stiffness = FMath::Clamp(Joint.Stiffness, 0.f, 1.f);
-            Joint.Drag = FMath::Clamp(Joint.Drag, 0.f, 1.f);
-            Joint.GravityDir = Joint.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
-            Joint.GravityPower = FMath::Max(0.f, Joint.GravityPower);
-            Joint.HitRadius = FMath::Max(0.f, Joint.HitRadius);
-        }
-
-        // Sanitize Colliders
-        for (FVRMSpringCollider& Col : SpringConfig.Colliders)
-        {
-            for (FVRMSpringColliderSphere& S : Col.Spheres)
-            {
-                S.Radius = FMath::Max(0.f, S.Radius);
-            }
-            for (FVRMSpringColliderCapsule& C : Col.Capsules)
-            {
-                C.Radius = FMath::Max(0.f, C.Radius);
-            }
-            for (FVRMSpringColliderPlane& P : Col.Planes)
-            {
-                if (P.Normal.IsNearlyZero())
-                {
-                    P.Normal = FVector(0,0,1);
-                }
-                else
-                {
-                    P.Normal = P.Normal.GetSafeNormal();
-                }
-            }
-        }
+        SanitizeParameters();
     }
 }
 
@@ -262,3 +219,110 @@ void UVRMSpringBoneData::BuildResolvedChildren()
 }
 
 #endif
+
+void UVRMSpringBoneData::SanitizeParameters()
+{
+    // Clamp Spring tunables
+    for (FVRMSpring& Spring : SpringConfig.Springs)
+    {
+        Spring.Stiffness = FMath::Clamp(Spring.Stiffness, 0.f, 1.f);
+        Spring.Drag = FMath::Clamp(Spring.Drag, 0.f, 1.f);
+        // A zero direction falls back to down, as on import (VRMSpringBonesParser.cpp).
+        Spring.GravityDir = Spring.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
+        Spring.GravityPower = FMath::Max(0.f, Spring.GravityPower);
+        Spring.HitRadius = FMath::Max(0.f, Spring.HitRadius);
+    }
+
+    for (FVRMSpringJoint& Joint : SpringConfig.Joints)
+    {
+        Joint.Stiffness = FMath::Clamp(Joint.Stiffness, 0.f, 1.f);
+        Joint.Drag = FMath::Clamp(Joint.Drag, 0.f, 1.f);
+        Joint.GravityDir = Joint.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
+        Joint.GravityPower = FMath::Max(0.f, Joint.GravityPower);
+        Joint.HitRadius = FMath::Max(0.f, Joint.HitRadius);
+    }
+
+    // Sanitize Colliders
+    for (FVRMSpringCollider& Col : SpringConfig.Colliders)
+    {
+        for (FVRMSpringColliderSphere& S : Col.Spheres)
+        {
+            S.Radius = FMath::Max(0.f, S.Radius);
+        }
+        for (FVRMSpringColliderCapsule& C : Col.Capsules)
+        {
+            C.Radius = FMath::Max(0.f, C.Radius);
+        }
+        for (FVRMSpringColliderPlane& P : Col.Planes)
+        {
+            if (P.Normal.IsNearlyZero())
+            {
+                P.Normal = FVector(0,0,1);
+            }
+            else
+            {
+                P.Normal = P.Normal.GetSafeNormal();
+            }
+        }
+    }
+}
+
+void UVRMSpringBoneData::CaptureSourceValues()
+{
+    SourceJoints = SpringConfig.Joints;
+    SourceSprings = SpringConfig.Springs;
+}
+
+bool UVRMSpringBoneData::HasSourceValues() const
+{
+    return SourceJoints.Num() > 0 && SourceJoints.Num() == SpringConfig.Joints.Num() && SourceSprings.Num() == SpringConfig.Springs.Num();
+}
+
+void UVRMSpringBoneData::ScaleParameters(float StiffnessScale, float DragScale, float GravityScale)
+{
+    for (FVRMSpringJoint& Joint : SpringConfig.Joints)
+    {
+        Joint.Stiffness *= StiffnessScale;
+        Joint.Drag *= DragScale;
+        Joint.GravityPower *= GravityScale;
+    }
+    for (FVRMSpring& Spring : SpringConfig.Springs)
+    {
+        Spring.Stiffness *= StiffnessScale;
+        Spring.Drag *= DragScale;
+        Spring.GravityPower *= GravityScale;
+    }
+    SanitizeParameters();
+    ++EditRevision;
+}
+
+bool UVRMSpringBoneData::ResetSpringToSource(int32 SpringIndex)
+{
+    if (!HasSourceValues() || !SpringConfig.Springs.IsValidIndex(SpringIndex))
+    {
+        return false;
+    }
+    FVRMSpring& Spring = SpringConfig.Springs[SpringIndex];
+    const FVRMSpring& SourceSpring = SourceSprings[SpringIndex];
+    Spring.Stiffness = SourceSpring.Stiffness;
+    Spring.Drag = SourceSpring.Drag;
+    Spring.GravityDir = SourceSpring.GravityDir;
+    Spring.GravityPower = SourceSpring.GravityPower;
+    Spring.HitRadius = SourceSpring.HitRadius;
+    for (const int32 JointIndex : Spring.JointIndices)
+    {
+        if (SpringConfig.Joints.IsValidIndex(JointIndex))
+        {
+            FVRMSpringJoint& Joint = SpringConfig.Joints[JointIndex];
+            const FVRMSpringJoint& SourceJoint = SourceJoints[JointIndex];
+            Joint.Stiffness = SourceJoint.Stiffness;
+            Joint.Drag = SourceJoint.Drag;
+            Joint.GravityDir = SourceJoint.GravityDir;
+            Joint.GravityPower = SourceJoint.GravityPower;
+            Joint.HitRadius = SourceJoint.HitRadius;
+        }
+    }
+    ++EditRevision;
+    return true;
+}
+
