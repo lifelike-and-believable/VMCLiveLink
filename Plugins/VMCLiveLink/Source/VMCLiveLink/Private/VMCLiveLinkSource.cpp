@@ -175,6 +175,9 @@ bool FVMCLiveLinkSource::StartReceiving()
         SenderStateText.Reset();
     }
     MessageStats->Reset(FPlatformTime::Seconds());
+    // The frame-building thread's sender caches, so the first packet on the new path notes its sender.
+    LastSenderHash = 0;
+    LastSenderSeen.Reset();
 
     if (!Settings.bReceiveThread)
     {
@@ -242,6 +245,15 @@ bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArra
     }
     return false;
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+void FVMCLiveLinkSource::SetPublishedNamesForTest(const TArray<FName>& Bones, const TArray<FName>& Curves)
+{
+    FScopeLock Lock(&StatsLock);
+    PublishedBones = Bones;
+    PublishedCurves = Curves;
+}
+#endif
 
 FText FVMCLiveLinkSource::GetSourceMachineName() const
 {

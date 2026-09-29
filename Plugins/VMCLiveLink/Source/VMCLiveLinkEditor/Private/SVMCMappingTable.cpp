@@ -183,7 +183,7 @@ TSharedRef<ITableRow> SVMCMappingTable::OnGenerateRow(FItemPtr Item, const TShar
 			]
 			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 1)
 			[
-				SNew(STextBlock).Text(FText::FromString(TEXT("→")))
+				SNew(STextBlock).Text(FText::FromString(TEXT("->")))
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.f).Padding(2, 1)
 			[

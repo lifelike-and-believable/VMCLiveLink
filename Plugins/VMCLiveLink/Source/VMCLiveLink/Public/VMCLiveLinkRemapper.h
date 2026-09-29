@@ -206,8 +206,9 @@ public:
 	const FLiveLinkSubjectKey& GetSubjectKey() const { return CachedKey; }
 
 	/**
-	 * The names the subject receives, before renaming: from the VMC source that publishes it, or
-	 * else the subject's static data as Live Link holds it. False if the subject has none yet.
+	 * The names the subject receives, before renaming, from the VMC source that publishes it. False
+	 * if no VMC source publishes the subject, or it hasn't sent anything yet. (The static data Live
+	 * Link holds for a subject may already be renamed by this remapper, so it isn't used.)
 	 */
 	bool GetIncomingNames(TArray<FName>& OutBones, TArray<FName>& OutCurves) const;
 

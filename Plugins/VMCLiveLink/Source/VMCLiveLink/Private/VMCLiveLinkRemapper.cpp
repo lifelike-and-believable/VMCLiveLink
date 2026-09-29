@@ -143,25 +143,10 @@ bool UVMCLiveLinkRemapper::GetIncomingNames(TArray<FName>& OutBones, TArray<FNam
 {
 	OutBones.Reset();
 	OutCurves.Reset();
-	// A VMC source keeps the names it sent; Live Link may hold the subject's static data renamed.
-	if (FVMCLiveLinkSource::GetPublishedNames(CachedKey, OutBones, OutCurves))
-	{
-		return true;
-	}
-	if (!IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
-	{
-		return false;
-	}
-	ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
-	const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(CachedKey);
-	if (!SDS || !SDS->IsValid() || !SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
-	{
-		return false;
-	}
-	const FLiveLinkSkeletonStaticData& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
-	OutBones = Skel.GetBoneNames();
-	OutCurves = static_cast<const FLiveLinkBaseStaticData&>(Skel).PropertyNames;
-	return true;
+	// Only a VMC source can say what it sent: the static data Live Link holds for a subject may
+	// already be renamed by this remapper, which would make the table show outgoing names as
+	// incoming ones (P6.2 review).
+	return FVMCLiveLinkSource::GetPublishedNames(CachedKey, OutBones, OutCurves);
 }
 
 void UVMCLiveLinkRemapper::BuildMappingTable(TConstArrayView<FName> Bones, TConstArrayView<FName> Curves, const USkeletalMesh* Reference,
