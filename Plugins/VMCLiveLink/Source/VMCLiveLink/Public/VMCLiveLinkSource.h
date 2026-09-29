@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "ILiveLinkSource.h"
+#include "LiveLinkTypes.h"
 #include "Templates/UniquePtr.h"
 #include "UObject/StrongObjectPtr.h"
 #include "VMCConnectionSettings.h"
@@ -79,6 +80,13 @@ public:
 
     /** VMC.Stats: the report of every VMC source, to Ar. Game thread. */
     static void ReportAllStats(FOutputDevice& Ar);
+
+    /**
+     * The bone and curve names the VMC source publishing Key last sent as static data: VMC's own
+     * names, before any remapper renames them (P6.2's mapping table). False if no VMC source
+     * publishes Key, or it hasn't sent static data yet. Game thread.
+     */
+    static bool GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves);
 
 private:
     /** Everything frame building reads that the game thread owns. Immutable once published. */
@@ -161,6 +169,8 @@ private:
     FString SenderStateText;          // what /VMC/Ext/OK says, when worth showing (VMCProtocol::DescribeSenderState)
     FString LockedSender;             // the sender locked to (bLockToFirstSender), or empty
     FString LastSender;               // the IP of the last packet used, or empty
+    TArray<FName> PublishedBones;     // the names in the last static data pushed
+    TArray<FName> PublishedCurves;
     int32 IgnoredSenders = 0;         // senders whose packets were ignored since receiving started
     int32 NumDeviceSubjects = 0;      // device and camera subjects published
 };

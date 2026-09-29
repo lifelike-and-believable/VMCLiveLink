@@ -223,6 +223,26 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
     return VMCDiagnostics::FormatStatus(In);
 }
 
+bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves)
+{
+    FScopeLock RegistryLock(&GVMCSourcesLock);
+    for (const FVMCLiveLinkSource* Source : GVMCSources)
+    {
+        if (Source->SourceGuid == Key.Source && Source->Settings.SubjectName == Key.SubjectName.Name)
+        {
+            FScopeLock Lock(&Source->StatsLock);
+            if (Source->PublishedBones.Num() == 0 && Source->PublishedCurves.Num() == 0)
+            {
+                return false;
+            }
+            OutBones = Source->PublishedBones;
+            OutCurves = Source->PublishedCurves;
+            return true;
+        }
+    }
+    return false;
+}
+
 FText FVMCLiveLinkSource::GetSourceMachineName() const
 {
     FString Sender;
@@ -603,6 +623,14 @@ void FVMCLiveLinkSource::PushStaticData(const FSnapshot& Snap)
         ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(nullptr, nullptr)); // VMC names; the remapper renames
     PublishedStaticVersion = Snap.Version;
     bStaticSent = true;
+
+    FScopeLock Lock(&StatsLock);
+    const TConstArrayView<FName> Bones = Assembler->GetBoneNames();
+    const TConstArrayView<FName> Curves = Assembler->GetCurveNames();
+    PublishedBones.Reset();
+    PublishedBones.Append(Bones.GetData(), Bones.Num());
+    PublishedCurves.Reset();
+    PublishedCurves.Append(Curves.GetData(), Curves.Num());
 }
 
 void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)

@@ -44,6 +44,21 @@ struct FVMCRemapConfig
 	bool  bEnableMetaHumanCurveNormalizer = false;
 	float JoyToSmileStrength = 1.0f;
 	float BlinkMirrorStrength = 1.0f;
+
+	/** Log problems found in the static data (duplicate targets). Off for the details panel's
+	 *  mapping table, which shows them instead. */
+	bool bLogProblems = true;
+};
+
+/** One incoming name and what the remapper makes of it: a row of the details panel's mapping table (P6.2). */
+struct FVMCMappingRow
+{
+	FName Incoming;                // the name the stream sends; None for a curve the normalizer adds
+	FName Outgoing;                // the name the subject has after remapping
+	bool bMapped = false;          // a map entry renames it; otherwise it passes through unchanged
+	bool bDuplicateTarget = false; // another incoming name of the same kind ends up with the same name
+	bool bNotOnTarget = false;     // the reference mesh has no bone (for bones) or morph target (for curves) with that name
+	bool bSynthesized = false;     // added by the curve normalizer
 };
 
 /**
@@ -132,16 +147,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void LoadCustomCurveMapFromJSON(const FString& JsonText);
 
-	// Reusable mapping asset selection
-	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
+	/** A saved mapping to apply with Apply Mapping Asset, or to save the maps into. */
+	UPROPERTY(EditAnywhere, Category = "Mapping")
 	TSoftObjectPtr<UVMCLiveLinkMappingAsset> MappingAsset;
 
 	/** While both maps are empty, pick the mapping asset that matches the reference skeleton. */
-	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
+	UPROPERTY(EditAnywhere, Category = "Mapping")
 	bool bAutoDetectMappingFromReference = true;
 
 	/** Saving into the mapping asset also records the reference skeleton's signature, so the asset is found for it later. */
-	UPROPERTY(EditAnywhere, Category = "Remapper|Preset", meta=(DisplayName="Capture Signature On Save"))
+	UPROPERTY(EditAnywhere, Category = "Mapping", meta=(DisplayName="Capture Signature On Save"))
 	bool bCaptureSignatureOnSave = true;
 
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
@@ -187,23 +202,45 @@ public:
 	UFUNCTION(BlueprintCallable, Category="LiveLink|Remapper")
 	void SaveCurrentMappingTo(UVMCLiveLinkMappingAsset* Asset, bool bCaptureSignatureFromReference);
 
+	/** The subject this remapper renames (set by Live Link through Initialize). */
+	const FLiveLinkSubjectKey& GetSubjectKey() const { return CachedKey; }
+
+	/**
+	 * The names the subject receives, before renaming: from the VMC source that publishes it, or
+	 * else the subject's static data as Live Link holds it. False if the subject has none yet.
+	 */
+	bool GetIncomingNames(TArray<FName>& OutBones, TArray<FName>& OutCurves) const;
+
+	/**
+	 * What the current settings make of these incoming names, one row per name, as the worker
+	 * would remap them (curves the normalizer adds come last). With Reference, each outgoing name
+	 * is checked against its bones (bones) and morph targets (curves).
+	 */
+	void BuildMappingTable(TConstArrayView<FName> Bones, TConstArrayView<FName> Curves, const USkeletalMesh* Reference,
+		TArray<FVMCMappingRow>& OutBones, TArray<FVMCMappingRow>& OutCurves) const;
+
+	/** The reference skeleton, or the project default. May load it. */
+	USkeletalMesh* ResolveReferenceSkeleton() const;
+
 public:
 	// NOTE: BoneNameMap is declared on the base (ULiveLinkSubjectRemapper). Don't redeclare it here.
 
-	UPROPERTY(EditAnywhere, Category = "Remapper")
+	/** Incoming curve (blend shape) name to the name the mesh or AnimBlueprint uses. Curves without an entry pass through unchanged. */
+	UPROPERTY(EditAnywhere, Category = "Mapping")
 	TMap<FName, FName> CurveNameMap;
 
 	/** The target skeleton. Its rest pose gives bones the stream sends without a translation
 	 *  their length. Falls back to the project's Default Reference Skeleton (VMC Live Link settings). */
-	UPROPERTY(EditAnywhere, Category = "Remapper|Skeleton", meta = (DisplayThumbnail = "false"))
+	UPROPERTY(EditAnywhere, Category = "Target", meta = (DisplayThumbnail = "false"))
 	TSoftObjectPtr<USkeletalMesh> ReferenceSkeleton;
 
 	/** Give bones the stream sends without a translation the reference skeleton's rest translation
 	 *  (VMC senders give most bones rotation only). Root and Hips always use the stream. */
-	UPROPERTY(EditAnywhere, Category = "Remapper|Skeleton")
+	UPROPERTY(EditAnywhere, Category = "Target")
 	bool bUseReferenceTranslations = true;
 
-	UPROPERTY(EditAnywhere, Category = "Remapper|Preset")
+	/** The naming scheme Apply Preset seeds the maps with. */
+	UPROPERTY(EditAnywhere, Category = "Mapping")
 	ELLRemapPreset Preset = ELLRemapPreset::None;
 
 	/**
@@ -227,9 +264,6 @@ public:
 private:
 	// Helpers
 	void MarkDirty();   // Live Link creates a new worker and republishes the static data
-
-	/** The reference skeleton, or the project default. May load it. */
-	USkeletalMesh* ResolveReferenceSkeleton() const;
 
 	void SeedFromReferenceSkeleton();
 
