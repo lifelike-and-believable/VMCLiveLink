@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "0.1.0",
+	"Version": 2,
+	"VersionName": "1.0.0",
 	"FriendlyName": "VMC Live Link",
 	"Description": "Receives VMC (OSC) and streams it to Unreal via Live Link.",
 	"Category": "Live Link",
@@ -34,9 +34,9 @@
 
 	"CreatedBy": "Lifelike & Believable Animation Design, Inc.",
 	"CreatedByURL": "https://www.lifelikeandbelievable.com",
-	"DocsURL": "",
+	"DocsURL": "https://github.com/lifelike-and-believable/VMCLiveLink#readme",
 	"MarketplaceURL": "",
-	"SupportURL": "",
+	"SupportURL": "https://github.com/lifelike-and-believable/VMCLiveLink/issues",
 	"EngineVersion": "5.6.0",
 	"CanContainContent": true,
 	"IsBetaVersion": false,

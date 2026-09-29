@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "VersionName": "0.1.0",
-  "Version": 1,
+  "VersionName": "1.0.0",
+  "Version": 2,
   "FriendlyName": "VRM Interchange",
-  "Description": "Minimal VRM (.vrm) importer via Interchange (skeletal mesh + textures + blendshapes).",
+  "Description": "Imports VRM 0.x and 1.0 avatars through Interchange: skeletal mesh, morph targets, MToon materials, spring bone physics, IK Rig, avatar description and a Live Link actor.",
   "Category": "Importers",
   "Modules": [
     {
@@ -61,10 +61,10 @@
 
   "CreatedBy": "Lifelike & Believable Animation Design, Inc.",
   "CreatedByURL": "https://www.lifelikeandbelievable.com",
-  "DocsURL": "",
+  "DocsURL": "https://github.com/lifelike-and-believable/VMCLiveLink#readme",
   "MarketplaceURL": "",
   "EngineVersion": "5.6.0",
-  "SupportURL": "",
+  "SupportURL": "https://github.com/lifelike-and-believable/VMCLiveLink/issues",
   "CanContainContent": true,
   "IsBetaVersion": false,
   "IsExperimentalVersion": false,
