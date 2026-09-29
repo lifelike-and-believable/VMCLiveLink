@@ -18,10 +18,11 @@ public:
 	/** Version of ComputeSignature. Signatures saved with an older version are recomputed. */
 	static constexpr int32 CurrentSignatureVersion = 2;
 
-	// The reusable maps users will maintain in an asset
+	/** Incoming (VMC) bone name to the target skeleton's bone name. */
 	UPROPERTY(EditAnywhere, Category="Mapping")
 	TMap<FName, FName> BoneNameMap;
 
+	/** Incoming curve (blend shape) name to the target's curve or morph target name. */
 	UPROPERTY(EditAnywhere, Category="Mapping")
 	TMap<FName, FName> CurveNameMap;
 
@@ -37,6 +38,7 @@ public:
 	UPROPERTY(VisibleAnywhere, AssetRegistrySearchable, Category="Detection")
 	FString SignatureTag;
 
+	/** The ComputeSignature version SkeletonSignatures were computed with (CurrentSignatureVersion when up to date). */
 	UPROPERTY(VisibleAnywhere, AssetRegistrySearchable, Category="Detection")
 	int32 SignatureVersion = 0;
 
@@ -53,6 +55,7 @@ public:
 	 * CRC32 of the sorted normalized names. Stable across engine versions and platforms.
 	 */
 	static uint32 ComputeSignature(const USkeletalMesh* Mesh);
+	/** The same from a list of bone names. */
 	static uint32 ComputeSignature(TConstArrayView<FName> BoneNames);
 
 	/** The tag text a signature appears as in SignatureTag. */
@@ -61,8 +64,11 @@ public:
 	/** Recomputes signatures saved by an older version from ExampleReferenceMeshes (loads them). */
 	void UpdateSignaturesIfOld();
 
+	/** Refreshes SignatureTag when the signatures are current. Old ones aren't recomputed here (that
+	 *  would load other assets); MatchesMesh or an edit does it, through UpdateSignaturesIfOld. */
 	virtual void PostLoad() override;
 #if WITH_EDITOR
+	/** Recomputes old signatures and refreshes SignatureTag after an edit. */
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& Event) override;
 #endif
 

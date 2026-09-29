@@ -10,7 +10,11 @@
  */
 namespace VRM::MToon
 {
-	/** Material parameter names. The instances the importer creates set these. */
+	/**
+	 * Material parameter names. The instances the importer creates set these. Each carries the
+	 * FVRMParsedMaterial or FVRMMToon value of the same name, in the same unit (textures as texture
+	 * parameters, colours linear).
+	 */
 	namespace Param
 	{
 		// Surface
@@ -67,8 +71,11 @@ namespace VRM::MToon
 
 	/** Where the editor module generates the materials (VRM::MToon::FindOrCreateMToonMaterials). */
 	inline constexpr const TCHAR* GeneratedFolder = TEXT("/Game/VRMInterchange/Materials");
+	/** The surface material's asset name. */
 	inline constexpr const TCHAR* SurfaceName = TEXT("M_VRM_MToon");
+	/** The outline material's asset name. */
 	inline constexpr const TCHAR* OutlineName = TEXT("M_VRM_MToonOutline");
+	/** A 1x1 white texture, the default for the mask texture parameters. */
 	inline constexpr const TCHAR* WhiteMaskName = TEXT("T_VRM_MToonWhiteMask");
 
 	/** Object paths of the generated materials, for material instance parents. */

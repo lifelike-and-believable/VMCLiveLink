@@ -11,6 +11,7 @@
  */
 struct VRMSPRINGBONESRUNTIME_API FVRMSpringDataCustomVersion
 {
+	/** The versions of UVRMSpringBoneData's saved data, oldest first. */
 	enum Type
 	{
 		// Saved before this version existed.
@@ -36,6 +37,7 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringDataCustomVersion
 		LatestVersion = VersionPlusOne - 1
 	};
 
+	/** Identifies this custom version in saved packages. */
 	static const FGuid GUID;
 
 private:

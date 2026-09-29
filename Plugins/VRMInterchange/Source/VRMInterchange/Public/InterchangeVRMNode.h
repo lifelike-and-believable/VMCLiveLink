@@ -21,6 +21,7 @@ class VRMINTERCHANGE_API UInterchangeVRMNode : public UInterchangeBaseNode
 	GENERATED_BODY()
 
 public:
+	/** The node's Interchange type name. */
 	virtual FString GetTypeName() const override { return TEXT("VRMDocumentNode"); }
 
 	/** Records the document in this node. */

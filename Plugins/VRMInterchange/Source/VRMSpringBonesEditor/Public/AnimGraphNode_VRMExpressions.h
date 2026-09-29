@@ -11,9 +11,11 @@ class UAnimGraphNode_VRMExpressions : public UAnimGraphNode_Base
 {
 	GENERATED_BODY()
 public:
+	/** The runtime node this graph node compiles to. */
 	UPROPERTY(EditAnywhere, Category = Settings)
 	FAnimNode_VRMExpressions Node;
 
+	// UAnimGraphNode_Base. Validation warns when the avatar description is unset or has no expressions.
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0, 0.6f, 1.f); }
 	virtual FText GetTooltipText() const override;
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;

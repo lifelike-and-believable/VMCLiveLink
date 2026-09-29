@@ -22,6 +22,9 @@ class UVRMAvatarDescription;
  *  - each morph target gets the sum of weight x bind weight over the expressions that bind it.
  * Only morph targets whose expressions had an input curve this frame are written, so a morph the
  * input doesn't mention keeps whatever the input pose gave it. Other curves pass through.
+ *
+ * Runs on animation worker threads. It rebuilds its tables from AvatarDescription when the asset,
+ * its SourceHash or its expression count changes.
  */
 USTRUCT(BlueprintInternalUseOnly)
 struct VRMCORE_API FAnimNode_VRMExpressions : public FAnimNode_Base
@@ -29,6 +32,7 @@ struct VRMCORE_API FAnimNode_VRMExpressions : public FAnimNode_Base
 	GENERATED_BODY()
 
 public:
+	/** The input pose, whose curves carry the expression weights. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Links")
 	FPoseLink Source;
 
