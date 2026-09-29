@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-29):** 47 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 5, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 97 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-29):** 51 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 6, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 107 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -1023,11 +1023,22 @@ Do this after correctness, so each change can be measured against golden outputs
   - Add tooltips that explain each coordinate option with the actual axis mapping.
   - Add a debug console command `VMC.Stats` that prints message rates per address and the unknown addresses seen.
 - **Acceptance:** a manual test script (in the PR) covers port-in-use, sender stopping and resuming, and settings edits after creation.
+- **Status (#170, merged):** built and tested; the manual script is in #170.
+  - The creation panel is a details view of a transient `UVMCLiveLinkSourceSettings`, showing only the VMC fields. It shows validation errors and warns when `FVMCUdpReceiver::CanBind` can't bind the address and port.
+  - The status is formatted by `VMCDiagnostics::FormatStatus`: "Listening on :39539, waiting for data", "Receiving 60.0 fps from 192.168.1.20, jitter …", "No data for 5 s (last from …)", "Port 39539 in use".
+  - `GetSourceMachineName` returns the last sender's IP. The axis tooltip gives the mapping (UE X = −Unity X, UE Y = Unity Z, UE Z = Unity Y).
+  - `VMC.Stats` prints messages per second for each address since the last call, and up to 32 unused addresses.
+  - Tests: `VMC.Diagnostics.Status`, `.Stats`, `.PortCheck`, `.Source` (a real source on a loopback port).
 
 ### P6.2 Remapper details panel
 - **Resolves:** VMC-22 (UX), VMC-09
 - **Steps:** group the details into Source → Mapping (preset, mapping asset, avatar description) → Normalizer (off by default, with an explanation) → Tools (Detect from subject, Apply asset, Save to asset, Create asset). Show a live table of incoming → outgoing names, highlighting unmapped and duplicate targets.
 - **Acceptance:** a user can see why a curve isn't reaching the mesh without reading logs.
+- **Status (#171, merged):** built and tested; the table itself is an editor check.
+  - The details read Target → Mapping → Normalizer → Mapping Tools → Live Mapping. The base class's bone map moved next to the curve map, and Target and Normalizer have a line of explanation.
+  - Live Mapping lists every incoming bone and curve with its outgoing name. It flags names that share a target (red) and names the reference mesh has no bone or morph target for (orange), and marks unmapped names and curves the normalizer adds. It refreshes each second and can show only the problems.
+  - The incoming names come from the VMC source that publishes the subject (`FVMCLiveLinkSource::GetPublishedNames`). The rows are built by a worker made from the current settings (`BuildMappingTable`). Test: `VMC.Remapper.MappingTable`.
+  - **Deviation:** the plan lists an avatar description under Mapping. The remapper can't reference VRMInterchange's asset (D-4), so the existing Map Bones From Humanoid Metadata button fills that role.
 
 ### P6.3 Import experience
 - **Resolves:** PE-01, PE-03 (UX), T-12
@@ -1036,11 +1047,24 @@ Do this after correctness, so each change can be measured against golden outputs
   - After import, show one `FNotificationInfo` listing the created assets (clickable to sync the Content Browser) and the VRM licence summary, plus an `FMessageLog("VRMInterchange")` page for warnings (unresolved bones, lenient schema variants, bind-pose mismatch, non-VRM glTF).
   - Reimport: clearly state what is preserved (user-edited spring parameters, if P1.16 tracks per-field overrides) and what is regenerated.
 - **Acceptance:** importing the fixtures produces one notification and a message-log page with no log-only warnings.
+- **Status (#172, merged):** built and tested; the dialog and notification are editor checks.
+  - Every VRM pipeline toggle is in one **VRM Import** category, named for what it makes, with tooltips that name the assets and folders.
+  - `FVRMImportReport` collects the mesh and every asset `CreateOrReuseAsset` and `DuplicateTemplateAsset` return. It is shown 0.5 s after the last one as one notification: created, updated in place from the file (edits replaced), and pointed at the new mesh (Blueprints, edits kept), plus a reimport line and the licence. Buttons select the assets and open the log.
+  - The warnings and errors logged under `LogVRMInterchange` and `LogVRMSpring` from `Translate` on are collected by an output device (`VRM::ImportMessages`) and listed on a page of the **VRM Import** message log.
+  - **Deviation:** the pipelines stay separate entries in the stack; merging them would change the stacks saved in project settings. Spring data edits are replaced on reimport (P1.16 doesn't track per-field overrides), and the notification says so.
+  - First runs: the Shipping build had no log category objects (`FNoLoggingCategory`), so categories are matched by name. The test's expected warning reached output devices demoted to Verbose, so the test feeds the capture directly.
+  - Tests: `VRM.Import.Messages`, `VRM.Import.Report`.
 
 ### P6.4 Spring data editing
 - **Resolves:** SR-05 (live edits), SP-06
 - **Steps:** changes to `UVRMSpringBoneData` update running previews and PIE instances immediately (hash-based rebuild from P1.14). Add editor actions "Scale all stiffness/drag/gravity", "Reset spring to source values" and "Reimport from source". Add a debug-draw toggle in the node details.
 - **Acceptance:** editing stiffness in the asset changes the preview viewport without recompiling the ABP.
+- **Status (#173, merged):** built and tested.
+  - Live edits already worked through `EditRevision` (P1.14). `VRM.SpringBones.Node.LiveEdit` now proves it: an asset edit changes a running node with no rebuild call. The debug-draw toggles were already on the node (Spring|Debug).
+  - The asset's details get Editing Tools, each one undoable transaction: Scale All (stiffness, drag, gravity), Reset Spring to File Values, and Reimport from Source.
+  - The import records the file's joints and springs (`SourceJoints`, `SourceSprings`) for the reset. Assets imported earlier say to reimport first.
+  - `UVRMSpringBonesPostImportPipeline::ReimportFromSource` shares `CopySpringData` with the import.
+  - Tests: `VRM.SpringBones.Editing.ScaleAndReset`, `.ReimportFromSource`, `VRM.SpringBones.Node.LiveEdit`.
 
 ---
 
@@ -1119,7 +1143,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-29.* Phases 1 to 5 are complete. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 97 automation tests pass.
+*Last updated 2026-09-29.* Phases 1 to 6 are complete. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 107 automation tests pass.
 
 ### Status by task
 
@@ -1165,12 +1189,13 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P4.7 VMC protocol coverage | #156, #157 | Merged | Copilot: 1 and 2 findings plus 5 "previously missed" over the rounds, all fixed. #157 was stacked on #156; after #156's squash, the conflicts were only duplicated base changes (checked with `git diff` against `main`, rule 13) |
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
 | P5.1 to P5.8 Optimization | #166, #167, #168 | Merged | #166 added the benchmark tests. P5.1, P5.2, P5.3, P5.7 and P5.8 were already delivered by earlier phases; the benchmarks confirm their targets. P5.4 missed its target (see Phase 5 status). Merged without Copilot reviews at the owner's call: Copilot didn't run |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, #165, this PR | Merged | |
+| P6.1 to P6.4 Usability | #170, #171, #172, #173 | Merged | #171 and #173 were stacked (on #170 and #172) and moved onto `main` after them (rule 13). First runs found: a missing `InputCore` link dependency (#171), log categories that don't exist in Shipping, and an expected warning demoted to Verbose (#172). Merged without Copilot reviews at the owner's call: Copilot didn't run |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, #165, #169, this PR | Merged | |
 
-**Not started:** Phases 6 and 7.
+**Not started:** Phase 7 (P7.1 is done).
 
 **Recommended next:**
-1. Phase 6 (usability).
+1. Phase 7 (documentation).
 2. Owner: fix the runner's Application Control block (X-07).
 3. The editor checks below, starting with P4.5's material comparison.
 
@@ -1208,6 +1233,11 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P6):**
+  - Run #170's manual script: port in use, sender stopping and resuming, settings edits, `VMC.Stats`.
+  - Watch a VSeeFace stream in the remapper's Live Mapping table, with two curves mapped to one name and a reference mesh missing some targets.
+  - Import `Alice.vrm` and a plain `.glb`: one notification each, Show in Content Browser works, and the VRM Import log has a page each (the `.glb` page with its warning).
+  - Use the spring data Editing Tools while a preview runs, and undo each.
 - **In the editor (P5):** import a large VRoid model (about 60 morph targets) with Unreal Insights running (memory and CPU channels) and record the import time and peak memory, to confirm the benchmark results on a real file.
 - **In the editor (P4.5):** import a VRoid VRM 0.x and a VRM 1.0 avatar into a default level and compare with three-vrm or UniVRM renders of the same models: toon ramp and shade colours, cutout hair and transparent parts, rim, outlines (world and screen width). Check the fallback light in a level without an atmosphere sun light, and that the generated materials save and reload.
 - **In the editor (P4.4):** import a VRM, add a VMC source and set the subject remapper's Reference Skeleton to the imported mesh. The bone map fills from the mesh's `VRM.Humanoid.*` metadata and a VSeeFace stream drives the body with no other setup.
