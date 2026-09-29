@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the VMC Live Link and VRM Interchange plugins. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and both plugins follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The two plugins ship separately but share version numbers and this file.
+All notable changes to the VMC Live Link and VRM Interchange plugins. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and both plugins follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The two plugins ship separately but share version numbers and this file. One deviation: 1.0.0 is grouped by the refactor plan's phases, with Added, Changed and Fixed under each phase.
 
 ## [Unreleased]
 
@@ -14,13 +14,13 @@ The first release, after a review and refactor of both plugins (the [plan](Plann
 - Pull requests are built (Editor without unity files, Game Development and Shipping) and the automation tests run headless on every pull request.
 - Synthetic VRM test fixtures, made by `scripts/make_vrm_fixtures.py` and validated with cgltf.
 - `scripts/vmc_sender.py`: sends, records and replays VMC streams, for testing without a real sender.
-- Log categories for each plugin (`LogVMCLiveLink`, `LogVRMInterchange`, `LogVRMSpring`, ...), replacing `LogTemp`.
+- Log categories for each plugin (`LogVMCLiveLink`, `LogVRMInterchange`, `LogVRMSpring`), replacing `LogTemp`.
 
 ### Phase 1: Correctness
 
 #### Fixed
-- **VMC:** `/VMC/Ext/Root/Pos` is read as the specification defines it (with its name), and message arguments are type-checked. Bones are published in the Unity humanoid hierarchy with stable indices. A frame is published on each `/VMC/Ext/Blend/Apply`, and curves the sender didn't resend hold their value (or read 0, if set).
-- **VMC:** a source keeps working after its settings change, and shuts down cleanly. Subject settings created by the source no longer replace ones the user made.
+- **VMC:** `/VMC/Ext/Root/Pos` is read as the specification defines it (with its name, and the v2.1 form, whose scale and offset are read but not applied), and message arguments are type-checked. Bones are published in the Unity humanoid hierarchy with stable indices. A frame is published on each `/VMC/Ext/Blend/Apply`, and curves the sender didn't resend hold their value (or read 0 with **Zero Missing Curves**).
+- **VMC:** removing a source right after creating it no longer crashes, and a source shuts down cleanly. Subject settings created by the source no longer replace ones the user made.
 - **VMC:** the curve normalizer no longer overwrites curves the stream sends; presets no longer accumulate stale entries.
 - **VRM:** joints are mapped by the skin's joint list, so files with several skins, unnamed joints or duplicate names import correctly.
 - **VRM:** node transforms, rigid (unskinned) meshes and bind poses that differ from the rest pose import in the right place.
@@ -44,11 +44,11 @@ The first release, after a review and refactor of both plugins (the [plan](Plann
 ### Phase 3: Architecture
 
 #### Changed
-- **VMC:** packets are received and frames built on a thread of their own (optional), with each frame timestamped on arrival. The protocol parser, frame assembler and source are separate and tested.
+- **VMC:** packets are received and frames built on a thread of their own (on by default), with each frame timestamped on arrival. The protocol parser, frame assembler and source are separate and tested. Editing a source's settings applies them to the running source (a new port or subject restarts the listener).
 - **VMC:** all renaming happens in the remapper, through immutable workers.
 - **VRM:** a file is read and parsed once per import (the new `VRMCore` module).
 - **VRM:** the import pipelines share a base class and act on the assets their own import created.
-- Both plugins are declared Win64 only, the platform they are built and tested on.
+- Both plugins support Win64 only, the platform they are built and tested on.
 
 ### Phase 4: Features
 
@@ -59,12 +59,14 @@ The first release, after a review and refactor of both plugins (the [plan](Plann
 - **VRM:** MToon and unlit materials on generated toon master materials (shade and toon ramp, rim, matcap, emission, alpha modes, texture transform, outlines).
 - **VRM:** morph target normals, and morph targets for every mesh, including unnamed ones.
 - **VRM and VMC:** the humanoid map is written onto the mesh as metadata, and the VMC remapper can map a stream onto the mesh from it, without either plugin depending on the other.
-- **VMC:** tracked devices and the sender's camera as Live Link subjects; `/VMC/Ext/OK` sender state in the status; the v2.1 root form (its scale and offset are read but not applied); an allowlist of senders and Lock to First Sender.
+- **VMC:** tracked devices and the sender's camera as Live Link subjects (opt-in: **Device Subjects**, **Camera Subject**); `/VMC/Ext/OK` sender state in the status; an allowlist of senders and Lock to First Sender.
 
 ### Phase 5: Performance
 
 #### Changed
-- **VRM:** morph target payloads reuse the base mesh (an import with many morph targets went from seconds to under 0.1 s in the benchmark), and texture decoding is faster.
+- **VRM:** morph target payloads reuse the base mesh: building the payloads for 60 morph targets went from 5.85 s to 85 ms in the benchmark. Texture decoding is about 10% faster.
+
+#### Added
 - Benchmarks for the VMC hot path, the spring solver, mesh payloads and texture decoding.
 
 ### Phase 6: Usability
@@ -88,4 +90,4 @@ The first release, after a review and refactor of both plugins (the [plan](Plann
 - Both plugins are version 1.0.0.
 
 [Unreleased]: https://github.com/lifelike-and-believable/VMCLiveLink/compare/release/1.0.0...HEAD
-[1.0.0]: https://github.com/lifelike-and-believable/VMCLiveLink/releases/tag/release%2F1.0.0
+[1.0.0]: https://github.com/lifelike-and-believable/VMCLiveLink/releases
