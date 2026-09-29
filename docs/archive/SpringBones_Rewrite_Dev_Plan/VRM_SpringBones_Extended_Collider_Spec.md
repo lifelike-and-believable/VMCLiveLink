@@ -1,4 +1,4 @@
-> Historical; superseded by the VRM 1.0 `VRMC_springBone` specification (https://github.com/vrm-c/vrm-specification) and `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md`. Kept for reference; not maintained.
+> Historical; superseded by the `VRMC_springBone_extended_collider` extension specification (https://github.com/vrm-c/vrm-specification) and `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md`. Kept for reference; not maintained.
 
 # VRMC_springBone_extended_collider-1.0
 
