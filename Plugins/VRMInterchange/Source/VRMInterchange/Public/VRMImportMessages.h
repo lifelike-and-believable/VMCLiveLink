@@ -25,6 +25,13 @@ namespace VRM::ImportMessages
 	/** Stops collecting and returns what was collected, oldest first. */
 	VRMINTERCHANGE_API TArray<FMessage> Take();
 
+	/**
+	 * What the capture does with one log line: keeps it if collecting and it is a warning or error in
+	 * a VRM import category. Tests call it directly, since a real warning logged in a test counts
+	 * against the test (and one the test expects arrives demoted to Verbose).
+	 */
+	VRMINTERCHANGE_API void Receive(const TCHAR* Text, ELogVerbosity::Type Verbosity, const FName& Category);
+
 	/** Whether messages are being collected. */
 	VRMINTERCHANGE_API bool IsCollecting();
 

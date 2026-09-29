@@ -17,19 +17,24 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMImportMessagesTest, "VRM.Import.Messages",
 
 bool FVRMImportMessagesTest::RunTest(const FString& Parameters)
 {
-	// Warnings logged under the VRM categories between Begin and Take are collected; other
-	// categories and lower verbosities aren't.
-	AddExpectedError(TEXT("import report test warning"), EAutomationExpectedErrorFlags::Contains, 1);
+	// Warnings and errors under the VRM categories between Begin and Take are collected; other
+	// categories and lower verbosities aren't. The lines go straight to the capture: a warning
+	// really logged here would count against the test.
+	VRM::ImportMessages::Receive(TEXT("[VRMInterchange] before Begin"), ELogVerbosity::Warning, TEXT("LogVRMInterchange"));
 	VRM::ImportMessages::Begin();
 	TestTrue(TEXT("Collecting"), VRM::ImportMessages::IsCollecting());
-	UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] import report test warning"));
-	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] import report test log line"));
-	UE_LOG(LogTemp, Display, TEXT("import report test, another category"));
+	VRM::ImportMessages::Receive(TEXT("[VRMInterchange] import report test warning"), ELogVerbosity::Warning, TEXT("LogVRMInterchange"));
+	VRM::ImportMessages::Receive(TEXT("spring test error"), ELogVerbosity::Error, TEXT("LogVRMSpring"));
+	VRM::ImportMessages::Receive(TEXT("[VRMInterchange] import report test log line"), ELogVerbosity::Log, TEXT("LogVRMInterchange"));
+	VRM::ImportMessages::Receive(TEXT("another category"), ELogVerbosity::Warning, TEXT("LogTemp"));
+	// The real log reaches the capture too (a log line, so it isn't kept)
+	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] import report test, through the log"));
 	const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take();
 	TestFalse(TEXT("Take stops collecting"), VRM::ImportMessages::IsCollecting());
-	if (!TestEqual(TEXT("One message"), Messages.Num(), 1)) return false;
+	if (!TestEqual(TEXT("A warning and an error"), Messages.Num(), 2)) return false;
 	TestEqual(TEXT("A warning"), int32(Messages[0].Verbosity), int32(ELogVerbosity::Warning));
 	TestEqual(TEXT("Without the log prefix"), Messages[0].Text, FString(TEXT("import report test warning")));
+	TestEqual(TEXT("An error"), int32(Messages[1].Verbosity), int32(ELogVerbosity::Error));
 	TestEqual(TEXT("Nothing more once taken"), VRM::ImportMessages::Take().Num(), 0);
 	return true;
 }
