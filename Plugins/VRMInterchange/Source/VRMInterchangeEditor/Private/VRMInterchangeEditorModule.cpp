@@ -16,6 +16,9 @@
 #include "VRMInterchangeSettings.h"
 #include "VRMImportReport.h"
 #include "MessageLogModule.h"
+#include "PropertyEditorModule.h"
+#include "VRMSpringBoneData.h"
+#include "VRMSpringBoneDataCustomization.h"
 
 #define LOCTEXT_NAMESPACE "VRMInterchangeEditor"
 
@@ -36,6 +39,11 @@ void FVRMInterchangeEditorModule::StartupModule()
 	LogOptions.bAllowClear = true;
 	MessageLog.RegisterLogListing(FVRMImportReport::LogName, LOCTEXT("VRMImportLog", "VRM Import"), LogOptions);
 
+	// Editing tools in the spring data asset's details (P6.4)
+	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+	PropertyEditor.RegisterCustomClassLayout(UVRMSpringBoneData::StaticClass()->GetFName(),
+		FOnGetDetailCustomizationInstance::CreateStatic(&FVRMSpringBoneDataCustomization::MakeInstance));
+
 	// The editor module never edits project settings by itself. Registering the VRM import
 	// pipelines is done from Project Settings > Plugins > VRM Interchange, or from the prompt below.
 	if (GIsRunning)
@@ -51,6 +59,11 @@ void FVRMInterchangeEditorModule::StartupModule()
 void FVRMInterchangeEditorModule::ShutdownModule()
 {
 	FVRMImportReport::Get().Discard();
+	FPropertyEditorModule* PropertyEditor = FModuleManager::GetModulePtr<FPropertyEditorModule>("PropertyEditor");
+	if (PropertyEditor && UObjectInitialized())
+	{
+		PropertyEditor->UnregisterCustomClassLayout(UVRMSpringBoneData::StaticClass()->GetFName());
+	}
 	if (FMessageLogModule* MessageLog = FModuleManager::GetModulePtr<FMessageLogModule>("MessageLog"))
 	{
 		MessageLog->UnregisterLogListing(FVRMImportReport::LogName);

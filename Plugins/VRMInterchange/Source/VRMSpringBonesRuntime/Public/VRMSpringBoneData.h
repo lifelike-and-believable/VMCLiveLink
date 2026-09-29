@@ -46,8 +46,38 @@ public:
     UPROPERTY(VisibleAnywhere, Category="Spring Bones")
     bool bNeedsReimport = false;
 
+    /**
+     * The joints and springs as the source file gave them, recorded at import (CaptureSourceValues),
+     * for ResetSpringToSource. Empty in assets imported before P6.4: reimport them to fill it.
+     */
+    UPROPERTY()
+    TArray<FVRMSpringJoint> SourceJoints;
+
+    UPROPERTY()
+    TArray<FVRMSpring> SourceSprings;
+
     virtual void Serialize(FArchive& Ar) override;
     virtual void PostLoad() override;
+
+    /** Records the current joints and springs as the file's values (the import calls it). */
+    void CaptureSourceValues();
+
+    /** Whether ResetSpringToSource can work: the file's values were recorded and still fit the springs. */
+    bool HasSourceValues() const;
+
+    /**
+     * Multiplies every joint's and spring's stiffness, drag and gravity power, then clamps them as an
+     * edit in the details panel would (stiffness and drag to 0..1). Running spring nodes pick the
+     * change up without recompiling (EditRevision).
+     */
+    void ScaleParameters(float StiffnessScale, float DragScale, float GravityScale);
+
+    /**
+     * Puts spring SpringIndex and its joints' parameters (stiffness, drag, gravity, hit radius) back
+     * to the file's values. False, changing nothing, without recorded values (HasSourceValues) or for
+     * a spring index out of range.
+     */
+    bool ResetSpringToSource(int32 SpringIndex);
 
     /** The FVRMSpringDataCustomVersion this asset was loaded with (the latest for new assets). */
     int32 GetLoadedDataVersion() const { return LoadedDataVersion; }
@@ -81,5 +111,8 @@ public:
     }
 
 private:
+    /** Clamps the joints' and springs' parameters and the colliders' sizes to their valid ranges. */
+    void SanitizeParameters();
+
     int32 LoadedDataVersion = FVRMSpringDataCustomVersion::LatestVersion;
 };

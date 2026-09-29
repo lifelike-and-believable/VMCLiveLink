@@ -72,13 +72,28 @@ public:
 	// UInterchangePipelineBase
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
 
+	/**
+	 * Reads Data's source file (SourceFilename) again and replaces its springs, joints, colliders and
+	 * node maps with the file's, as an import with "Update Existing" does (P6.4). Running spring nodes
+	 * pick it up. False, leaving Data alone, if the file can't be read or has no valid spring data;
+	 * OutError says why.
+	 */
+	static bool ReimportFromSource(UVRMSpringBoneData* Data, FString& OutError);
+
+	/** Parses the document's spring bones into Dest (a transient container); false if it has none or they're invalid. */
+	static bool ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest);
+
+	/** Names joints, colliders and centers that the parser left unnamed from the document's nodes. */
+	static bool ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters);
+
+	/** Replaces Dest's spring data with Parsed's (both from the same file), records it as the file's values, and bumps the revision when Dest was in use. */
+	static void CopySpringData(const UVRMSpringBoneData& Parsed, UVRMSpringBoneData& Dest, bool bReplacingExisting);
+
 protected:
 	virtual void OnSkeletalMeshImported(USkeletalMesh* Mesh, bool bIsAReimport) override;
 
 private:
 	// Parsing/materialization helpers
-	bool ParseAndFillDataAsset(const FVRMDocument& Document, UVRMSpringBoneData* Dest) const;
-	bool ResolveBoneNames(const FVRMDocument& Document, FVRMSpringConfig& InOut, int32& OutResolvedColliders, int32& OutResolvedJoints, int32& OutResolvedCenters) const;
 	void ValidateBoneNamesAgainstSkeleton(const USkeleton* Skeleton, const FVRMSpringConfig& Config) const;
 
 	// Asset helpers
