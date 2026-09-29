@@ -21,7 +21,12 @@ namespace VRM::ImportMessages
 
 		std::atomic<int32> NumOpen { 0 }; // open buckets, read without the lock to skip unrelated lines cheaply
 		FCriticalSection Mutex;
-		TMap<FString, TArray<FMessage>> Buckets; // by source file
+		struct FBucket
+		{
+			double OpenedSeconds = 0.0;
+			TArray<FMessage> Messages;
+		};
+		TMap<FString, FBucket> Buckets;          // by source file
 		TArray<FMessage> Unscoped;               // logged outside any FScope while a bucket was open
 	};
 
@@ -77,26 +82,55 @@ namespace VRM::ImportMessages
 		FMessage Entry{ Level == ELogVerbosity::Warning ? ELogVerbosity::Warning : ELogVerbosity::Error, MoveTemp(Message) };
 
 		FScopeLock Lock(&Capture.Mutex);
-		TArray<FMessage>* Bucket = ThreadFiles.Num() > 0 ? Capture.Buckets.Find(ThreadFiles.Last()) : nullptr;
-		TArray<FMessage>& Into = Bucket ? *Bucket : Capture.Unscoped;
-		if (Into.Num() < MaxMessages)
+		TArray<FMessage>* Into = &Capture.Unscoped;
+		if (ThreadFiles.Num() > 0)
 		{
-			Into.Add(MoveTemp(Entry));
+			FCapture::FBucket* Bucket = Capture.Buckets.Find(ThreadFiles.Last());
+			if (!Bucket)
+			{
+				return; // that import's report was already shown; don't put it on another's
+			}
+			Into = &Bucket->Messages;
+		}
+		if (Into->Num() < MaxMessages)
+		{
+			Into->Add(MoveTemp(Entry));
+		}
+	}
+
+	/** Drops buckets nothing took in time. Under the lock. */
+	void PruneStale(FCapture& Capture, double NowSeconds)
+	{
+		for (auto It = Capture.Buckets.CreateIterator(); It; ++It)
+		{
+			if (NowSeconds - It.Value().OpenedSeconds > BucketLifetimeSeconds)
+			{
+				It.RemoveCurrent();
+			}
 		}
 	}
 
 	void Begin(const FString& File)
 	{
 		FCapture& Capture = GetCapture();
+		const double Now = FPlatformTime::Seconds();
 		FScopeLock Lock(&Capture.Mutex);
-		Capture.Buckets.FindOrAdd(File).Reset();
+		PruneStale(Capture, Now);
+		if (Capture.Buckets.Num() == 0)
+		{
+			Capture.Unscoped.Reset(); // nothing was open: whatever is there predates this import
+		}
+		FCapture::FBucket& Bucket = Capture.Buckets.FindOrAdd(File);
+		Bucket.OpenedSeconds = Now;
+		Bucket.Messages.Reset();
 		Capture.NumOpen = Capture.Buckets.Num();
 	}
 
-	TArray<FMessage> Take(const FString& File)
+	TArray<FMessage> Take(const FString& File, bool bIncludeUnscoped)
 	{
-		// The log may be written on a thread of its own: deliver what is queued before taking it.
-		// Not under the lock, since delivering calls Serialize, which takes it.
+		// Deliver anything still queued for buffered devices first (this capture is served directly,
+		// but a flush costs little and keeps that assumption from mattering). Not under the lock,
+		// since delivering calls Serialize, which takes it.
 		if (GLog && IsInGameThread())
 		{
 			GLog->Flush();
@@ -104,9 +138,17 @@ namespace VRM::ImportMessages
 		FCapture& Capture = GetCapture();
 		FScopeLock Lock(&Capture.Mutex);
 		TArray<FMessage> Out;
-		Capture.Buckets.RemoveAndCopyValue(File, Out);
-		Out.Append(Capture.Unscoped); // shown once, with the first import taken after them
-		Capture.Unscoped.Reset();
+		FCapture::FBucket Bucket;
+		if (Capture.Buckets.RemoveAndCopyValue(File, Bucket))
+		{
+			Out = MoveTemp(Bucket.Messages);
+		}
+		if (bIncludeUnscoped)
+		{
+			Out.Append(Capture.Unscoped); // shown once, with the first import taken after them
+			Capture.Unscoped.Reset();
+		}
+		PruneStale(Capture, FPlatformTime::Seconds());
 		Capture.NumOpen = Capture.Buckets.Num();
 		return Out;
 	}

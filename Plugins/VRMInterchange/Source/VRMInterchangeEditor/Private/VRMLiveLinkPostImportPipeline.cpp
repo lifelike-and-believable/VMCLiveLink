@@ -41,10 +41,10 @@ void UVRMLiveLinkPostImportPipeline::PostInitProperties()
 void UVRMLiveLinkPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath)
 {
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
-	// Only this instance's flags count (seeded from the project settings in PostInitProperties).
-	// Either asset is reason enough to run: the retarget actor doesn't need the Live Link actor.
 	// What this pipeline logs belongs to this import's message log page (P6.3).
 	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
+	// Only this instance's flags count (seeded from the project settings in PostInitProperties).
+	// Either asset is reason enough to run: the retarget actor doesn't need the Live Link actor.
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && (bGenerateLiveLinkEnabledActor || bGenerateLiveLinkRetargetActor))
 	{
 		WaitForSkeletalMesh();

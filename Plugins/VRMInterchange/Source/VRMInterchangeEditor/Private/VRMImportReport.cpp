@@ -170,14 +170,8 @@ void FVRMImportReport::Flush()
 	{
 		return;
 	}
-	// Each file's own messages (imports that overlap keep theirs apart), plus any logged outside an import.
-	TArray<VRM::ImportMessages::FMessage> Messages;
-	for (const FFile& File : Shown)
-	{
-		Messages.Append(VRM::ImportMessages::Take(File.SourceFile));
-	}
-
-	// The message log page: what was made, then every warning and error the import logged.
+	// The message log page: each file's assets, then its own warnings and errors (imports that
+	// overlap keep theirs apart), then any logged outside an import.
 	TArray<FString> Names;
 	for (const FFile& File : Shown)
 	{
@@ -190,26 +184,33 @@ void FVRMImportReport::Flush()
 		FMessageLog Log(LogName);
 		Log.SuppressLoggingToOutputLog(true);
 		Log.NewPage(FText::Format(LOCTEXT("PageTitle", "Import of {0}"), Title));
-		for (const FFile& File : Shown)
+		auto AddMessages = [&Log, &Warnings, &Errors](const TArray<VRM::ImportMessages::FMessage>& Messages)
 		{
+			for (const VRM::ImportMessages::FMessage& Message : Messages)
+			{
+				if (Message.Verbosity == ELogVerbosity::Warning)
+				{
+					Log.Warning(FText::FromString(Message.Text));
+					++Warnings;
+				}
+				else
+				{
+					Log.Error(FText::FromString(Message.Text));
+					++Errors;
+				}
+			}
+		};
+		for (int32 Index = 0; Index < Shown.Num(); ++Index)
+		{
+			const FFile& File = Shown[Index];
 			Log.Info(FText::FromString(FString::Printf(TEXT("%s\n%s"), *FPaths::GetCleanFilename(File.SourceFile), *Describe(File))));
-		}
-		for (const VRM::ImportMessages::FMessage& Message : Messages)
-		{
-			if (Message.Verbosity == ELogVerbosity::Warning)
+			// The last file's take also collects what was logged outside any import.
+			const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(File.SourceFile, /*bIncludeUnscoped*/ Index == Shown.Num() - 1);
+			if (Messages.Num() == 0)
 			{
-				Log.Warning(FText::FromString(Message.Text));
-				++Warnings;
+				Log.Info(LOCTEXT("NoProblems", "No warnings."));
 			}
-			else
-			{
-				Log.Error(FText::FromString(Message.Text));
-				++Errors;
-			}
-		}
-		if (Messages.Num() == 0)
-		{
-			Log.Info(LOCTEXT("NoProblems", "No warnings."));
+			AddMessages(Messages);
 		}
 	}
 

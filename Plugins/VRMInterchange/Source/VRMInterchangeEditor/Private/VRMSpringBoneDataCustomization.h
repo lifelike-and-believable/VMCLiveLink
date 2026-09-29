@@ -23,19 +23,19 @@ public:
 
 private:
 	/**
-	 * The tools' inputs and last result. Kept outside the customization, which the details view
-	 * recreates on every refresh (the tools refresh it after each change).
+	 * The tools' inputs and last result for one asset (the first selected). Kept outside the
+	 * customization, which the details view recreates on every refresh (the tools refresh it after
+	 * each change), and per asset, so two open editors don't share them.
 	 */
 	struct FToolState
 	{
-		TWeakObjectPtr<UObject> ForAsset; // the first asset the state was shown for
 		float StiffnessScale = 1.f;
 		float DragScale = 1.f;
 		float GravityScale = 1.f;
 		int32 SpringToReset = 0;
 		FText LastResult;
 	};
-	static TSharedRef<FToolState> GetToolState();
+	static TSharedRef<FToolState> GetToolState(const UObject* Asset);
 
 	/**
 	 * Runs Action on every spring data asset being edited, in one undoable transaction. Action calls
@@ -46,5 +46,5 @@ private:
 
 	TArray<TWeakObjectPtr<UVRMSpringBoneData>> Assets;
 	TWeakPtr<IDetailLayoutBuilder> Builder;
-	TSharedRef<FToolState> State = GetToolState();
+	TSharedRef<FToolState> State = MakeShared<FToolState>(); // replaced by the asset's in CustomizeDetails
 };

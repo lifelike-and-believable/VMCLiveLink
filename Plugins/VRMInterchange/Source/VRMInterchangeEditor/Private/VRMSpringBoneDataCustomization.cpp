@@ -20,10 +20,21 @@ TSharedRef<IDetailCustomization> FVRMSpringBoneDataCustomization::MakeInstance()
 	return MakeShared<FVRMSpringBoneDataCustomization>();
 }
 
-TSharedRef<FVRMSpringBoneDataCustomization::FToolState> FVRMSpringBoneDataCustomization::GetToolState()
+TSharedRef<FVRMSpringBoneDataCustomization::FToolState> FVRMSpringBoneDataCustomization::GetToolState(const UObject* Asset)
 {
-	static TSharedRef<FToolState> ToolState = MakeShared<FToolState>();
-	return ToolState;
+	static TMap<TWeakObjectPtr<const UObject>, TSharedRef<FToolState>> States;
+	for (auto It = States.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid())
+		{
+			It.RemoveCurrent(); // assets deleted or unloaded since
+		}
+	}
+	if (const TSharedRef<FToolState>* Found = States.Find(Asset))
+	{
+		return *Found;
+	}
+	return States.Add(Asset, MakeShared<FToolState>());
 }
 
 void FVRMSpringBoneDataCustomization::CustomizeDetails(const TSharedPtr<IDetailLayoutBuilder>& DetailBuilder)
@@ -45,14 +56,8 @@ void FVRMSpringBoneDataCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 		}
 	}
 
-	// Another asset: start its tools afresh (the scale factors are kept, they're only inputs).
-	UObject* FirstAsset = Assets.Num() > 0 ? Assets[0].Get() : nullptr;
-	if (State->ForAsset.Get() != FirstAsset)
-	{
-		State->ForAsset = FirstAsset;
-		State->SpringToReset = 0;
-		State->LastResult = FText::GetEmpty();
-	}
+	// Each asset keeps its own tool inputs and last result across refreshes.
+	State = GetToolState(Assets.Num() > 0 ? Assets[0].Get() : nullptr);
 
 	IDetailCategoryBuilder& Tools = DetailBuilder.EditCategory(TEXT("Editing Tools"), LOCTEXT("EditingTools", "Editing Tools"), ECategoryPriority::Important);
 	const FSlateFontInfo Font = IDetailLayoutBuilder::GetDetailFont();

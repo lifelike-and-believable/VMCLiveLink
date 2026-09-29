@@ -225,7 +225,7 @@ void UVRMSpringBoneData::SanitizeParameters()
     // Clamp Spring tunables
     for (FVRMSpring& Spring : SpringConfig.Springs)
     {
-        Spring.Stiffness = FMath::Clamp(Spring.Stiffness, 0.f, 1.f);
+        Spring.Stiffness = FMath::Max(0.f, Spring.Stiffness); // no upper bound (VRM 1.0)
         Spring.Drag = FMath::Clamp(Spring.Drag, 0.f, 1.f);
         // A zero direction falls back to down, as on import (VRMSpringBonesParser.cpp).
         Spring.GravityDir = Spring.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
@@ -235,7 +235,7 @@ void UVRMSpringBoneData::SanitizeParameters()
 
     for (FVRMSpringJoint& Joint : SpringConfig.Joints)
     {
-        Joint.Stiffness = FMath::Clamp(Joint.Stiffness, 0.f, 1.f);
+        Joint.Stiffness = FMath::Max(0.f, Joint.Stiffness);
         Joint.Drag = FMath::Clamp(Joint.Drag, 0.f, 1.f);
         Joint.GravityDir = Joint.GravityDir.GetSafeNormal(UE_SMALL_NUMBER, FVector(0, 0, -1));
         Joint.GravityPower = FMath::Max(0.f, Joint.GravityPower);

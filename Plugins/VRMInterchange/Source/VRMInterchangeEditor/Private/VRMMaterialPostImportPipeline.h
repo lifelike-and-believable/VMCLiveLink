@@ -55,6 +55,9 @@ protected:
 	virtual bool CanExecuteOnAnyThread(EInterchangePipelineTask PipelineTask) override;
 
 private:
+	/** The import's first source file, which its messages are filed under (P6.3). */
+	FString ImportSourceFile;
+
 	/** Pairs up the instances seen so far in this import; order of arrival does not matter. */
 	void ResolveParents();
 

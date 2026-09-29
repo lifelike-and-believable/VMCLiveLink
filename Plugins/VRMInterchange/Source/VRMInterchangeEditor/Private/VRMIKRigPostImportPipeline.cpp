@@ -30,9 +30,9 @@ void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer*
 {
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
 	LastIKRig = nullptr; // only this import's rig counts
-	// Only this instance's flag counts (seeded from the project settings in PostInitProperties).
 	// What this pipeline logs belongs to this import's message log page (P6.3).
 	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
+	// Only this instance's flag counts (seeded from the project settings in PostInitProperties).
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && bGenerateIKRig)
 	{
 		// The humanoid map the translator read (P4.1); without one, the template is duplicated.

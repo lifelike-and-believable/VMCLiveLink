@@ -54,6 +54,11 @@ bool FVRMImportMessagesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A warning"), int32(A[0].Verbosity), int32(ELogVerbosity::Warning));
 	TestEqual(TEXT("Unscoped message goes to the next Take"), A[1].Text, FString(TEXT("outside any import")));
 	TestTrue(TEXT("B still open"), IsCollecting());
+	{
+		// A's report has been shown: what A logs later isn't put on B's page.
+		const FScope LateA(FileA);
+		Receive(TEXT("late warning in A"), ELogVerbosity::Warning, VRMCategory);
+	}
 
 	const TArray<FMessage> B = Take(FileB);
 	if (!TestEqual(TEXT("B's error only"), B.Num(), 1)) return false;

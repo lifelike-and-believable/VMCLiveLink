@@ -128,7 +128,7 @@ When the import finishes, one notification lists:
 - those only pointed at the new mesh (existing Actor and Animation Blueprints; your edits are kept);
 - the avatar's licence and usage permissions.
 
-**Show in Content Browser** selects the assets. **Show problems** (or **Show import log**) opens the **VRM Import** message log. It has one page per import, listing every warning and error the import logged: unresolved bones, lenient spring layouts, non-VRM glTF files, and so on.
+**Show in Content Browser** selects the assets. **Show problems** (or **Show import log**) opens the **VRM Import** message log. It has one page for each report: normally one import, or several files imported together. For each file, the page lists every warning and error that import logged: unresolved bones, lenient spring layouts, non-VRM glTF files, and so on.
 
 ## Using Spring Bones
 

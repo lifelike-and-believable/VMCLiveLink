@@ -60,10 +60,10 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
     Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
     StagedSpringData.Reset();
 
-    // Only this instance's flags count. The project settings seeded them (PostInitProperties), and the
-    // import dialog may have changed them since; OR-ing the settings back in would ignore an unticked box.
     // What this pipeline logs belongs to this import's message log page (P6.3).
     const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
+    // Only this instance's flags count. The project settings seeded them (PostInitProperties), and the
+    // import dialog may have changed them since; OR-ing the settings back in would ignore an unticked box.
     if (!BeginImport(SourceDatas, ContentBasePath) || !BaseNodeContainer)
     {
         UE_LOG(LogVRMSpring, Verbose, TEXT("[VRMInterchange] Spring pipeline: No SourceData."));
@@ -166,15 +166,17 @@ bool UVRMSpringBonesPostImportPipeline::ReimportFromSource(UVRMSpringBoneData* D
         return false;
     }
     // What parsing logs goes to a VRM Import message log page too, as for an import (P6.3).
+    // Its own bucket, apart from any import of the same file that may be running.
     const FString& File = Data->SourceFilename;
-    VRM::ImportMessages::Begin(File);
+    const FString MessageKey = File + TEXT("#spring-reimport");
+    VRM::ImportMessages::Begin(MessageKey);
     UVRMSpringBoneData* Parsed = NewObject<UVRMSpringBoneData>(GetTransientPackage(), NAME_None);
     bool bParsed = false;
     {
-        const VRM::ImportMessages::FScope MessageScope(File);
+        const VRM::ImportMessages::FScope MessageScope(MessageKey);
         bParsed = ParseAndFillDataAsset(*Document, Parsed);
     }
-    const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(File);
+    const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(MessageKey, /*bIncludeUnscoped*/ false);
     if (Messages.Num() > 0)
     {
         FMessageLog Log(FVRMImportReport::LogName);
