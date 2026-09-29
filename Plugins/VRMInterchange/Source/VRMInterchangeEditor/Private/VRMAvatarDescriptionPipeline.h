@@ -25,16 +25,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
 	FString PipelineDisplayName = TEXT("VRM Avatar Description");
 
-	/** Make the avatar description asset (defaults to the project setting). */
-	UPROPERTY(EditAnywhere, Category = "VRM Avatar")
+	/** Creates <Mesh>_Avatar in <import folder>/<file name>: the humanoid map, expressions (for the VRM Expressions anim node), look-at, first person and licence (defaults to the project setting). */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Avatar Description"))
 	bool bGenerateAvatarDescription = true;
 
-	/** If the description exists, update it in place (what refers to it keeps working); otherwise the new one gets a unique name. */
-	UPROPERTY(EditAnywhere, Category = "VRM Avatar")
+	/** If <Mesh>_Avatar exists, update it in place from the file (what refers to it keeps working); otherwise the new one gets a unique name. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Avatar Description: Update Existing"))
 	bool bOverwriteExisting = true;
 
-	/** After the import, show a notification with the avatar's licence and usage permissions. */
-	UPROPERTY(EditAnywhere, Category = "VRM Avatar")
+	/** Include the avatar's licence and usage permissions in the notification shown after the import. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Avatar Description: Show Licence"))
 	bool bShowLicenseNotification = true;
 
 	virtual void PostInitProperties() override;

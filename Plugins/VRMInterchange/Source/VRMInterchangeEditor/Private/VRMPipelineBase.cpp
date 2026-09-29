@@ -11,6 +11,7 @@
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
+#include "VRMImportReport.h"
 #include "VRMInterchangeLog.h"
 #include "VRMPipelineTargets.h"
 
@@ -34,6 +35,10 @@ void UVRMPipelineBase::HandleImportedAsset(UObject* CreatedAsset, bool bIsAReimp
 	if (USkeletalMesh* Mesh = Cast<USkeletalMesh>(CreatedAsset))
 	{
 		bWaitingForMesh = false;
+		// What the pipeline makes from here on is reported for this file (P6.3).
+		FVRMImportReport& Report = FVRMImportReport::Get();
+		Report.BeginFile(ImportSourceFilename, bIsAReimport);
+		Report.AddAsset(Mesh, bIsAReimport);
 		OnSkeletalMeshImported(Mesh, bIsAReimport);
 	}
 }
@@ -96,6 +101,7 @@ UObject* UVRMPipelineBase::CreateOrReuseAsset(UClass* Class, const FString& Fold
 			{
 				bOutReused = true;
 				Existing->Modify();
+				FVRMImportReport::Get().AddAsset(Existing, /*bUpdated*/ true);
 				return Existing;
 			}
 			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] '%s' is a %s, not a %s; creating the new asset under another name."),
@@ -113,6 +119,7 @@ UObject* UVRMPipelineBase::CreateOrReuseAsset(UClass* Class, const FString& Fold
 	UObject* Asset = NewObject<UObject>(Package, Class, *AssetName, RF_Public | RF_Standalone | RF_Transactional);
 	FAssetRegistryModule::AssetCreated(Asset);
 	Asset->MarkPackageDirty();
+	FVRMImportReport::Get().AddAsset(Asset, /*bUpdated*/ false);
 	return Asset;
 }
 
@@ -137,6 +144,7 @@ UObject* UVRMPipelineBase::DuplicateTemplateAsset(const TCHAR* TemplatePath, con
 			{
 				bOutReused = true;
 				Existing->Modify();
+				FVRMImportReport::Get().AddAsset(Existing, /*bUpdated*/ true);
 				return Existing;
 			}
 			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] '%s' is a %s, not a %s; creating the new asset under another name."),
@@ -158,5 +166,6 @@ UObject* UVRMPipelineBase::DuplicateTemplateAsset(const TCHAR* TemplatePath, con
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
 	Duplicate->MarkPackageDirty();
+	FVRMImportReport::Get().AddAsset(Duplicate, /*bUpdated*/ false);
 	return Duplicate;
 }

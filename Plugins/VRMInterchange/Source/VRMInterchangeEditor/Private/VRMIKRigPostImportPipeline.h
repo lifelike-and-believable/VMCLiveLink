@@ -35,24 +35,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
 	FString PipelineDisplayName = "VRM IK Rig Set-up";
 
-	/** Generate IK Rig asset next to the imported mesh (defaults to the project setting) */
-	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
+	/** Creates IK_Rig_VRM_<Mesh> in <import folder>/<file name>/IKRigDefinition, with retargeting chains from the humanoid map, to retarget the character to and from other skeletons (defaults to the project setting). */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig"))
 	bool bGenerateIKRig = true;
 
-	/** If an IK Rig with this name exists, reuse it (its preview mesh is updated); otherwise the new one gets a unique name */
-	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
+	/** If the IK Rig exists, rebuild it in place (what refers to it keeps working; edits to it are replaced). Otherwise the new one gets a unique name. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig: Update Existing"))
 	bool bOverwriteExisting = false;
 
 	/** Build the chains from the VRM's humanoid map. Off: duplicate the template IK Rig, which only suits VRoid bone names. */
-	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig: Build From Humanoid Map"))
 	bool bBuildFromHumanoid = true;
 
-	/** Subfolder under character folder to place the asset */
-	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
+	/** Folder under <import folder>/<file name> for the IK Rig. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig: Folder"))
 	FString IKRigDefinitionSubFolder = TEXT("IKRigDefinition");
 
-	/** Base name prefix for the IK Rig (actual name includes the character suffix) */
-	UPROPERTY(EditAnywhere, Category = "VRM IK Rig")
+	/** The IK Rig is named <this>_<Mesh>. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig: Name Prefix"))
 	FString AssetBaseName = TEXT("IK_Rig_VRM");
 #endif
 

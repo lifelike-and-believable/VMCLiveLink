@@ -5,12 +5,14 @@
 #include "Misc/CoreDelegates.h"
 #include "Engine/Engine.h"
 #include "VRMTranslator.h"
+#include "VRMImportMessages.h"
 
 class FVRMInterchangeModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override
 	{
+		VRM::ImportMessages::RegisterCapture();
 		// Register after engine init; call immediately if GEngine is already valid
 		PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(this, &FVRMInterchangeModule::OnPostEngineInit);
 		if (GEngine)
@@ -27,6 +29,7 @@ public:
 			PostEngineInitHandle.Reset();
 		}
 		// No UnregisterTranslator in UE 5.6; manager cleans up internally
+		VRM::ImportMessages::UnregisterCapture();
 	}
 
 private:

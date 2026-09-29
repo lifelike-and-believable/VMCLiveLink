@@ -36,30 +36,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
 	FString PipelineDisplayName = "VRM Spring Bones Import and Configuration";	// Dialog toggles (defaults loaded from project settings)
   
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** Creates <Mesh>_SpringData in <import folder>/<file name>/SpringBones: the file's spring bones and colliders, for the VRM Spring Bones anim node. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones"))
 	bool bGenerateSpringBoneData = true;
 
-	/** If a spring data asset with this name exists, update it in place (what refers to it keeps working); otherwise the new one gets a unique name. */
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** If <Mesh>_SpringData exists, update it in place from the file (what refers to it keeps working; edits to it are replaced). Otherwise the new one gets a unique name. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Update Existing"))
 	bool bOverwriteExisting = false;
 
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** Creates a post-process AnimBlueprint in <import folder>/<file name>/<Animation Sub Folder> that runs the spring bones on the mesh. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Post-Process AnimBlueprint"))
 	bool bGeneratePostProcessAnimBP = false;
 
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** Set that AnimBlueprint as the skeletal mesh's post-process AnimBlueprint. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Assign Post-Process AnimBlueprint"))
 	bool bAssignPostProcessABP = false;
 
-	/** If the post-process AnimBP exists, reuse it (its spring data is updated); otherwise a new one gets a unique name. */
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** If the post-process AnimBlueprint exists, reuse it (its spring data is updated, your graph edits kept); otherwise a new one gets a unique name. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Update Existing AnimBlueprint"))
 	bool bOverwriteExistingPostProcessABP = false;
 
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** On reimport, reuse the post-process AnimBlueprint made by the first import. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Reuse AnimBlueprint On Reimport"))
 	bool bReusePostProcessABPOnReimport = true;
 
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** Folder under <import folder>/<file name> for the post-process AnimBlueprint. */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: AnimBlueprint Folder"))
 	FString AnimationSubFolder = TEXT("SpringBones");
 
-	UPROPERTY(EditAnywhere, Category = "VRM Spring")
+	/** Folder under <import folder>/<file name> for the spring data (empty: <import folder>/<file name> itself). */
+	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Folder"))
 	FString SubFolder = TEXT("SpringBones");
 #endif
 
