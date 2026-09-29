@@ -2,17 +2,20 @@
 #include "VMCLiveLinkRemapperCustomization.h"
 #include "VMCLiveLinkRemapper.h"
 #include "VMCLiveLinkMappingAsset.h"
+#include "SVMCMappingTable.h"
 
 #include "AssetToolsModule.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
+#include "PropertyHandle.h"
 #include "Factories/DataAssetFactory.h"
 #include "IAssetTools.h"
 #include "Misc/PackageName.h"
 #include "ScopedTransaction.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SWrapBox.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "VMCLiveLinkRemapperCustomization"
 
@@ -39,6 +42,47 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 			Remappers.Add(Remapper);
 		}
 	}
+
+	// P6.2: the details read top to bottom as Target (what the names are checked against) ->
+	// Mapping (preset, asset and the maps) -> Normalizer -> Mapping Tools -> Live Mapping (the
+	// table of what each incoming name becomes).
+	IDetailCategoryBuilder& Target = DetailBuilder.EditCategory(TEXT("Target"), LOCTEXT("Target", "Target"), ECategoryPriority::Important);
+	Target.AddCustomRow(LOCTEXT("TargetHelpFilter", "Target Reference Skeleton"))
+		.WholeRowContent()
+		[
+			SNew(STextBlock)
+				.AutoWrapText(true)
+				.Font(IDetailLayoutBuilder::GetDetailFontItalic())
+				.Text(LOCTEXT("TargetHelp", "The mesh the stream drives. Its bones and morph targets are what the Live Mapping table checks names against, and its rest pose gives streamed bones their lengths."))
+		];
+	Target.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, ReferenceSkeleton));
+	Target.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, bUseReferenceTranslations));
+
+	IDetailCategoryBuilder& Mapping = DetailBuilder.EditCategory(TEXT("Mapping"), LOCTEXT("Mapping", "Mapping"), ECategoryPriority::Important);
+	Mapping.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, Preset));
+	Mapping.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, MappingAsset));
+	Mapping.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, bAutoDetectMappingFromReference));
+	Mapping.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, bCaptureSignatureOnSave));
+	// The bone map is the Live Link base class's property; show it with the curve map.
+	const TSharedRef<IPropertyHandle> BoneMap = DetailBuilder.GetProperty(TEXT("BoneNameMap"), ULiveLinkSubjectRemapper::StaticClass());
+	if (BoneMap->IsValidHandle())
+	{
+		Mapping.AddProperty(BoneMap);
+	}
+	Mapping.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, CurveNameMap));
+
+	IDetailCategoryBuilder& Normalizer = DetailBuilder.EditCategory(TEXT("Normalizer"), LOCTEXT("Normalizer", "Normalizer"), ECategoryPriority::Important);
+	Normalizer.AddCustomRow(LOCTEXT("NormalizerHelpFilter", "Normalizer MetaHuman ARKit"))
+		.WholeRowContent()
+		[
+			SNew(STextBlock)
+				.AutoWrapText(true)
+				.Font(IDetailLayoutBuilder::GetDetailFontItalic())
+				.Text(LOCTEXT("NormalizerHelp", "Off by default. For ARKit targets (MetaHuman) fed by senders that only send some ARKit curves: it adds the missing blink or smile side as a copy of the other, and mouthPucker from mouthFunnel. It never changes a curve the stream sends."))
+		];
+	Normalizer.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, bEnableMetaHumanCurveNormalizer));
+	Normalizer.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, JoyToSmileStrength));
+	Normalizer.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, BlinkMirrorStrength));
 
 	IDetailCategoryBuilder& Tools = DetailBuilder.EditCategory(TEXT("Mapping Tools"), LOCTEXT("MappingTools", "Mapping Tools"), ECategoryPriority::Important);
 
@@ -88,6 +132,17 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 		[
 			Buttons
 		];
+
+	// One table for one remapper; with several selected, their names differ.
+	if (Remappers.Num() == 1)
+	{
+		IDetailCategoryBuilder& Live = DetailBuilder.EditCategory(TEXT("Live Mapping"), LOCTEXT("LiveMapping", "Live Mapping"), ECategoryPriority::Important);
+		Live.AddCustomRow(LOCTEXT("LiveMappingFilter", "Live Mapping Incoming Outgoing Unmapped Duplicate"))
+			.WholeRowContent()
+			[
+				SNew(SVMCMappingTable, Remappers[0])
+			];
+	}
 }
 
 FReply FVMCLiveLinkRemapperCustomization::Run(const FText& TransactionName, TFunctionRef<void(UVMCLiveLinkRemapper&)> Action)

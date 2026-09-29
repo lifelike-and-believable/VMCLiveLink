@@ -6,43 +6,66 @@
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 
+namespace VMCUdpReceiver
+{
+	// Checks the address and port and binds a UDP socket there (not reusable: a port another
+	// program already has is an error to report, not to share). Null, with OutError, on failure.
+	FSocket* BindSocket(const FString& BindAddress, int32 Port, const FString& Description, FString& OutError)
+	{
+		FIPv4Address Address;
+		if (!FIPv4Address::Parse(BindAddress, Address))
+		{
+			OutError = FString::Printf(TEXT("'%s' is not an IPv4 address"), *BindAddress);
+			return nullptr;
+		}
+		if (Port < 0 || Port > 65535)
+		{
+			OutError = FString::Printf(TEXT("port %d is out of range"), Port);
+			return nullptr;
+		}
+		if (!ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM))
+		{
+			OutError = TEXT("no socket subsystem");
+			return nullptr;
+		}
+		FSocket* Socket = FUdpSocketBuilder(Description)
+			.AsNonBlocking()
+			.BoundToAddress(Address)
+			.BoundToPort(uint16(Port))
+			.WithReceiveBufferSize(4 * 1024 * 1024)
+			.Build();
+		if (!Socket)
+		{
+			OutError = FString::Printf(TEXT("can't bind %s:%d (address not on this machine, or port in use?)"), *BindAddress, Port);
+		}
+		return Socket;
+	}
+}
+
+bool FVMCUdpReceiver::CanBind(const FString& BindAddress, int32 Port, FString& OutError)
+{
+	FSocket* Socket = VMCUdpReceiver::BindSocket(BindAddress, Port, TEXT("VMC port check"), OutError);
+	if (!Socket)
+	{
+		return false;
+	}
+	Socket->Close();
+	ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
+	return true;
+}
+
 TUniquePtr<FVMCUdpReceiver> FVMCUdpReceiver::Start(const FString& BindAddress, int32 Port, FOnPacket InOnPacket, const FString& ThreadName, FString& OutError)
 {
-	FIPv4Address Address;
-	if (!FIPv4Address::Parse(BindAddress, Address))
-	{
-		OutError = FString::Printf(TEXT("'%s' is not an IPv4 address"), *BindAddress);
-		return nullptr;
-	}
-	if (Port < 0 || Port > 65535)
-	{
-		OutError = FString::Printf(TEXT("port %d is out of range"), Port);
-		return nullptr;
-	}
-	ISocketSubsystem* Subsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
-	if (!Subsystem)
-	{
-		OutError = TEXT("no socket subsystem");
-		return nullptr;
-	}
-
-	// Not reusable: a port another program already has is an error to report, not to share.
-	FSocket* NewSocket = FUdpSocketBuilder(ThreadName)
-		.AsNonBlocking()
-		.BoundToAddress(Address)
-		.BoundToPort(uint16(Port))
-		.WithReceiveBufferSize(4 * 1024 * 1024)
-		.Build();
+	FSocket* NewSocket = VMCUdpReceiver::BindSocket(BindAddress, Port, ThreadName, OutError);
 	if (!NewSocket)
 	{
-		OutError = FString::Printf(TEXT("can't bind %s:%d (address not on this machine, or port in use?)"), *BindAddress, Port);
 		return nullptr;
 	}
 
 	TUniquePtr<FVMCUdpReceiver> Receiver(new FVMCUdpReceiver());
 	Receiver->Socket = NewSocket;
 	Receiver->BoundPort = NewSocket->GetPortNo();
-	Receiver->Sender = Subsystem->CreateInternetAddr();
+	Receiver->Sender = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
 	Receiver->Buffer.SetNumUninitialized(65536); // the largest UDP payload
 	Receiver->OnPacket = MoveTemp(InOnPacket);
 	Receiver->Thread = FRunnableThread::Create(Receiver.Get(), *ThreadName, 0, TPri_AboveNormal);

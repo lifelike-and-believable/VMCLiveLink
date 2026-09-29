@@ -199,5 +199,50 @@ bool FVMCRemapperHumanoidMetadataTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCRemapperMappingTableTest, "VMC.Remapper.MappingTable",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCRemapperMappingTableTest::RunTest(const FString& Parameters)
+{
+	// P6.2: the details panel's table shows what each incoming name becomes and why it may not
+	// reach the mesh.
+	UVMCLiveLinkRemapper* Remapper = NewObject<UVMCLiveLinkRemapper>();
+	Remapper->BoneNameMap.Add(TEXT("Hips"), TEXT("pelvis"));
+	Remapper->CurveNameMap.Add(TEXT("A"), TEXT("jawOpen"));
+	Remapper->CurveNameMap.Add(TEXT("I"), TEXT("jawOpen")); // two sources for one target
+	Remapper->bEnableMetaHumanCurveNormalizer = true;
+
+	const TArray<FName> Bones = { TEXT("Hips"), TEXT("Spine") };
+	const TArray<FName> Curves = { TEXT("A"), TEXT("I"), TEXT("eyeBlinkLeft") };
+	TArray<FVMCMappingRow> BoneRows, CurveRows;
+	Remapper->BuildMappingTable(Bones, Curves, nullptr, BoneRows, CurveRows);
+
+	if (!TestEqual(TEXT("One row per bone"), BoneRows.Num(), 2)) return false;
+	TestEqual(TEXT("Hips renamed"), BoneRows[0].Outgoing, FName(TEXT("pelvis")));
+	TestTrue(TEXT("Hips mapped"), BoneRows[0].bMapped);
+	TestEqual(TEXT("Spine passes through"), BoneRows[1].Outgoing, FName(TEXT("Spine")));
+	TestFalse(TEXT("Spine unmapped"), BoneRows[1].bMapped);
+	TestFalse(TEXT("No reference: nothing flagged missing"), BoneRows[1].bNotOnTarget);
+
+	// A, I, eyeBlinkLeft, then eyeBlinkRight added by the normalizer
+	if (!TestEqual(TEXT("Curve rows, with the normalizer's"), CurveRows.Num(), 4)) return false;
+	TestTrue(TEXT("A shares its target"), CurveRows[0].bDuplicateTarget);
+	TestTrue(TEXT("I shares its target"), CurveRows[1].bDuplicateTarget);
+	TestFalse(TEXT("eyeBlinkLeft doesn't"), CurveRows[2].bDuplicateTarget);
+	TestTrue(TEXT("Normalizer row"), CurveRows[3].bSynthesized && CurveRows[3].Incoming.IsNone());
+	TestEqual(TEXT("Normalizer adds the other blink"), CurveRows[3].Outgoing, FName(TEXT("eyeBlinkRight")));
+
+	// Against a mesh: its bones pass, other bones and curves without a morph target are flagged.
+	USkeletalMesh* Cube = LoadObject<USkeletalMesh>(nullptr, TEXT("/Engine/EngineMeshes/SkeletalCube.SkeletalCube"));
+	if (!TestNotNull(TEXT("SkeletalCube"), Cube) || !TestTrue(TEXT("SkeletalCube has a bone"), Cube->GetRefSkeleton().GetNum() > 0)) return false;
+	const FName CubeBone = Cube->GetRefSkeleton().GetBoneName(0);
+	Remapper->BoneNameMap.Add(TEXT("Hips"), CubeBone);
+	Remapper->BuildMappingTable(Bones, Curves, Cube, BoneRows, CurveRows);
+	TestFalse(TEXT("A bone the mesh has"), BoneRows[0].bNotOnTarget);
+	TestTrue(TEXT("A bone the mesh doesn't have"), BoneRows[1].bNotOnTarget);
+	TestTrue(TEXT("A curve with no morph target"), CurveRows[0].bNotOnTarget);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
 

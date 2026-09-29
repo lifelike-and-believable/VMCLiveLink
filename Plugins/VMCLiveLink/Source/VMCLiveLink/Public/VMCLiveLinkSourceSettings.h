@@ -29,15 +29,21 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VMC|Connection")
 	FName SubjectName = TEXT("VMC_Subject");
 
-	/** Convert Unity's axes (Y up) to UE's (Z up). Leave on for VMC senders. */
+	/**
+	 * Convert Unity's axes to UE's. Leave on for VMC senders, which send Unity space (X right, Y up,
+	 * Z forward). UE X = -Unity X, UE Y = Unity Z, UE Z = Unity Y, for positions and rotations alike,
+	 * so a character facing Unity +Z faces UE +Y, like the UE mannequin and imported VRMs. Off: the
+	 * values are used as sent.
+	 */
 	UPROPERTY(EditAnywhere, Category = "VMC|Conversion", meta = (DisplayName = "Convert Unity to UE Axes"))
 	bool bUnityToUE = true;
 
-	/** Convert metres to centimetres. Leave on for VMC senders. */
+	/** Multiply positions by 100: VMC sends metres, UE uses centimetres. Leave on for VMC senders. */
 	UPROPERTY(EditAnywhere, Category = "VMC|Conversion", meta = (DisplayName = "Convert Metres to Centimetres"))
 	bool bMetersToCm = true;
 
-	/** Extra turn of the root about UE's up axis. */
+	/** Extra turn of the root about UE's up axis (Z), after the axis conversion. Positive values
+	 *  turn +X toward +Y, as a positive UE yaw does; 180 makes a character that faces +Y face -Y. */
 	UPROPERTY(EditAnywhere, Category = "VMC|Conversion", meta = (Units = "Degrees", UIMin = "-180", UIMax = "180"))
 	float YawOffsetDeg = 0.f;
 

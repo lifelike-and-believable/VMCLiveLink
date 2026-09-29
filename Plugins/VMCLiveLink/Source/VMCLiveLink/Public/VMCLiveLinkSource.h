@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "ILiveLinkSource.h"
+#include "LiveLinkTypes.h"
 #include "Templates/UniquePtr.h"
 #include "UObject/StrongObjectPtr.h"
 #include "VMCConnectionSettings.h"
@@ -20,6 +21,8 @@ class FVMCFrameAssembler;
 class FVMCSenderFilter;
 struct FVMCDevicePose;
 class FVMCUdpReceiver;
+class FVMCMessageStats;
+class FOutputDevice;
 class FInternetAddr;
 class ULiveLinkSourceSettings;
 struct FPropertyChangedEvent;
@@ -62,13 +65,28 @@ public:
     virtual bool RequestSourceShutdown() override;
 
     virtual FText GetSourceType() const override { return NSLOCTEXT("VMCLiveLink", "SourceType", "VMC (OSC)"); }
-    virtual FText GetSourceMachineName() const override { return FText::FromString(TEXT("Local/Network")); }
+    /** The IP address the last packet came from. */
+    virtual FText GetSourceMachineName() const override;
     virtual FText GetSourceStatus() const override;
 
     // Settings shown in the Live Link panel (UVMCLiveLinkSourceSettings)
     virtual TSubclassOf<ULiveLinkSourceSettings> GetSettingsClass() const override;
     virtual void InitializeSettings(ULiveLinkSourceSettings* InSettings) override;
     virtual void OnSettingsChanged(ULiveLinkSourceSettings* InSettings, const FPropertyChangedEvent& PropertyChangedEvent) override;
+
+    /** VMC.Stats for this source: message rates per address since the last call, and the addresses
+     *  the plugin doesn't use. Game thread. */
+    FString GetStatsReport();
+
+    /** VMC.Stats: the report of every VMC source, to Ar. Game thread. */
+    static void ReportAllStats(FOutputDevice& Ar);
+
+    /**
+     * The bone and curve names the VMC source publishing Key last sent as static data: VMC's own
+     * names, before any remapper renames them (P6.2's mapping table). False if no VMC source
+     * publishes Key, or it hasn't sent static data yet. Game thread.
+     */
+    static bool GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves);
 
 private:
     /** Everything frame building reads that the game thread owns. Immutable once published. */
@@ -91,6 +109,7 @@ private:
     // ---- Frame-building thread (receive thread, or game thread) ----
     void OnPacket(TConstArrayView<uint8> Packet, double ArrivalSeconds, const FInternetAddr& Sender);
     bool AcceptSender(const FString& Sender); // the allowlist and sender lock (Settings)
+    void NoteSender(const FString& Sender);   // the status's sender, when it changes
     void ProcessMessage(VMCProtocol::EAddress Kind, TConstArrayView<VMCProtocol::FArg> Args, double ArrivalSeconds, const FSnapshot& Snap);
     void PushStaticData(const FSnapshot& Snap);
     void PushFrame(const FSnapshot& Snap, double ArrivalSeconds);
@@ -133,6 +152,9 @@ private:
     bool bWarnedLegacyRoot = false;
     bool bWarnedRootScaleOffset = false;
     bool bWarnedMalformed = false;
+    uint32 LastSenderHash = 0;          // the receive thread's last sender (FInternetAddr hash)
+    FString LastSenderSeen;             // and its IP; the OSC path compares this directly
+    TUniquePtr<FVMCMessageStats> MessageStats; // counted while frames are built, reported by VMC.Stats
 
     // Shared between the threads
     std::atomic<bool> bStaticSent { false };
@@ -146,6 +168,9 @@ private:
     double MeanIntervalDeviation = 0.0; // seconds, moving average of |interval - mean|: the jitter
     FString SenderStateText;          // what /VMC/Ext/OK says, when worth showing (VMCProtocol::DescribeSenderState)
     FString LockedSender;             // the sender locked to (bLockToFirstSender), or empty
+    FString LastSender;               // the IP of the last packet used, or empty
+    TArray<FName> PublishedBones;     // the names in the last static data pushed
+    TArray<FName> PublishedCurves;
     int32 IgnoredSenders = 0;         // senders whose packets were ignored since receiving started
     int32 NumDeviceSubjects = 0;      // device and camera subjects published
 };

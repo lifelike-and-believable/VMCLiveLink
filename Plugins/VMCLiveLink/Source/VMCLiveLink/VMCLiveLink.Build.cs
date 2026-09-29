@@ -48,7 +48,9 @@ public class VMCLiveLink : ModuleRules
                 // Editor tools (mapping assets, remapper buttons) live in VMCLiveLinkEditor, so the
                 // runtime module doesn't need UnrealEd or AssetTools (P3.2).
                 "Slate",
-                "SlateCore"
+                "SlateCore",
+                // Its details view of the source settings (P6.1)
+                "PropertyEditor"
             });
         }
     }
