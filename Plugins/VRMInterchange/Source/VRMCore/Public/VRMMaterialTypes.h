@@ -14,14 +14,18 @@ class FJsonObject;
 /** glTF alphaMode. */
 enum class EVRMAlphaMode : uint8
 {
+	/** Alpha is ignored. */
 	Opaque,
+	/** Pixels below AlphaCutoff are discarded. */
 	Mask,
+	/** Alpha blended (translucent). */
 	Blend,
 };
 
 /** VRMC_materials_mtoon outlineWidthMode. */
 enum class EVRMOutlineWidthMode : uint8
 {
+	/** No outline. */
 	None,
 	/** OutlineWidth is in metres. */
 	WorldCoordinates,
@@ -32,11 +36,14 @@ enum class EVRMOutlineWidthMode : uint8
 /** KHR_texture_transform: uv' = Rotate(uv * Scale, Rotation) + Offset, as the glTF extension defines it. */
 struct FVRMTextureTransform
 {
+	/** Added after scaling and rotating, in UV units. */
 	FVector2f Offset = FVector2f::ZeroVector;
+	/** UV scale. */
 	FVector2f Scale = FVector2f(1.f, 1.f);
 	/** Radians, counter-clockwise in UV space. */
 	float Rotation = 0.f;
 
+	/** Whether it leaves UVs unchanged. */
 	bool IsIdentity() const { return Offset.IsNearlyZero() && Scale.Equals(FVector2f(1.f, 1.f)) && FMath::IsNearlyZero(Rotation); }
 };
 
@@ -66,20 +73,26 @@ struct FVRMMToon
 
 	// Outline
 	EVRMOutlineWidthMode OutlineWidthMode = EVRMOutlineWidthMode::None;
+	/** Metres (WorldCoordinates) or a fraction of the screen height (ScreenCoordinates); VRM 0.x values
+	 *  are converted to these. The outline material takes it in the same unit. */
 	float OutlineWidth = 0.f;
 	int32 OutlineWidthMultiplyTexture = INDEX_NONE;
 	FLinearColor OutlineColor = FLinearColor::Black;
 	float OutlineLightingMix = 1.f;
 
+	/** Translucent, but writes depth (stored; the UE material doesn't use it). */
 	bool bTransparentWithZWrite = false;
+	/** Draw order among translucent materials (stored; not applied). */
 	int32 RenderQueueOffset = 0;
 
+	/** Whether the material draws an outline. */
 	bool HasOutline() const { return OutlineWidthMode != EVRMOutlineWidthMode::None && OutlineWidth > 0.f; }
 };
 
 /** One glTF material, with its VRM extensions. */
 struct FVRMParsedMaterial
 {
+	/** The glTF material's name. */
 	FString Name;
 
 	// glTF core (pbrMetallicRoughness and friends)
@@ -107,6 +120,7 @@ struct FVRMParsedMaterial
 
 	/** True when the material is MToon (VRMC_materials_mtoon, or VRM 0.x shader "VRM/MToon"). */
 	bool bMToon = false;
+	/** The MToon parameters; defaults unless bMToon. */
 	FVRMMToon MToon;
 };
 

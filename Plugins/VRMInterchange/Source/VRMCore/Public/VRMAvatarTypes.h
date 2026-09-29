@@ -14,6 +14,7 @@
 UENUM(BlueprintType)
 enum class EVRMAvatarVersion : uint8
 {
+	/** No VRM extension (a plain glTF file). */
 	Unknown,
 	VRM0 UMETA(DisplayName = "VRM 0.x"),
 	VRM1 UMETA(DisplayName = "VRM 1.0"),
@@ -23,6 +24,7 @@ enum class EVRMAvatarVersion : uint8
 UENUM(BlueprintType)
 enum class EVRMHumanBone : uint8
 {
+	/** Not a humanoid bone. */
 	None,
 	Hips, Spine, Chest, UpperChest, Neck, Head, LeftEye, RightEye, Jaw,
 	LeftUpperLeg, LeftLowerLeg, LeftFoot, LeftToes,
@@ -46,6 +48,7 @@ enum class EVRMHumanBone : uint8
 UENUM(BlueprintType)
 enum class EVRMExpressionPreset : uint8
 {
+	/** Not a preset: the expression is known by its name. */
 	Custom,
 	Happy, Angry, Sad, Relaxed, Surprised,
 	Aa, Ih, Ou, Ee, Oh,
@@ -58,8 +61,11 @@ enum class EVRMExpressionPreset : uint8
 UENUM(BlueprintType)
 enum class EVRMExpressionOverride : uint8
 {
+	/** No effect. */
 	None,
+	/** Those expressions are off while this one is above 0. */
 	Block,
+	/** Those expressions are reduced by this one's weight. */
 	Blend,
 };
 
@@ -81,6 +87,7 @@ struct VRMCORE_API FVRMMorphBind
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	int32 MeshIndex = INDEX_NONE;
 
+	/** The morph target's index within that glTF mesh. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	int32 TargetIndex = INDEX_NONE;
 };
@@ -99,6 +106,7 @@ struct VRMCORE_API FVRMMaterialColorBind
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Property;
 
+	/** The colour at full expression. VRM 1.0: linear. VRM 0.x: as the file gives it (gamma-encoded). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FLinearColor TargetValue = FLinearColor::White;
 };
@@ -109,12 +117,16 @@ struct VRMCORE_API FVRMTextureTransformBind
 {
 	GENERATED_BODY()
 
+	/** The glTF material's name. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Material;
 
+	/** UV scale at full expression. VRM 1.0: glTF convention. VRM 0.x: Unity _ST scale, as the file gives it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVector2D Scale = FVector2D(1.0, 1.0);
 
+	/** UV offset at full expression, in UV units. VRM 1.0: glTF convention (origin top left). VRM 0.x: Unity
+	 *  _ST offset (origin bottom left), as the file gives it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVector2D Offset = FVector2D::ZeroVector;
 };
@@ -129,6 +141,7 @@ struct VRMCORE_API FVRMExpression
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FName Name;
 
+	/** The preset it is, or Custom. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMExpressionPreset Preset = EVRMExpressionPreset::Custom;
 
@@ -136,21 +149,27 @@ struct VRMCORE_API FVRMExpression
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	bool bIsBinary = false;
 
+	/** How this expression affects the blink expressions while active. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMExpressionOverride OverrideBlink = EVRMExpressionOverride::None;
 
+	/** How this expression affects the look-at expressions while active. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMExpressionOverride OverrideLookAt = EVRMExpressionOverride::None;
 
+	/** How this expression affects the mouth (viseme) expressions while active. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMExpressionOverride OverrideMouth = EVRMExpressionOverride::None;
 
+	/** The morph targets it drives. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FVRMMorphBind> MorphBinds;
 
+	/** The material colours it changes (stored, not applied). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FVRMMaterialColorBind> MaterialColorBinds;
 
+	/** The texture transforms it changes (stored, not applied). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FVRMTextureTransformBind> TextureTransformBinds;
 };
@@ -161,25 +180,32 @@ struct VRMCORE_API FVRMLookAtRange
 {
 	GENERATED_BODY()
 
+	/** The largest input angle, in degrees. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	float InputMaxValue = 90.f;
 
+	/** The output at InputMaxValue: degrees of eye bone rotation (Bone look-at), or an expression weight (Expression look-at). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	float OutputScale = 10.f;
 };
 
+/** How the eyes look at a target. */
 UENUM(BlueprintType)
 enum class EVRMLookAtType : uint8
 {
+	/** Rotate the eye bones. */
 	Bone,
+	/** Drive the lookUp/Down/Left/Right expressions. */
 	Expression,
 };
 
+/** The avatar's look-at settings (VRM 1.0 lookAt, VRM 0.x firstPerson look-at fields). */
 USTRUCT(BlueprintType)
 struct VRMCORE_API FVRMLookAt
 {
 	GENERATED_BODY()
 
+	/** Whether look-at rotates bones or drives expressions. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMLookAtType Type = EVRMLookAtType::Bone;
 
@@ -187,25 +213,34 @@ struct VRMCORE_API FVRMLookAt
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVector OffsetFromHeadBone = FVector::ZeroVector;
 
+	/** Looking toward the nose (each eye's inner side). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVRMLookAtRange HorizontalInner;
 
+	/** Looking away from the nose. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVRMLookAtRange HorizontalOuter;
 
+	/** Looking down. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVRMLookAtRange VerticalDown;
 
+	/** Looking up. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVRMLookAtRange VerticalUp;
 };
 
+/** Which views a mesh is drawn in (VRM firstPerson meshAnnotations). */
 UENUM(BlueprintType)
 enum class EVRMFirstPersonType : uint8
 {
+	/** Decided by the application (typically: hidden in first person if it is weighted to the head). */
 	Auto,
+	/** Always drawn. */
 	Both,
+	/** Hidden in first person. */
 	ThirdPersonOnly,
+	/** Drawn in first person only. */
 	FirstPersonOnly,
 };
 
@@ -223,6 +258,7 @@ struct VRMCORE_API FVRMFirstPersonAnnotation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	int32 Index = INDEX_NONE;
 
+	/** Which views it is drawn in. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMFirstPersonType Type = EVRMFirstPersonType::Auto;
 };
@@ -233,24 +269,31 @@ struct VRMCORE_API FVRMMeta
 {
 	GENERATED_BODY()
 
+	/** The avatar's name. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Name;
 
+	/** The avatar's own version (the author's, not the VRM version). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Version;
 
+	/** The avatar's authors. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FString> Authors;
 
+	/** Copyright notice. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString CopyrightInformation;
 
+	/** How to contact the authors. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString ContactInformation;
 
+	/** What the avatar is based on (URLs or text). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FString> References;
 
+	/** Licences of third-party material in the avatar. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString ThirdPartyLicenses;
 
@@ -262,6 +305,7 @@ struct VRMCORE_API FVRMMeta
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString LicenseName;
 
+	/** URL of any further licence terms. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString OtherLicenseUrl;
 
@@ -281,18 +325,23 @@ struct VRMCORE_API FVRMMeta
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FString Modification;
 
+	/** Whether the avatar may be used in excessively violent content. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	bool bAllowExcessivelyViolentUsage = false;
 
+	/** Whether the avatar may be used in excessively sexual content. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	bool bAllowExcessivelySexualUsage = false;
 
+	/** Whether the avatar may be used for political or religious purposes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	bool bAllowPoliticalOrReligiousUsage = false;
 
+	/** Whether the avatar may be used for antisocial or hateful purposes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	bool bAllowAntisocialOrHateUsage = false;
 
+	/** Whether the avatar file may be redistributed. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	bool bAllowRedistribution = false;
 
@@ -307,9 +356,11 @@ struct VRMCORE_API FVRMAvatarData
 {
 	GENERATED_BODY()
 
+	/** The VRM version the file declares. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	EVRMAvatarVersion Version = EVRMAvatarVersion::Unknown;
 
+	/** Authorship and licence. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVRMMeta Meta;
 
@@ -317,12 +368,15 @@ struct VRMCORE_API FVRMAvatarData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	TMap<EVRMHumanBone, FName> HumanoidToBone;
 
+	/** The expressions (VRM 1.0) or blend shape groups (VRM 0.x). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FVRMExpression> Expressions;
 
+	/** Look-at settings. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	FVRMLookAt LookAt;
 
+	/** Per mesh, which views it is drawn in. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VRM")
 	TArray<FVRMFirstPersonAnnotation> FirstPerson;
 };

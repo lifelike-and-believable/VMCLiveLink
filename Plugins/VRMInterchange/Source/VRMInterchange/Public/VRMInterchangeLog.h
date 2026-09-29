@@ -4,4 +4,5 @@
 #include "CoreMinimal.h"
 #include "VRMCoreLog.h" // LogVRMInterchange
 
+/** Spring bone parsing and import (the runtime module logs to LogVRMSpringData and LogVRMSpringBones). */
 VRMINTERCHANGE_API DECLARE_LOG_CATEGORY_EXTERN(LogVRMSpring, Log, All);

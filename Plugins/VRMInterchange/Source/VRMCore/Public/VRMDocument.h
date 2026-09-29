@@ -53,6 +53,7 @@ public:
 	FVRMDocument(const FVRMDocument&) = delete;
 	FVRMDocument& operator=(const FVRMDocument&) = delete;
 
+	/** The path the document was loaded from (or named with). */
 	const FString& GetFilename() const { return Filename; }
 
 	/** MD5 of the file's bytes. */
@@ -75,6 +76,7 @@ public:
 
 	/** True if the binary data loaded and the glTF validated, so the geometry can be read. */
 	bool HasGeometry() const { return Gltf != nullptr; }
+	/** Why the geometry didn't load; empty when HasGeometry(). */
 	const FString& GetGeometryError() const { return GeometryError; }
 
 private:

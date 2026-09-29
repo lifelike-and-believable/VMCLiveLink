@@ -6,11 +6,17 @@
 #include "VRMInterchangeSettings.generated.h"
 
 
+/**
+ * Project Settings > Plugins > VRM Interchange: which assets VRM imports generate, and the prompt to
+ * register the import pipelines. The pipelines read these as their defaults; each setting's tooltip
+ * says what it does. Game thread.
+ */
 UCLASS(config=Game, defaultconfig, meta=(DisplayName="VRM Interchange"))
 class VRMINTERCHANGEEDITOR_API UVRMInterchangeSettings : public UDeveloperSettings
 {
     GENERATED_BODY()
 public:
+	/** Sets the defaults (config values then override them). */
 	UVRMInterchangeSettings();
 
     // Spring Bones ---------------------------------------------------------------
@@ -55,5 +61,6 @@ public:
     UFUNCTION(CallInEditor, Category="Import Pipelines", meta=(DisplayName="Register VRM Import Pipelines"))
     void RegisterImportPipelines();
 
+    /** Shown under Plugins in Project Settings. */
     virtual FName GetCategoryName() const override { return TEXT("Plugins"); }
 };
