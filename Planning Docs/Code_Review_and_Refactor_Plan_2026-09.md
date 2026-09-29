@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-29):** 39 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 4, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 93 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-29):** 47 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 5, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 97 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -994,6 +994,23 @@ Do this after correctness, so each change can be measured against golden outputs
 | P5.7 | File I/O | Delivered by P3.3: one read and parse per import; MD5 from the in-memory buffer | One file read per import |
 | P5.8 | Editor startup | Delivered by P1.17: no asset-registry hooks or synchronous loads at startup | No VRM-related synchronous loads in the startup trace |
 
+**Status (#166, #167, #168, merged):** Phase 5 is done. The numbers come from four benchmark tests added in #166 (`VRM.Perf.MeshPayload`, `VRM.Perf.TextureDecode`, `VRM.Perf.SpringSolver`, `VMC.Perf.StreamFrame`), not from Unreal Insights. They run in every CI build and log `PERF` lines. They fail only on wrong results, never on time, because the runner is shared. All timings are from the self-hosted CI runner, whose CPU model isn't recorded in the logs.
+
+| ID | Result | Target |
+|---|---|---|
+| P5.1 | 9.7 µs per frame for the messages (55 bones, 60 curves) plus 0.25 µs to build the frame on Apply. Already delivered by P3.1 | Met (< 20 µs) |
+| P5.2 | Already delivered by P3.2: the worker resolves its maps when static data changes, and `RemapFrameData` copies by index with no hashing per frame | Met |
+| P5.3 | 0.078 to 0.080 ms per frame (200 joints, 30 colliders). Already delivered by P2.1 and P2.2; no `ParallelFor` needed | Met (< 0.15 ms) |
+| P5.4 | Influences go in a `TArray<FBoneWeight, TInlineAllocator<4>>` (#167). Base payload 97 ms before, 96.5 ms after (50,176 vertices) | Not met: the allocation wasn't the cost. The 30 % target isn't reached; the time goes to building the mesh description itself |
+| P5.5 | The base payload is built once per import and copied for each morph target, which overwrites positions (and normals when the target has them) (#167). 60 morph targets: 5.85 s before, 85 ms after | Met: about 69 times faster for the morph payloads, which were most of the import |
+| P5.6 | The decoded image becomes the `FImportImage` buffer without a copy, and 16-bit normal and data PNGs stay `TSF_RGBA16` (#168). Peak memory drops by one decoded image per decode (16 MB for 2048×2048). Decode time 40.7 → 36.5 ms (colour) and 43.5 → 39.0 ms (normal map) | Met |
+| P5.7 | Already delivered by P3.3 | Met |
+| P5.8 | Already delivered by P1.17 | Met |
+
+- **Deviation (P5.5):** the plan asks to confirm in the engine source whether a MORPHTARGET payload needs only positions. The engine source couldn't be read from the implementing environment, so #167 takes the plan's other option and shares the base topology. The payload is the same as before. Emitting positions only might save the remaining 85 ms; it needs that engine check first. Interchange's payload calls may run in parallel, so the cached base is behind a lock.
+- **Deviation (P5.6):** colour textures from 16-bit PNGs are still converted to BGRA8, because the sRGB flag isn't applied to 16-bit sources. Only normal and data maps stay 16-bit. The compressed PNG and JPEG bytes stay in the parsed model until the import ends, because each use of an image decodes from them.
+- **Peak memory** for P5.6 is computed from the buffer sizes, not measured. An Insights memory trace of a real import is an editor check (below).
+
 ---
 
 ## Phase 6: Usability
@@ -1102,7 +1119,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ## B.10 Implementation progress
 
-*Last updated 2026-09-26 (evening).* Phases 1 to 3 are complete, and P4.1 and P4.2 are merged. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 75 automation tests pass (57 VRM, 18 VMC).
+*Last updated 2026-09-29.* Phases 1 to 5 are complete. `main` builds Editor (without unity files), Game Development and Shipping on UE 5.6, and all 97 automation tests pass.
 
 ### Status by task
 
@@ -1147,12 +1164,13 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P4.6 Morph targets | #155 | Merged | Copilot: 4 findings and 3 "previously missed" over five rounds, all fixed |
 | P4.7 VMC protocol coverage | #156, #157 | Merged | Copilot: 1 and 2 findings plus 5 "previously missed" over the rounds, all fixed. #157 was stacked on #156; after #156's squash, the conflicts were only duplicated base changes (checked with `git diff` against `main`, rule 13) |
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, this PR | Merged | |
+| P5.1 to P5.8 Optimization | #166, #167, #168 | Merged | #166 added the benchmark tests. P5.1, P5.2, P5.3, P5.7 and P5.8 were already delivered by earlier phases; the benchmarks confirm their targets. P5.4 missed its target (see Phase 5 status). Merged without Copilot reviews at the owner's call: Copilot didn't run |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, #165, this PR | Merged | |
 
-**Not started:** Phases 5 to 7.
+**Not started:** Phases 6 and 7.
 
 **Recommended next:**
-1. Phase 5 (optimization).
+1. Phase 6 (usability).
 2. Owner: fix the runner's Application Control block (X-07).
 3. The editor checks below, starting with P4.5's material comparison.
 
@@ -1190,6 +1208,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P5):** import a large VRoid model (about 60 morph targets) with Unreal Insights running (memory and CPU channels) and record the import time and peak memory, to confirm the benchmark results on a real file.
 - **In the editor (P4.5):** import a VRoid VRM 0.x and a VRM 1.0 avatar into a default level and compare with three-vrm or UniVRM renders of the same models: toon ramp and shade colours, cutout hair and transparent parts, rim, outlines (world and screen width). Check the fallback light in a level without an atmosphere sun light, and that the generated materials save and reload.
 - **In the editor (P4.4):** import a VRM, add a VMC source and set the subject remapper's Reference Skeleton to the imported mesh. The bone map fills from the mesh's `VRM.Humanoid.*` metadata and a VSeeFace stream drives the body with no other setup.
 - **In the editor (P4.6):** an expression whose morph has NORMAL deltas shades correctly (for example a VRoid face's mouth shapes); a target without them keeps its shading.
