@@ -56,8 +56,6 @@ static bool MergeMeshInstances(const cgltf_data* Data, const TArray<FVRMMeshInst
 // Morph targets of the same mesh instances, in the same vertex order.
 static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInstance>& Instances, const TArray<FVRMVertexRest>& VertexRest, FVRMParsedModel& Out);
 
-// New forward for extracted material parsing
-static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out);
 
 // New helper: reset parsed model to a known default state
 static void ResetParsedModel(FVRMParsedModel& Out);
@@ -496,8 +494,8 @@ bool VRM::BuildParsedModel(const FVRMDocument& Document, FVRMParsedModel& Out)
         LoadImagesFromCgltf(Data, Filename, Out);
     }
 
-    // Materials: record at least base-color texture indices if available (optional)
-    ParseMaterialTextures(Data, Out);
+    // Materials, with their VRM extensions (MToon), from the JSON
+    Out.Materials = VRM::ParseMaterials(*Document.GetJsonRoot());
     return true;
 }
 
@@ -754,83 +752,6 @@ static bool LoadImagesFromCgltf(const cgltf_data* Data, const FString& Filename,
         }
     }
     return true;
-}
-
-// Extracted helper: parse material textures and flags into Out.Materials
-static void ParseMaterialTextures(const cgltf_data* Data, FVRMParsedModel& Out)
-{
-    Out.Materials.Reset();
-    if (!Data || Data->materials_count == 0)
-    {
-        return;
-    }
-
-    for (int32 mi = 0; mi < int32(Data->materials_count); ++mi)
-    {
-        const cgltf_material* Mat = &Data->materials[mi];
-
-        FVRMParsedModel::FMat M;
-        M.Name = Mat->name ? FString(UTF8_TO_TCHAR(Mat->name)) : FString::Printf(TEXT("VRM_Mat_%d"), mi);
-
-        // Defaults
-        M.BaseColorTexture = INDEX_NONE;
-        M.NormalTexture = INDEX_NONE;
-        M.MetallicRoughnessTexture = INDEX_NONE;
-        M.OcclusionTexture = INDEX_NONE;
-        M.EmissiveTexture = INDEX_NONE;
-        M.bDoubleSided = false;
-        M.AlphaMode = 0;
-        M.AlphaCutoff = 0.5f;
-
-        // PBR textures
-        if (Mat->has_pbr_metallic_roughness)
-        {
-            if (Mat->pbr_metallic_roughness.base_color_texture.texture &&
-                Mat->pbr_metallic_roughness.base_color_texture.texture->image)
-            {
-                M.BaseColorTexture = int32(Mat->pbr_metallic_roughness.base_color_texture.texture->image - Data->images);
-            }
-            if (Mat->pbr_metallic_roughness.metallic_roughness_texture.texture &&
-                Mat->pbr_metallic_roughness.metallic_roughness_texture.texture->image)
-            {
-                M.MetallicRoughnessTexture = int32(Mat->pbr_metallic_roughness.metallic_roughness_texture.texture->image - Data->images);
-            }
-        }
-
-        // Normal
-        if (Mat->normal_texture.texture && Mat->normal_texture.texture->image)
-        {
-            M.NormalTexture = int32(Mat->normal_texture.texture->image - Data->images);
-        }
-
-        // Occlusion
-        if (Mat->occlusion_texture.texture && Mat->occlusion_texture.texture->image)
-        {
-            M.OcclusionTexture = int32(Mat->occlusion_texture.texture->image - Data->images);
-        }
-
-        // Emissive
-        if (Mat->emissive_texture.texture && Mat->emissive_texture.texture->image)
-        {
-            M.EmissiveTexture = int32(Mat->emissive_texture.texture->image - Data->images);
-        }
-
-        // Double-sided
-        M.bDoubleSided = Mat->double_sided != 0;
-
-        // Alpha mode and cutoff
-        if (Mat->alpha_mode == cgltf_alpha_mode_mask)
-        {
-            M.AlphaMode = 1;
-            M.AlphaCutoff = (float)Mat->alpha_cutoff;
-        }
-        else if (Mat->alpha_mode == cgltf_alpha_mode_blend)
-        {
-            M.AlphaMode = 2;
-        }
-
-        Out.Materials.Add(M);
-    }
 }
 
 static FString GltfMeshName(const cgltf_mesh& Mesh)
