@@ -143,25 +143,10 @@ bool UVMCLiveLinkRemapper::GetIncomingNames(TArray<FName>& OutBones, TArray<FNam
 {
 	OutBones.Reset();
 	OutCurves.Reset();
-	// A VMC source keeps the names it sent; Live Link may hold the subject's static data renamed.
-	if (FVMCLiveLinkSource::GetPublishedNames(CachedKey, OutBones, OutCurves))
-	{
-		return true;
-	}
-	if (!IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
-	{
-		return false;
-	}
-	ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
-	const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(CachedKey);
-	if (!SDS || !SDS->IsValid() || !SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
-	{
-		return false;
-	}
-	const FLiveLinkSkeletonStaticData& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
-	OutBones = Skel.GetBoneNames();
-	OutCurves = static_cast<const FLiveLinkBaseStaticData&>(Skel).PropertyNames;
-	return true;
+	// Only a VMC source can say what it sent: the static data Live Link holds for a subject may
+	// already be renamed by this remapper, which would make the table show outgoing names as
+	// incoming ones (P6.2 review).
+	return FVMCLiveLinkSource::GetPublishedNames(CachedKey, OutBones, OutCurves);
 }
 
 void UVMCLiveLinkRemapper::BuildMappingTable(TConstArrayView<FName> Bones, TConstArrayView<FName> Curves, const USkeletalMesh* Reference,
@@ -215,24 +200,42 @@ void UVMCLiveLinkRemapper::BuildMappingTable(TConstArrayView<FName> Bones, TCons
 	Fill(Curves, OutCurveNames, CurveNameMap, HasMorph, OutCurves);
 }
 
+bool UVMCLiveLinkRemapper::GetSubjectNamesForSeeding(TArray<FName>& OutBones, TArray<FName>& OutCurves) const
+{
+	// The VMC source's own record of what it sent, when a VMC source publishes the subject: Live
+	// Link's static data may already carry this remapper's renames.
+	if (GetIncomingNames(OutBones, OutCurves))
+	{
+		return true;
+	}
+	if (!IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
+	{
+		return false;
+	}
+	ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
+	const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(CachedKey);
+	if (!SDS || !SDS->IsValid() || !SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
+	{
+		return false;
+	}
+	const FLiveLinkSkeletonStaticData& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
+	OutBones = Skel.GetBoneNames();
+	OutCurves = static_cast<const FLiveLinkBaseStaticData&>(Skel).PropertyNames;
+	return true;
+}
+
 void UVMCLiveLinkRemapper::DetectAndSeedFromSubject()
 {
-	if (!IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName)) return;
-
-	ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
-	if (const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(CachedKey))
+	TArray<FName> Bones, Curves;
+	if (!GetSubjectNamesForSeeding(Bones, Curves))
 	{
-		if (SDS->IsValid() && SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
-		{
-			const auto& Skel = *SDS->Cast<FLiveLinkSkeletonStaticData>();
-			const FLiveLinkBaseStaticData& Base = static_cast<const FLiveLinkBaseStaticData&>(Skel);
-			// List every incoming name (as itself) so it can be edited, then apply the best preset.
-			for (const FName& N : Skel.GetBoneNames()) if (!BoneNameMap.Contains(N)) BoneNameMap.Add(N, N);
-			for (const FName& N : Base.PropertyNames) if (!CurveNameMap.Contains(N)) CurveNameMap.Add(N, N);
-			Preset = GuessPreset(Skel.GetBoneNames(), Base.PropertyNames);
-			ApplyPreset(Preset);
-		}
+		return;
 	}
+	// List every incoming name (as itself) so it can be edited, then apply the best preset.
+	for (const FName& N : Bones) if (!BoneNameMap.Contains(N)) BoneNameMap.Add(N, N);
+	for (const FName& N : Curves) if (!CurveNameMap.Contains(N)) CurveNameMap.Add(N, N);
+	Preset = GuessPreset(Bones, Curves);
+	ApplyPreset(Preset);
 }
 
 void UVMCLiveLinkRemapper::ApplyPreset(ELLRemapPreset InPreset)
@@ -253,15 +256,11 @@ void UVMCLiveLinkRemapper::ApplyPreset(ELLRemapPreset InPreset)
 	CurveNameMap.Append(PresetCurves);
 
 	// If we have subject data, nudge humanoid bone names toward the reference mesh
-	if (IModularFeatures::Get().IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName))
 	{
-		ILiveLinkClient& Client = IModularFeatures::Get().GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
-		if (const FLiveLinkStaticDataStruct* SDS = Client.GetSubjectStaticData_AnyThread(CachedKey))
+		TArray<FName> Bones, Curves;
+		if (GetSubjectNamesForSeeding(Bones, Curves))
 		{
-			if (SDS->IsValid() && SDS->GetStruct()->IsChildOf<FLiveLinkSkeletonStaticData>())
-			{
-				SeedBones_FromHumanoidLike(SDS->Cast<FLiveLinkSkeletonStaticData>()->GetBoneNames());
-			}
+			SeedBones_FromHumanoidLike(Bones);
 		}
 	}
 

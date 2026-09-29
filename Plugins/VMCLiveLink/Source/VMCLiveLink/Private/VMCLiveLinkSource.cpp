@@ -175,6 +175,9 @@ bool FVMCLiveLinkSource::StartReceiving()
         SenderStateText.Reset();
     }
     MessageStats->Reset(FPlatformTime::Seconds());
+    // The frame-building thread's sender caches, so the first packet on the new path notes its sender.
+    LastSenderHash = 0;
+    LastSenderSeen.Reset();
 
     if (!Settings.bReceiveThread)
     {
@@ -223,6 +226,15 @@ FText FVMCLiveLinkSource::GetSourceStatus() const
     return VMCDiagnostics::FormatStatus(In);
 }
 
+bool FVMCLiveLinkSource::PublishesSubject(const FLiveLinkSubjectKey& Key)
+{
+    FScopeLock RegistryLock(&GVMCSourcesLock);
+    return GVMCSources.ContainsByPredicate([&Key](const FVMCLiveLinkSource* Source)
+    {
+        return Source->SourceGuid == Key.Source && Source->Settings.SubjectName == Key.SubjectName.Name;
+    });
+}
+
 bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves)
 {
     FScopeLock RegistryLock(&GVMCSourcesLock);
@@ -242,6 +254,15 @@ bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArra
     }
     return false;
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+void FVMCLiveLinkSource::SetPublishedNamesForTest(const TArray<FName>& Bones, const TArray<FName>& Curves)
+{
+    FScopeLock Lock(&StatsLock);
+    PublishedBones = Bones;
+    PublishedCurves = Curves;
+}
+#endif
 
 FText FVMCLiveLinkSource::GetSourceMachineName() const
 {

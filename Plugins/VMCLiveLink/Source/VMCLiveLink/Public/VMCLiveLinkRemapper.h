@@ -206,8 +206,9 @@ public:
 	const FLiveLinkSubjectKey& GetSubjectKey() const { return CachedKey; }
 
 	/**
-	 * The names the subject receives, before renaming: from the VMC source that publishes it, or
-	 * else the subject's static data as Live Link holds it. False if the subject has none yet.
+	 * The names the subject receives, before renaming, from the VMC source that publishes it. False
+	 * if no VMC source publishes the subject, or it hasn't sent anything yet. (The static data Live
+	 * Link holds for a subject may already be renamed by this remapper, so it isn't used.)
 	 */
 	bool GetIncomingNames(TArray<FName>& OutBones, TArray<FName>& OutCurves) const;
 
@@ -269,6 +270,10 @@ private:
 
 	/** MapBonesFromHumanoidMetadata for a given mesh. */
 	bool ApplyHumanoidMetadata(USkeletalMesh* Ref);
+
+	/** The subject's incoming names for seeding the maps: the VMC source's (GetIncomingNames), or else
+	 *  the static data Live Link holds, for subjects from other sources. */
+	bool GetSubjectNamesForSeeding(TArray<FName>& OutBones, TArray<FName>& OutCurves) const;
 
 	/** Map entries a preset seeds. None and Custom seed nothing. */
 	static void GetPresetMaps(ELLRemapPreset InPreset, TMap<FName, FName>& OutBones, TMap<FName, FName>& OutCurves);

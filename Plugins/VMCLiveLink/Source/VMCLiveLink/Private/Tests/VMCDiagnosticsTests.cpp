@@ -9,6 +9,7 @@
 #include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
+#include "VMCLiveLinkRemapper.h"
 #include "VMCLiveLinkSource.h"
 #include "VMCSourceDiagnostics.h"
 #include "VMCUdpReceiver.h"
@@ -131,25 +132,37 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCDiagnosticsSourceTest, "VMC.Diagnostics.Sou
 
 bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 {
-	// A free port: bind any, note it, let it go.
-	int32 Port = 0;
-	{
-		FString Error;
-		TUniquePtr<FVMCUdpReceiver> Probe = FVMCUdpReceiver::Start(TEXT("127.0.0.1"), 0,
-			[](TConstArrayView<uint8>, double, const FInternetAddr&) {}, TEXT("VMC port probe"), Error);
-		if (!TestTrue(FString::Printf(TEXT("Probe starts (%s)"), *Error), Probe.IsValid())) return false;
-		Port = Probe->GetBoundPort();
-	}
-
 	FVMCConnectionSettings Settings;
 	Settings.BindAddress = TEXT("127.0.0.1");
-	Settings.Port = Port;
 	Settings.bReceiveThread = true;
 
+	// A free port: bind any, note it, let it go, and listen there. Checking the port again before
+	// using it narrows the window in which another program on the shared runner could take it (the
+	// source binds only in ReceiveClient, so it doesn't close it).
 	// No Live Link client: the source receives and counts, but can't push frames (and doesn't need
 	// to for what's checked here).
-	const TSharedRef<FVMCLiveLinkSource> Source = MakeShared<FVMCLiveLinkSource>(Settings, TEXT("VMC diagnostics test"));
-	Source->ReceiveClient(nullptr, FGuid::NewGuid());
+	const FGuid SourceGuid = FGuid::NewGuid();
+	TSharedPtr<FVMCLiveLinkSource> SourcePtr;
+	int32 Port = 0;
+	for (int32 Attempt = 0; Attempt < 5 && !SourcePtr; ++Attempt)
+	{
+		FString Error;
+		{
+			TUniquePtr<FVMCUdpReceiver> Probe = FVMCUdpReceiver::Start(TEXT("127.0.0.1"), 0,
+				[](TConstArrayView<uint8>, double, const FInternetAddr&) {}, TEXT("VMC port probe"), Error);
+			if (!TestTrue(FString::Printf(TEXT("Probe starts (%s)"), *Error), Probe.IsValid())) return false;
+			Port = Probe->GetBoundPort();
+		}
+		if (!FVMCUdpReceiver::CanBind(Settings.BindAddress, Port, Error))
+		{
+			continue; // taken since: another port
+		}
+		Settings.Port = Port;
+		SourcePtr = MakeShared<FVMCLiveLinkSource>(Settings, TEXT("VMC diagnostics test"));
+	}
+	if (!TestTrue(TEXT("Found a free port"), SourcePtr.IsValid())) return false;
+	const TSharedRef<FVMCLiveLinkSource> Source = SourcePtr.ToSharedRef();
+	Source->ReceiveClient(nullptr, SourceGuid);
 	TestEqual(TEXT("Listening"), Source->GetSourceStatus().ToString(), FString::Printf(TEXT("Listening on 127.0.0.1:%d, waiting for data"), Port));
 	TestEqual(TEXT("No sender yet"), Source->GetSourceMachineName().ToString(), FString(TEXT("No sender yet")));
 
@@ -205,6 +218,21 @@ bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("VMC.Stats counts Bone/Pos"), Report.Contains(TEXT("/VMC/Ext/Bone/Pos")) && Report.Contains(TEXT("(total 5)")));
 	TestTrue(TEXT("VMC.Stats lists the unknown address"), Report.Contains(TEXT("/VMC/Ext/Set/Period")));
 	TestTrue(TEXT("VMC.Stats counts packets"), Report.Contains(TEXT("(total 6)")));
+
+	// P6.2: the remapper finds the names the source published for its subject, and only for it.
+	Source->SetPublishedNamesForTest({ TEXT("Hips"), TEXT("Spine") }, { TEXT("A") });
+	TArray<FName> Bones, Curves;
+	TestTrue(TEXT("Published names found by subject"), FVMCLiveLinkSource::GetPublishedNames({ SourceGuid, Settings.SubjectName }, Bones, Curves));
+	TestTrue(TEXT("The names sent"), Bones == TArray<FName>({ TEXT("Hips"), TEXT("Spine") }) && Curves == TArray<FName>({ TEXT("A") }));
+	TestFalse(TEXT("Another subject"), FVMCLiveLinkSource::GetPublishedNames({ SourceGuid, FName(TEXT("Other")) }, Bones, Curves));
+	TestFalse(TEXT("Another source"), FVMCLiveLinkSource::GetPublishedNames({ FGuid::NewGuid(), Settings.SubjectName }, Bones, Curves));
+	UVMCLiveLinkRemapper* Remapper = NewObject<UVMCLiveLinkRemapper>();
+	Remapper->bAutoDetectMappingFromReference = false;
+	Remapper->Initialize({ SourceGuid, Settings.SubjectName });
+	TestTrue(TEXT("The remapper's incoming names"), Remapper->GetIncomingNames(Bones, Curves) && Bones.Num() == 2 && Curves.Num() == 1);
+	TestTrue(TEXT("A VMC subject"), FVMCLiveLinkSource::PublishesSubject({ SourceGuid, Settings.SubjectName }));
+	TestFalse(TEXT("Not a VMC subject"), FVMCLiveLinkSource::PublishesSubject({ FGuid::NewGuid(), Settings.SubjectName }));
+
 	Source->RequestSourceShutdown();
 	return true;
 }
