@@ -28,7 +28,7 @@ When analyzing an issue or feature request, the agent MUST:
   - `AGENTS.md` - agent-specific guidelines (if exists)
   - `README.md` - project overview and getting started
   - Planning documents in `Planning Docs/` directory
-  - Architecture and analysis documents (e.g., `VRM_SpringBones_Physics_Analysis.md`)
+  - Architecture and analysis documents (e.g., `docs/ARCHITECTURE.md`)
 
 ### 2. Research and Resource Identification
 Before creating a plan, the agent MUST research:
