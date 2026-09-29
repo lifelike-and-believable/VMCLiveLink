@@ -18,7 +18,7 @@ Whether you’re crafting an XR dance performance, streaming a VTuber show, or b
 
 ## Plugins in This Repo
 
-- **[VMCLiveLink](Plugins/VMCLiveLink)** — receives the VMC protocol over OSC and streams it into Unreal’s Live Link system.
+- **[VMCLiveLink](Plugins/VMCLiveLink)** — receives the VMC protocol over OSC and streams it into Unreal’s Live Link system. See its [README](Plugins/VMCLiveLink/README.md) for the quick start, sender setup and troubleshooting.
 - **[VRMInterchange](Plugins/VRMInterchange)** — imports VRM avatars (spring bone physics, IK rigs, Live Link actor scaffolding). See its [README](Plugins/VRMInterchange/README.md) for details.
 
 Both plugins are Windows (Win64) only for now: that is the only platform they are built and tested on. Mac and Linux can be added once they are built and tested there.
