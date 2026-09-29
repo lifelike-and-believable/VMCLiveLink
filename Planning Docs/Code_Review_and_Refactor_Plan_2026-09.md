@@ -10,7 +10,7 @@ This document has two parts:
 - **Part A: Review findings.** Each finding has an ID, a severity, file/line evidence, and the impact.
 - **Part B: Implementation plan.** Tasks grouped into phases. Each task lists the findings it resolves, the files involved, the steps, and acceptance criteria. A coding agent should be able to pick up any task whose dependencies are done.
 
-> **Progress (2026-09-27):** 38 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 3, P4.1 to P4.4, P4.6, P4.7, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 85 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
+> **Progress (2026-09-29):** 39 plan tasks are merged (P0.1 to P0.5 with P0.5 in part, all of Phases 1 to 4, and P7.1), plus the unplanned fixes. Every Copilot review finding on PRs #99 to #147 has been fixed or answered (B.10). `main` builds (the Editor build without unity files) and passes all 93 VRM and VMC tests. The CI runner intermittently blocks freshly built DLLs (X-07) and needs an owner fix. See [B.10](#b10-implementation-progress).
 
 > **How this review was done.** Every first-party source file (about 6,000 lines, excluding `cgltf.h`) was read in full. The review environment has no Unreal Engine install, so nothing was compiled or run. Findings marked **[Verify]** depend on external specs or runtime behaviour and must be confirmed in the editor (or against the spec) before the fix is written. The others follow directly from the code.
 
@@ -947,6 +947,12 @@ Goal: a spring solver that follows the VRM specification, doesn't depend on fram
   2. Parse MToon (0.x `materialProperties` and 1.0 `VRMC_materials_mtoon`) into a documented parameter set on `M_VRM_Master` (or a dedicated `M_VRM_MToon`): shade colour and texture, shading shift/toony, rim, matcap, and outline width and colour (outline as an optional second material or a post-process).
   3. `KHR_texture_transform` (UV scale and offset parameters) and `COLOR_0` (a vertex-colour switch).
 - **Acceptance:** a material comparison scene (screenshots in the PR) against three-vrm or UniVRM renders of the same model shows matching alpha and cutout, and a recognizable toon ramp.
+- **Status (#162, #163, #164, merged):** built and tested; the comparison scene is an editor check.
+  - Parser (#162): `VRM::ParseMaterials` reads glTF factors, alpha, double-sided, normal scale, `KHR_texture_transform`, `KHR_materials_emissive_strength`, `KHR_materials_unlit`, `VRMC_materials_mtoon`, and VRM 0.x `materialProperties` converted to 1.0 values as UniVRM's `MigrationMToonMaterial` does (checked against its source and the MToon 1.0 spec).
+  - Materials (#163): `M_VRM_MToon` and `M_VRM_MToonOutline` are built in C++ (`VRMMToonMaterial.cpp`), since the plugin can't author `.uasset` files outside the editor, and generated in `/Game/VRMInterchange/Materials` on the first import that needs them; a `MToonGraphVersion` parameter lets newer plugins rebuild them. The surface is unlit and lit by the atmosphere sun light and the sky's scattered light (or fallback light parameters), with the MToon 1.0 ramp, rim, matcap, emission, normal map and UV transform; an `UnlitShading` switch covers unlit materials. The outline draws back faces pushed out along the normal, in metres or screen fraction.
+  - Import (#164): MToon and unlit instances go on `M_VRM_MToon` with their parameters, PBR stays on `M_VRM_Master`. The material pipeline generates the materials before the factories, turns `AlphaMode`/`DoubleSided` into blend mode and two-sided overrides, parents instances to the character instance of their master, and sets `MI_VRM_<Name>__Outline` as the mesh's overlay material.
+  - Tests: `VRM.Materials.Gltf`, `.MToon1`, `.MToon0`, `.MToon0Migration`, `.MToon0Shading`, `.MToonGraph` (builds and compiles both graphs), `.Translate` (new `mtoon_materials` fixture), `.Pipeline`.
+  - **Deviations:** the MToon master is generated in the project, not shipped in the plugin. PBR factors are not applied (`M_VRM_Master` has no such parameters). `COLOR_0` is not imported (MToon ignores vertex colours). Not supported: received shadows, point and spot lights, per-material outlines (one overlay per mesh, from the widest outline), UV animation, render queue offsets, transparent z-write, and GI equalization (the ambient term is already uniform).
 
 ### P4.6 Morph targets
 - **Resolves:** T-08 (normals and grouping)
@@ -1069,7 +1075,7 @@ Each item can be done alongside the phase that changes the behaviour it describe
 | D-4 | Dependency direction between the plugins for avatar-driven mapping (P4.4) | **Decided 2026-09-27: no dependency either way.** The two plugins ship separately on Fab and may depend only on plugins that ship with Unreal, which rules out an optional dependency and a third bridge plugin. They share a documented metadata convention on the skeletal mesh instead (P4.4). |
 | D-5 | Apply VMC v2.1 root scale and offset | Parse always. Apply scale to root translation behind a setting (default on) because senders use it for avatar height calibration. |
 | D-6 | Keep lenient, non-spec spring schema parsing | Keep for one release behind a setting that logs when used, then remove. |
-| D-7 | Material fidelity target: PBR approximation or MToon parity | Basic MToon (shade colour and ramp, rim, outline) on a dedicated master material. Full parity is a separate project. |
+| D-7 | Material fidelity target: PBR approximation or MToon parity | **Decided 2026-09-28: basic MToon** (shade colour and ramp, rim, outline) on a dedicated master material (P4.5). Full parity is a separate project. |
 | D-8 | Test assets: may real third-party VRM or VMC captures be committed? | Commit only synthetic fixtures and your own captures. Keep third-party samples in a local-only folder that tests skip when it is absent. |
 
 ---
@@ -1137,18 +1143,18 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 | P4.2 VRM Expressions node | #145 | Merged | First run crashed: `FBlendedCurve` needs an `FMemMark` outside anim evaluation (the tests make one) |
 | P4.3 IK Rig from the humanoid map | #153 | Merged | First build used `UIKRigDefinition::GetRetargetRoot`, which UE 5.6 doesn't have. Copilot's four findings fixed before the merge |
 | P4.4 Mapping from the humanoid map (D-4) | #159, #160 | Merged | Metadata convention, no plugin dependency. Copilot: 5 and 2 findings plus 1 missed, all fixed |
+| P4.5 Materials (D-7: basic MToon) | #162, #163, #164 | Merged | Merged without Copilot reviews at the owner's call: Copilot never ran on these PRs. First builds found: helpers colliding in the game target's unity build, a shadowed constant, `RecompileMaterial` crashing on an unopened material, `DeleteAllMaterialExpressions` leaving half the nodes, and no `SetSourceData` on UE 5.6 translators |
 | P4.6 Morph targets | #155 | Merged | Copilot: 4 findings and 3 "previously missed" over five rounds, all fixed |
 | P4.7 VMC protocol coverage | #156, #157 | Merged | Copilot: 1 and 2 findings plus 5 "previously missed" over the rounds, all fixed. #157 was stacked on #156; after #156's squash, the conflicts were only duplicated base changes (checked with `git diff` against `main`, rule 13) |
 | (review backlog) Copilot findings on #99 to #142 | #148, #149, #150, #151 | Merged | 67 unanswered findings: 49 fixed, 9 already fixed by later work, 9 answered with a reason. #151 fixes VRM 0.x branch chains (a branch now follows its simulated parent joint) |
-| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, this PR | Merged | |
+| (plan updates) | #114, #117, #121, #124, #128, #129, #135, #138, #141, #146, #152, #154, #158, #161, this PR | Merged | |
 
-**Not started:** P4.5 (waits for D-7), and Phases 5 to 7.
+**Not started:** Phases 5 to 7.
 
 **Recommended next:**
-1. Decision D-7, then P4.5 (materials).
-2. Phase 5 (optimization).
-3. Owner: fix the runner's Application Control block (X-07).
-4. The editor checks below.
+1. Phase 5 (optimization).
+2. Owner: fix the runner's Application Control block (X-07).
+3. The editor checks below, starting with P4.5's material comparison.
 
 ### How the merges went
 
@@ -1184,6 +1190,7 @@ Phase 7 docs accompany each behaviour change; P7.1 immediately.
 
 ### Verification still owed
 
+- **In the editor (P4.5):** import a VRoid VRM 0.x and a VRM 1.0 avatar into a default level and compare with three-vrm or UniVRM renders of the same models: toon ramp and shade colours, cutout hair and transparent parts, rim, outlines (world and screen width). Check the fallback light in a level without an atmosphere sun light, and that the generated materials save and reload.
 - **In the editor (P4.4):** import a VRM, add a VMC source and set the subject remapper's Reference Skeleton to the imported mesh. The bone map fills from the mesh's `VRM.Humanoid.*` metadata and a VSeeFace stream drives the body with no other setup.
 - **In the editor (P4.6):** an expression whose morph has NORMAL deltas shades correctly (for example a VRoid face's mouth shapes); a target without them keeps its shading.
 - **In the editor (P4.7):** with Lock to First Sender on, a second sender is ignored and the status names the first. A capture with `/VMC/Ext/OK` calibration state 2 shows "calibrating". With Device and Camera Subjects on, VirtualMotionCapture's trackers and camera appear as subjects that a Live Link Controller follows.
