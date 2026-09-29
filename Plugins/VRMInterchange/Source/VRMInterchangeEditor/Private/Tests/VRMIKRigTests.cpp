@@ -15,6 +15,7 @@
 #include "Rig/IKRigDefinition.h"
 #include "RigEditor/IKRigController.h"
 #include "UObject/Package.h"
+#include "VRMImportReport.h"
 #include "VRMIKRigBuilder.h"
 #include "VRMIKRigPostImportPipeline.h"
 
@@ -290,6 +291,7 @@ bool FVRMIKRigPipelineTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("Overwrite reuses the IK Rig"), Run(true) == IKRig);
 	TestEqual(TEXT("... with the same chains, not twice as many"), IKRig->GetRetargetChains().Num(), 19);
+	FVRMImportReport::Get().Discard(); // the post-import report these calls started (P6.3)
 	return true;
 }
 

@@ -6,6 +6,9 @@
 //   and does NOT save during import. Let the editor Save/Source Control flow handle persistence.
 
 #include "VRMSpringBonesPostImportPipeline.h"
+#include "VRMImportMessages.h"
+#include "VRMImportReport.h"
+#include "Logging/MessageLog.h"
 #include "VRMSpringBoneData.h"                // runtime asset
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
@@ -57,6 +60,8 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
     Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
     StagedSpringData.Reset();
 
+    // What this pipeline logs belongs to this import's message log page (P6.3).
+    const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
     // Only this instance's flags count. The project settings seeded them (PostInitProperties), and the
     // import dialog may have changed them since; OR-ing the settings back in would ignore an unticked box.
     if (!BeginImport(SourceDatas, ContentBasePath) || !BaseNodeContainer)
@@ -160,10 +165,39 @@ bool UVRMSpringBonesPostImportPipeline::ReimportFromSource(UVRMSpringBoneData* D
         OutError = FString::Printf(TEXT("can't read '%s': %s"), *Data->SourceFilename, *LoadError);
         return false;
     }
+    // What parsing logs goes to a VRM Import message log page too, as for an import (P6.3).
+    // Its own bucket, apart from any import of the same file that may be running.
+    const FString& File = Data->SourceFilename;
+    const FString MessageKey = File + TEXT("#spring-reimport");
+    VRM::ImportMessages::Begin(MessageKey);
     UVRMSpringBoneData* Parsed = NewObject<UVRMSpringBoneData>(GetTransientPackage(), NAME_None);
-    if (!ParseAndFillDataAsset(*Document, Parsed))
+    bool bParsed = false;
     {
-        OutError = FString::Printf(TEXT("'%s' has no valid spring bone data"), *Data->SourceFilename);
+        const VRM::ImportMessages::FScope MessageScope(MessageKey);
+        bParsed = ParseAndFillDataAsset(*Document, Parsed);
+    }
+    const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(MessageKey);
+    if (Messages.Num() > 0)
+    {
+        FMessageLog Log(FVRMImportReport::LogName);
+        Log.SuppressLoggingToOutputLog(true); // already in the output log
+        Log.NewPage(FText::FromString(FString::Printf(TEXT("Spring data reimport of %s"), *FPaths::GetCleanFilename(File))));
+        for (const VRM::ImportMessages::FMessage& Message : Messages)
+        {
+            if (Message.Verbosity == ELogVerbosity::Warning)
+            {
+                Log.Warning(FText::FromString(Message.Text));
+            }
+            else
+            {
+                Log.Error(FText::FromString(Message.Text));
+            }
+        }
+    }
+    if (!bParsed)
+    {
+        OutError = FString::Printf(TEXT("'%s' has no valid spring bone data%s"), *File,
+            Messages.Num() > 0 ? TEXT(" (the VRM Import message log lists why)") : TEXT(""));
         return false;
     }
     int32 ResolvedColliders = 0, ResolvedJoints = 0, ResolvedCenters = 0;

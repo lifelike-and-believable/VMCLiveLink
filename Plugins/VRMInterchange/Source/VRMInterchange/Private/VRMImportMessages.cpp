@@ -7,7 +7,7 @@
 
 namespace VRM::ImportMessages
 {
-	/** Sees every log line; keeps the VRM import categories' warnings and errors while collecting. */
+	/** Sees every log line; keeps the VRM import categories' warnings and errors while an import is open. */
 	class FCapture final : public FOutputDevice
 	{
 	public:
@@ -19,9 +19,15 @@ namespace VRM::ImportMessages
 		virtual bool CanBeUsedOnAnyThread() const override { return true; }
 		virtual bool CanBeUsedOnMultipleThreads() const override { return true; }
 
-		std::atomic<bool> bCollecting { false };
+		std::atomic<int32> NumOpen { 0 }; // open buckets, read without the lock to skip unrelated lines cheaply
 		FCriticalSection Mutex;
-		TArray<FMessage> Messages;
+		struct FBucket
+		{
+			double OpenedSeconds = 0.0;
+			TArray<FMessage> Messages;
+		};
+		TMap<FString, FBucket> Buckets;          // by source file
+		TArray<FMessage> Unscoped;               // logged outside any FScope while a bucket was open
 	};
 
 	FCapture& GetCapture()
@@ -30,10 +36,31 @@ namespace VRM::ImportMessages
 		return Capture;
 	}
 
+	/** The files this thread's FScopes name, innermost last. */
+	TArray<FString>& GetThreadFiles()
+	{
+		thread_local TArray<FString> Files;
+		return Files;
+	}
+
+	FScope::FScope(const FString& File)
+	{
+		GetThreadFiles().Add(File);
+	}
+
+	FScope::~FScope()
+	{
+		TArray<FString>& Files = GetThreadFiles();
+		if (Files.Num() > 0)
+		{
+			Files.Pop(EAllowShrinking::No);
+		}
+	}
+
 	void Receive(const TCHAR* Text, ELogVerbosity::Type Verbosity, const FName& Category)
 	{
 		FCapture& Capture = GetCapture();
-		if (!Capture.bCollecting.load(std::memory_order_relaxed))
+		if (Capture.NumOpen.load(std::memory_order_relaxed) == 0)
 		{
 			return;
 		}
@@ -51,38 +78,103 @@ namespace VRM::ImportMessages
 		}
 		FString Message(Text);
 		Message.RemoveFromStart(TEXT("[VRMInterchange] "));
+		const TArray<FString>& ThreadFiles = GetThreadFiles();
+		FMessage Entry{ Level == ELogVerbosity::Warning ? ELogVerbosity::Warning : ELogVerbosity::Error, MoveTemp(Message) };
+
 		FScopeLock Lock(&Capture.Mutex);
-		if (Capture.Messages.Num() < MaxMessages)
+		TArray<FMessage>* Into = &Capture.Unscoped;
+		if (ThreadFiles.Num() > 0)
 		{
-			Capture.Messages.Add({ Level == ELogVerbosity::Warning ? ELogVerbosity::Warning : ELogVerbosity::Error, MoveTemp(Message) });
+			FCapture::FBucket* Bucket = Capture.Buckets.Find(ThreadFiles.Last());
+			if (!Bucket)
+			{
+				return; // that import's report was already shown; don't put it on another's
+			}
+			Into = &Bucket->Messages;
+		}
+		if (Into->Num() < MaxMessages)
+		{
+			Into->Add(MoveTemp(Entry));
 		}
 	}
 
-	void Begin()
+	/** Drops buckets nothing took in time. Under the lock. */
+	void PruneStale(FCapture& Capture, double NowSeconds)
 	{
-		FCapture& Capture = GetCapture();
-		FScopeLock Lock(&Capture.Mutex);
-		Capture.Messages.Reset();
-		Capture.bCollecting = true;
+		for (auto It = Capture.Buckets.CreateIterator(); It; ++It)
+		{
+			if (NowSeconds - It.Value().OpenedSeconds > BucketLifetimeSeconds)
+			{
+				It.RemoveCurrent();
+			}
+		}
 	}
 
-	TArray<FMessage> Take()
+	void Begin(const FString& File)
 	{
-		// The log may be written on a thread of its own: deliver what is queued before taking it.
-		// Not under the lock, since delivering calls Serialize, which takes it.
+		FCapture& Capture = GetCapture();
+		const double Now = FPlatformTime::Seconds();
+		FScopeLock Lock(&Capture.Mutex);
+		PruneStale(Capture, Now);
+		if (Capture.Buckets.Num() == 0)
+		{
+			Capture.Unscoped.Reset(); // nothing was open: whatever is there predates this import
+		}
+		FCapture::FBucket& Bucket = Capture.Buckets.FindOrAdd(File);
+		Bucket.OpenedSeconds = Now;
+		Bucket.Messages.Reset();
+		Capture.NumOpen = Capture.Buckets.Num();
+	}
+
+	/** Delivers anything still queued for buffered devices (this capture is served directly, but a
+	 *  flush costs little and keeps that assumption from mattering). Not under the lock, since
+	 *  delivering calls Serialize, which takes it. */
+	static void FlushLog()
+	{
 		if (GLog && IsInGameThread())
 		{
 			GLog->Flush();
 		}
+	}
+
+	TArray<FMessage> Take(const FString& File)
+	{
+		FlushLog();
 		FCapture& Capture = GetCapture();
 		FScopeLock Lock(&Capture.Mutex);
-		Capture.bCollecting = false;
-		return MoveTemp(Capture.Messages);
+		TArray<FMessage> Out;
+		FCapture::FBucket Bucket;
+		if (Capture.Buckets.RemoveAndCopyValue(File, Bucket))
+		{
+			Out = MoveTemp(Bucket.Messages);
+		}
+		PruneStale(Capture, FPlatformTime::Seconds());
+		Capture.NumOpen = Capture.Buckets.Num();
+		return Out;
+	}
+
+	TArray<FMessage> TakeUnscoped()
+	{
+		FlushLog();
+		FCapture& Capture = GetCapture();
+		FScopeLock Lock(&Capture.Mutex);
+		TArray<FMessage> Out = MoveTemp(Capture.Unscoped);
+		Capture.Unscoped.Reset();
+		return Out;
+	}
+
+	void Clear()
+	{
+		FCapture& Capture = GetCapture();
+		FScopeLock Lock(&Capture.Mutex);
+		Capture.Buckets.Reset();
+		Capture.Unscoped.Reset();
+		Capture.NumOpen = 0;
 	}
 
 	bool IsCollecting()
 	{
-		return GetCapture().bCollecting.load();
+		return GetCapture().NumOpen.load() > 0;
 	}
 
 	void RegisterCapture()

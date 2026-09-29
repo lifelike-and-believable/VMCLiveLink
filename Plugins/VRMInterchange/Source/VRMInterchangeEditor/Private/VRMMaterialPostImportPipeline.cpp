@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMMaterialPostImportPipeline.h"
 
+#include "VRMImportMessages.h"
 #include "Engine/SkeletalMesh.h"
 #include "InterchangeMaterialInstanceNode.h"
 #include "InterchangeSourceData.h"
@@ -77,6 +78,18 @@ void UVRMMaterialPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContain
 {
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
 
+	// What this pipeline logs belongs to this import's message log page (P6.3).
+	ImportSourceFile.Reset();
+	for (const UInterchangeSourceData* Source : SourceDatas)
+	{
+		if (Source)
+		{
+			ImportSourceFile = Source->GetFilename();
+			break;
+		}
+	}
+	const VRM::ImportMessages::FScope MessageScope(ImportSourceFile);
+
 	using namespace VRMMaterialPipelinePrivate;
 	CharacterInstanceName.Reset();
 	ImportedInstances.Reset();
@@ -125,6 +138,7 @@ bool UVRMMaterialPostImportPipeline::CanExecuteOnAnyThread(EInterchangePipelineT
 void UVRMMaterialPostImportPipeline::ExecutePostImportPipeline(const UInterchangeBaseNodeContainer* BaseNodeContainer, const FString& NodeKey, UObject* CreatedAsset, bool bIsAReimport)
 {
 	Super::ExecutePostImportPipeline(BaseNodeContainer, NodeKey, CreatedAsset, bIsAReimport);
+	const VRM::ImportMessages::FScope MessageScope(ImportSourceFile);
 	HandleImportedAsset(CreatedAsset);
 }
 

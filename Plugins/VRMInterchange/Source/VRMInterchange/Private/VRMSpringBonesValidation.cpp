@@ -53,9 +53,9 @@ namespace VRM
                 }
 
                 const FVRMSpringJoint& Joint = Config.Joints[JointIdx];
-                if (Joint.Stiffness < 0.0f || Joint.Stiffness > 1.0f)
+                if (Joint.Stiffness < 0.0f) // VRM 1.0 sets no upper bound, and files use values above 1
                 {
-                    Result.AddWarning(FString::Printf(TEXT("Spring '%s' joint %d stiffness (%.3f) outside normal range [0,1]"), *Spring.Name, JointIdx, Joint.Stiffness));
+                    Result.AddWarning(FString::Printf(TEXT("Spring '%s' joint %d stiffness (%.3f) is negative"), *Spring.Name, JointIdx, Joint.Stiffness));
                 }
                 if (Joint.Drag < 0.0f || Joint.Drag > 1.0f)
                 {

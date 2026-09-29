@@ -166,13 +166,12 @@ void FVRMImportReport::Flush()
 {
 	TArray<FFile> Shown = MoveTemp(Files);
 	Discard();
-	const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take();
 	if (Shown.Num() == 0)
 	{
 		return;
 	}
-
-	// The message log page: what was made, then every warning and error the import logged.
+	// The message log page: each file's assets, then its own warnings and errors (imports that
+	// overlap keep theirs apart), then any logged outside an import.
 	TArray<FString> Names;
 	for (const FFile& File : Shown)
 	{
@@ -185,26 +184,39 @@ void FVRMImportReport::Flush()
 		FMessageLog Log(LogName);
 		Log.SuppressLoggingToOutputLog(true);
 		Log.NewPage(FText::Format(LOCTEXT("PageTitle", "Import of {0}"), Title));
-		for (const FFile& File : Shown)
+		auto AddMessages = [&Log, &Warnings, &Errors](const TArray<VRM::ImportMessages::FMessage>& Messages)
 		{
+			for (const VRM::ImportMessages::FMessage& Message : Messages)
+			{
+				if (Message.Verbosity == ELogVerbosity::Warning)
+				{
+					Log.Warning(FText::FromString(Message.Text));
+					++Warnings;
+				}
+				else
+				{
+					Log.Error(FText::FromString(Message.Text));
+					++Errors;
+				}
+			}
+		};
+		for (int32 Index = 0; Index < Shown.Num(); ++Index)
+		{
+			const FFile& File = Shown[Index];
 			Log.Info(FText::FromString(FString::Printf(TEXT("%s\n%s"), *FPaths::GetCleanFilename(File.SourceFile), *Describe(File))));
-		}
-		for (const VRM::ImportMessages::FMessage& Message : Messages)
-		{
-			if (Message.Verbosity == ELogVerbosity::Warning)
+			const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take(File.SourceFile);
+			if (Messages.Num() == 0)
 			{
-				Log.Warning(FText::FromString(Message.Text));
-				++Warnings;
+				Log.Info(LOCTEXT("NoProblems", "No warnings."));
 			}
-			else
-			{
-				Log.Error(FText::FromString(Message.Text));
-				++Errors;
-			}
+			AddMessages(Messages);
 		}
-		if (Messages.Num() == 0)
+		// Not any one file's, so not shown as if it were.
+		const TArray<VRM::ImportMessages::FMessage> Unscoped = VRM::ImportMessages::TakeUnscoped();
+		if (Unscoped.Num() > 0)
 		{
-			Log.Info(LOCTEXT("NoProblems", "No warnings."));
+			Log.Info(LOCTEXT("Unscoped", "Logged during the import, outside any one file's import:"));
+			AddMessages(Unscoped);
 		}
 	}
 

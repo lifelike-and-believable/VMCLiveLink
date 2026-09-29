@@ -17,25 +17,59 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMImportMessagesTest, "VRM.Import.Messages",
 
 bool FVRMImportMessagesTest::RunTest(const FString& Parameters)
 {
-	// Warnings and errors under the VRM categories between Begin and Take are collected; other
-	// categories and lower verbosities aren't. The lines go straight to the capture: a warning
-	// really logged here would count against the test.
-	VRM::ImportMessages::Receive(TEXT("[VRMInterchange] before Begin"), ELogVerbosity::Warning, TEXT("LogVRMInterchange"));
-	VRM::ImportMessages::Begin();
-	TestTrue(TEXT("Collecting"), VRM::ImportMessages::IsCollecting());
-	VRM::ImportMessages::Receive(TEXT("[VRMInterchange] import report test warning"), ELogVerbosity::Warning, TEXT("LogVRMInterchange"));
-	VRM::ImportMessages::Receive(TEXT("spring test error"), ELogVerbosity::Error, TEXT("LogVRMSpring"));
-	VRM::ImportMessages::Receive(TEXT("[VRMInterchange] import report test log line"), ELogVerbosity::Log, TEXT("LogVRMInterchange"));
-	VRM::ImportMessages::Receive(TEXT("another category"), ELogVerbosity::Warning, TEXT("LogTemp"));
+	// Warnings and errors under the VRM categories go to the bucket of the file the logging thread is
+	// working on; other categories and lower verbosities are dropped. The lines go straight to the
+	// capture: a warning really logged here would count against the test.
+	using namespace VRM::ImportMessages;
+	const FString FileA = TEXT("C:/Avatars/A.vrm");
+	const FString FileB = TEXT("C:/Avatars/B.vrm");
+	const FName VRMCategory(TEXT("LogVRMInterchange"));
+
+	Clear(); // imports another test started and never finished
+	Receive(TEXT("before Begin"), ELogVerbosity::Warning, VRMCategory);
+	TestFalse(TEXT("Nothing open"), IsCollecting());
+	TestEqual(TEXT("Nothing open, nothing kept"), Take(FileA).Num(), 0);
+
+	// Two imports that overlap
+	Begin(FileA);
+	Begin(FileB);
+	TestTrue(TEXT("Collecting"), IsCollecting());
+	{
+		const FScope ScopeA(FileA);
+		Receive(TEXT("[VRMInterchange] warning in A"), ELogVerbosity::Warning, VRMCategory);
+		{
+			const FScope ScopeB(FileB); // nested: the innermost file wins
+			Receive(TEXT("spring error in B"), ELogVerbosity::Error, TEXT("LogVRMSpring"));
+		}
+		Receive(TEXT("[VRMInterchange] log line in A"), ELogVerbosity::Log, VRMCategory);
+		Receive(TEXT("another category"), ELogVerbosity::Warning, TEXT("LogTemp"));
+	}
+	Receive(TEXT("outside any import"), ELogVerbosity::Warning, VRMCategory);
 	// The real log reaches the capture too (a log line, so it isn't kept)
 	UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] import report test, through the log"));
-	const TArray<VRM::ImportMessages::FMessage> Messages = VRM::ImportMessages::Take();
-	TestFalse(TEXT("Take stops collecting"), VRM::ImportMessages::IsCollecting());
-	if (!TestEqual(TEXT("A warning and an error"), Messages.Num(), 2)) return false;
-	TestEqual(TEXT("A warning"), int32(Messages[0].Verbosity), int32(ELogVerbosity::Warning));
-	TestEqual(TEXT("Without the log prefix"), Messages[0].Text, FString(TEXT("import report test warning")));
-	TestEqual(TEXT("An error"), int32(Messages[1].Verbosity), int32(ELogVerbosity::Error));
-	TestEqual(TEXT("Nothing more once taken"), VRM::ImportMessages::Take().Num(), 0);
+
+	const TArray<FMessage> A = Take(FileA);
+	if (!TestEqual(TEXT("A's warning only"), A.Num(), 1)) return false;
+	TestEqual(TEXT("A's warning, without the log prefix"), A[0].Text, FString(TEXT("warning in A")));
+	TestEqual(TEXT("A warning"), int32(A[0].Verbosity), int32(ELogVerbosity::Warning));
+	TestTrue(TEXT("B still open"), IsCollecting());
+	{
+		// A's report has been shown: what A logs later isn't put on B's page.
+		const FScope LateA(FileA);
+		Receive(TEXT("late warning in A"), ELogVerbosity::Warning, VRMCategory);
+	}
+
+	const TArray<FMessage> B = Take(FileB);
+	if (!TestEqual(TEXT("B's error only"), B.Num(), 1)) return false;
+	TestEqual(TEXT("An error"), int32(B[0].Verbosity), int32(ELogVerbosity::Error));
+	TestFalse(TEXT("All taken: not collecting"), IsCollecting());
+	TestEqual(TEXT("Nothing more once taken"), Take(FileB).Num(), 0);
+
+	// What was logged outside any scope is kept apart from both files
+	const TArray<FMessage> Unscoped = TakeUnscoped();
+	if (!TestEqual(TEXT("The unscoped message"), Unscoped.Num(), 1)) return false;
+	TestEqual(TEXT("Unscoped text"), Unscoped[0].Text, FString(TEXT("outside any import")));
+	TestEqual(TEXT("Nothing more once taken"), TakeUnscoped().Num(), 0);
 	return true;
 }
 

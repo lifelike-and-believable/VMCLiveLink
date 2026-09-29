@@ -17,6 +17,7 @@
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
+#include "VRMImportMessages.h"
 #include "VRMMaterialPostImportPipeline.h"
 #include "VRMMToonMaterial.h"
 
@@ -102,7 +103,9 @@ bool FVRMMToonTranslateTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	UInterchangeBaseNodeContainer* Container = NewObject<UInterchangeBaseNodeContainer>();
-	if (!TestTrue(TEXT("Translates"), Translator->Translate(*Container)))
+	const bool bTranslated = Translator->Translate(*Container);
+	VRM::ImportMessages::Take(Source->GetFilename()); // the import's message bucket, which no report closes here
+	if (!TestTrue(TEXT("Translates"), bTranslated))
 	{
 		return false;
 	}

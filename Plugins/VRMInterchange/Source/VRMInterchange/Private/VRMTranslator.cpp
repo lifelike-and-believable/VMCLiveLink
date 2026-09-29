@@ -56,7 +56,9 @@ bool UVRMTranslator::CanImportSourceData(const UInterchangeSourceData* InSourceD
 bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) const
 {
     // What the import logs from here on is also shown on a message log page when it finishes (P6.3).
-    VRM::ImportMessages::Begin();
+    const FString SourceFile = GetSourceData() ? GetSourceData()->GetFilename() : FString();
+    VRM::ImportMessages::Begin(SourceFile);
+    const VRM::ImportMessages::FScope MessageScope(SourceFile);
     // The file is read and parsed once (P3.3). The model is built from that document, and the
     // document's JSON and hash go to the pipelines in a UInterchangeVRMNode.
     ParsedModel.Reset();
@@ -74,6 +76,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
             UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] %s"), *LoadError);
         }
         UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] Failed to read VRM."));
+        VRM::ImportMessages::Take(SourceFile); // no pipeline will report this import
         return false;
     }
     // Read-only from here on; the payload calls share it, possibly from other threads.
@@ -406,6 +409,8 @@ TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
     const FInterchangeMeshPayLoadKey& PayLoadKey,
     const UE::Interchange::FAttributeStorage& /*PayloadAttributes*/) const
 {
+    // Payloads are built on worker threads after Translate: file what they log under this import (P6.3).
+    const VRM::ImportMessages::FScope MessageScope(GetSourceData() ? GetSourceData()->GetFilename() : FString());
     if (!ParsedModel.IsValid())
     {
         return {};
@@ -652,6 +657,7 @@ namespace VRM
 TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& /*AlternateTexturePath*/) const
 {
     // Keys are "Tex_<image>" (colour), "Tex_<image>_Normal" or "Tex_<image>_Data"; see Translate.
+    const VRM::ImportMessages::FScope MessageScope(GetSourceData() ? GetSourceData()->GetFilename() : FString());
     if (!ParsedModel.IsValid())
     {
         return {};

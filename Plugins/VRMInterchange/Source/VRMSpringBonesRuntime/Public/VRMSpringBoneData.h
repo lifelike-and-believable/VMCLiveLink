@@ -66,9 +66,10 @@ public:
     bool HasSourceValues() const;
 
     /**
-     * Multiplies every joint's and spring's stiffness, drag and gravity power, then clamps them as an
-     * edit in the details panel would (stiffness and drag to 0..1). Running spring nodes pick the
-     * change up without recompiling (EditRevision).
+     * Multiplies every joint's and spring's stiffness, drag and gravity power. Only quantities whose
+     * factor isn't 1 change: stiffness and gravity stay at least 0 (stiffness has no upper bound, as
+     * in VRM 1.0), drag within 0..1. Running spring nodes pick the change up without recompiling
+     * (EditRevision).
      */
     void ScaleParameters(float StiffnessScale, float DragScale, float GravityScale);
 

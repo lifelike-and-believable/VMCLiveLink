@@ -301,6 +301,14 @@ bool FVRMSpringDataScaleReset::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Drag back"), Data->SpringConfig.Joints[1].Drag, 0.4f, 1.0e-5f);
 	TestEqual(TEXT("Gravity back"), Data->SpringConfig.Joints[1].GravityPower, 500.f, 1.0e-3f);
 	TestFalse(TEXT("No such spring"), Data->ResetSpringToSource(5));
+
+	// Only scaled quantities change, and stiffness has no upper bound (VRM 1.0).
+	Data->SpringConfig.Joints[2].Stiffness = 2.f;
+	Data->ScaleParameters(1.f, 0.5f, 1.f);
+	TestEqual(TEXT("Unscaled stiffness above 1 kept"), Data->SpringConfig.Joints[2].Stiffness, 2.f, 1.0e-5f);
+	TestEqual(TEXT("Drag halved"), Data->SpringConfig.Joints[2].Drag, 0.2f, 1.0e-5f);
+	Data->ScaleParameters(2.f, 1.f, 1.f);
+	TestEqual(TEXT("Stiffness scaled past 1"), Data->SpringConfig.Joints[2].Stiffness, 4.f, 1.0e-5f);
 	return true;
 }
 
@@ -339,7 +347,7 @@ bool FVRMSpringNodeLiveEdit::RunTest(const FString& Parameters)
 	const double Before = MaxSideways();
 	TestTrue(FString::Printf(TEXT("Gravity swings the chain sideways (%.2f cm)"), Before), Before > 1.0);
 
-	Data->ScaleParameters(10.f, 1.f, 0.f); // stiffness clamps to 1, gravity off
+	Data->ScaleParameters(5.f, 1.f, 0.f); // stiffness 0.2 -> 1, gravity off
 	for (int32 Frame = 0; Frame < 90; ++Frame)
 	{
 		Step(Node, Pose, Out);

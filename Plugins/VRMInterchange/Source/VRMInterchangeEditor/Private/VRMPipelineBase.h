@@ -44,6 +44,9 @@ protected:
 	 */
 	bool BeginImport(const TArray<UInterchangeSourceData*>& SourceDatas, const FString& InContentBasePath);
 
+	/** The first source file of an import (empty if there is none): what its messages are filed under. */
+	static FString GetFirstSourceFile(const TArray<UInterchangeSourceData*>& SourceDatas);
+
 	/** Asks for OnSkeletalMeshImported: call once the pipeline has staged work that needs the mesh. */
 	void WaitForSkeletalMesh() { bWaitingForMesh = true; }
 

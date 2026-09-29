@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMIKRigPostImportPipeline.h"
 
+#include "VRMImportMessages.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "Engine/SkeletalMesh.h"
 #include "InterchangeVRMNode.h"
@@ -29,6 +30,8 @@ void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer*
 {
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
 	LastIKRig = nullptr; // only this import's rig counts
+	// What this pipeline logs belongs to this import's message log page (P6.3).
+	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
 	// Only this instance's flag counts (seeded from the project settings in PostInitProperties).
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && bGenerateIKRig)
 	{

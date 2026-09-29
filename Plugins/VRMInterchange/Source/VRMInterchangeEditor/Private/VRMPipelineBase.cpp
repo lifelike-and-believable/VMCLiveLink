@@ -11,6 +11,7 @@
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
+#include "VRMImportMessages.h"
 #include "VRMImportReport.h"
 #include "VRMInterchangeLog.h"
 #include "VRMPipelineTargets.h"
@@ -36,11 +37,24 @@ void UVRMPipelineBase::HandleImportedAsset(UObject* CreatedAsset, bool bIsAReimp
 	{
 		bWaitingForMesh = false;
 		// What the pipeline makes from here on is reported for this file (P6.3).
+		const VRM::ImportMessages::FScope MessageScope(ImportSourceFilename);
 		FVRMImportReport& Report = FVRMImportReport::Get();
 		Report.BeginFile(ImportSourceFilename, bIsAReimport);
 		Report.AddAsset(Mesh, bIsAReimport);
 		OnSkeletalMeshImported(Mesh, bIsAReimport);
 	}
+}
+
+FString UVRMPipelineBase::GetFirstSourceFile(const TArray<UInterchangeSourceData*>& SourceDatas)
+{
+	for (const UInterchangeSourceData* Source : SourceDatas)
+	{
+		if (Source)
+		{
+			return Source->GetFilename();
+		}
+	}
+	return FString();
 }
 
 bool UVRMPipelineBase::BeginImport(const TArray<UInterchangeSourceData*>& SourceDatas, const FString& InContentBasePath)

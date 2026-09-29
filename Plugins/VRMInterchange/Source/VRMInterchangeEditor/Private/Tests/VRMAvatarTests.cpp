@@ -10,6 +10,7 @@
 #include "InterchangeSourceData.h"
 #include "InterchangeVRMNode.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
+#include "VRMImportReport.h"
 #include "VRMAvatarDescription.h"
 #include "VRMAvatarDescriptionPipeline.h"
 #include "UObject/Package.h"
@@ -298,6 +299,7 @@ bool FVRMAvatarPipelineTest::RunTest(const FString& Parameters)
 	Off->bGenerateAvatarDescription = false;
 	Off->ExecutePipeline(NewObject<UInterchangeBaseNodeContainer>(), { Source }, ContentBase);
 	TestFalse(TEXT("Off: nothing to do"), Off->HasPendingPostImportWork());
+	FVRMImportReport::Get().Discard(); // the post-import report these calls started (P6.3)
 	return true;
 }
 

@@ -79,7 +79,7 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringJoint
     // Simulation parameters. VRM 1.0 sets them per joint; VRM 0.x copies its bone group's values
     // to every joint. Defaults are the VRM 1.0 spec defaults. Lengths and gravity are in UE units.
     UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0")) float HitRadius = 0.f;
-    UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0", ClampMax="1.0")) float Stiffness = 1.f;
+    UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0", UIMax="4.0")) float Stiffness = 1.f; // no upper bound in VRM 1.0; UniVRM's slider goes to 4
     UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0", ClampMax="1.0")) float Drag = 0.5f;
     UPROPERTY(EditAnywhere, Category="VRM|Joint") FVector GravityDir = FVector(0, 0, -1);
     UPROPERTY(EditAnywhere, Category="VRM|Joint", meta=(ClampMin="0.0")) float GravityPower = 0.f;
@@ -99,7 +99,7 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpring
     // Editing helpers: the solver reads each joint's own parameters (FVRMSpringJoint). Changing one of
     // these in the editor applies it to every joint of the spring. After import they hold the first
     // joint's values (VRM 1.0) or the bone group's values (VRM 0.x).
-    UPROPERTY(EditAnywhere, Category="VRM|Spring", meta=(ClampMin="0.0", ClampMax="1.0")) float Stiffness = 0.f;
+    UPROPERTY(EditAnywhere, Category="VRM|Spring", meta=(ClampMin="0.0", UIMax="4.0")) float Stiffness = 0.f;
     UPROPERTY(EditAnywhere, Category="VRM|Spring", meta=(ClampMin="0.0", ClampMax="1.0")) float Drag = 0.f;
     UPROPERTY(EditAnywhere, Category="VRM|Spring") FVector GravityDir = FVector(0, 0, -1);
     UPROPERTY(EditAnywhere, Category="VRM|Spring", meta=(ClampMin="0.0")) float GravityPower = 0.f;
