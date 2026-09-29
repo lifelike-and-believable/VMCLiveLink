@@ -3,8 +3,6 @@
 
 #include "Misc/OutputDevice.h"
 #include "Misc/OutputDeviceRedirector.h"
-#include "VRMCoreLog.h"
-#include "VRMInterchangeLog.h"
 #include <atomic>
 
 namespace VRM::ImportMessages
@@ -24,7 +22,10 @@ namespace VRM::ImportMessages
 			{
 				return;
 			}
-			if (Category != LogVRMInterchange.GetCategoryName() && Category != LogVRMSpring.GetCategoryName())
+			// By name: builds without logging have no category objects to ask (FNoLoggingCategory).
+			static const FName InterchangeCategory(TEXT("LogVRMInterchange"));
+			static const FName SpringCategory(TEXT("LogVRMSpring"));
+			if (Category != InterchangeCategory && Category != SpringCategory)
 			{
 				return;
 			}
