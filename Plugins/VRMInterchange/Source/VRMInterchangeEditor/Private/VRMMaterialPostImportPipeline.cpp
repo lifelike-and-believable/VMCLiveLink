@@ -1,17 +1,24 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMMaterialPostImportPipeline.h"
 
+#include "Engine/SkeletalMesh.h"
+#include "InterchangeMaterialInstanceNode.h"
+#include "InterchangeSourceData.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
-#include "InterchangeSourceData.h"
+#include "Nodes/InterchangeBaseNodeContainer.h"
 #include "ObjectTools.h"
+#include "UObject/UnrealType.h"
 #include "VRMInterchangeLog.h"
+#include "VRMMToonMaterial.h"
 
-namespace
+namespace VRMMaterialPipelinePrivate
 {
 	const TCHAR* const VRMInstancePrefix = TEXT("MI_VRM_");
+	const TCHAR* const MToonCharacterSuffix = TEXT("__MToon");
+	const TCHAR* const OutlineSuffix = TEXT("__Outline");
 
 	/** The master UMaterial at the root of an instance chain, or nullptr. */
 	const UMaterial* GetMasterMaterialOf(const UMaterialInterface* MaterialInterface)
@@ -33,14 +40,48 @@ namespace
 	{
 		return FPackageName::GetLongPackagePath(Object->GetOutermost()->GetName());
 	}
+
+	bool IsMToonSurface(const UMaterial* Master)
+	{
+		return Master && Master->GetPathName() == VRM::MToon::SurfacePath;
+	}
+
+	/** An MToon instance's AlphaMode and DoubleSided parameters as its blend mode and two-sided overrides. */
+	void ApplyAlphaAndSides(UMaterialInstanceConstant& Instance)
+	{
+		using namespace VRM::MToon;
+		float AlphaMode = 0.f;
+		float DoubleSided = 0.f;
+		if (!Instance.GetScalarParameterValue(FHashedMaterialParameterInfo(FName(Param::AlphaMode)), AlphaMode)
+			|| !Instance.GetScalarParameterValue(FHashedMaterialParameterInfo(FName(Param::DoubleSided)), DoubleSided))
+		{
+			return;
+		}
+		const EBlendMode Blend = AlphaMode > 1.5f ? BLEND_Translucent : (AlphaMode > 0.5f ? BLEND_Masked : BLEND_Opaque);
+		const bool bTwoSided = DoubleSided > 0.5f;
+		FMaterialInstanceBasePropertyOverrides& Overrides = Instance.BasePropertyOverrides;
+		if (Overrides.bOverride_BlendMode && Overrides.BlendMode == Blend && Overrides.bOverride_TwoSided && Overrides.TwoSided == bTwoSided)
+		{
+			return;
+		}
+		Overrides.bOverride_BlendMode = true;
+		Overrides.BlendMode = Blend;
+		Overrides.bOverride_TwoSided = true;
+		Overrides.TwoSided = bTwoSided;
+		Instance.PostEditChange();
+		Instance.MarkPackageDirty();
+	}
 }
 
 void UVRMMaterialPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath)
 {
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
 
+	using namespace VRMMaterialPipelinePrivate;
 	CharacterInstanceName.Reset();
 	ImportedInstances.Reset();
+	OutlineInstance.Reset();
+	ImportedMesh.Reset();
 	for (const UInterchangeSourceData* SourceData : SourceDatas)
 	{
 		if (SourceData)
@@ -51,19 +92,49 @@ void UVRMMaterialPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContain
 			break;
 		}
 	}
+
+	// The MToon materials must exist before the instances that use them are created.
+	bool bUsesMToon = false;
+	if (BaseNodeContainer)
+	{
+		BaseNodeContainer->IterateNodesOfType<UInterchangeMaterialInstanceNode>([&bUsesMToon](const FString&, UInterchangeMaterialInstanceNode* Node)
+		{
+			FString Parent;
+			if (Node && Node->GetCustomParent(Parent) && (Parent == VRM::MToon::SurfacePath || Parent == VRM::MToon::OutlinePath))
+			{
+				bUsesMToon = true;
+			}
+		});
+	}
+	if (bUsesMToon)
+	{
+		FString Error;
+		const VRM::MToon::FMaterials Materials = VRM::MToon::FindOrCreateMToonMaterials(Error);
+		if (!Materials.Surface || !Materials.Outline)
+		{
+			UE_LOG(LogVRMInterchange, Error, TEXT("[VRMInterchange] The MToon materials could not be created (%s); MToon material instances will have no parent."), *Error);
+		}
+	}
 }
 
 bool UVRMMaterialPostImportPipeline::CanExecuteOnAnyThread(EInterchangePipelineTask PipelineTask)
 {
-	return PipelineTask != EInterchangePipelineTask::PostImport;
+	return false;
 }
 
 void UVRMMaterialPostImportPipeline::ExecutePostImportPipeline(const UInterchangeBaseNodeContainer* BaseNodeContainer, const FString& NodeKey, UObject* CreatedAsset, bool bIsAReimport)
 {
 	Super::ExecutePostImportPipeline(BaseNodeContainer, NodeKey, CreatedAsset, bIsAReimport);
+	HandleImportedAsset(CreatedAsset);
+}
 
-	if (!bParentMaterialsToCharacterInstance)
+void UVRMMaterialPostImportPipeline::HandleImportedAsset(UObject* CreatedAsset)
+{
+	using namespace VRMMaterialPipelinePrivate;
+	if (USkeletalMesh* Mesh = Cast<USkeletalMesh>(CreatedAsset))
 	{
+		ImportedMesh = Mesh;
+		ResolveOverlay();
 		return;
 	}
 
@@ -73,12 +144,54 @@ void UVRMMaterialPostImportPipeline::ExecutePostImportPipeline(const UInterchang
 		return;
 	}
 
-	ImportedInstances.AddUnique(Instance);
-	ResolveParents();
+	if (!CharacterInstanceName.IsEmpty() && Instance->GetName() == CharacterInstanceName + OutlineSuffix)
+	{
+		OutlineInstance = Instance;
+		ResolveOverlay();
+		return;
+	}
+
+	if (IsMToonSurface(GetMasterMaterialOf(Instance)))
+	{
+		ApplyAlphaAndSides(*Instance);
+	}
+
+	if (bParentMaterialsToCharacterInstance)
+	{
+		ImportedInstances.AddUnique(Instance);
+		ResolveParents();
+	}
+}
+
+void UVRMMaterialPostImportPipeline::ResolveOverlay()
+{
+	USkeletalMesh* Mesh = ImportedMesh.Get();
+	UMaterialInstanceConstant* Outline = OutlineInstance.Get();
+	if (!bApplyMToonOutline || !Mesh || !Outline)
+	{
+		return;
+	}
+	// By reflection: the property has no stable setter across engine versions.
+	FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(USkeletalMesh::StaticClass(), TEXT("OverlayMaterial"));
+	if (!Property)
+	{
+		UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] This engine's skeletal meshes have no overlay material; the MToon outline '%s' is not applied."), *Outline->GetName());
+		return;
+	}
+	void* Value = Property->ContainerPtrToValuePtr<void>(Mesh);
+	if (Property->GetObjectPropertyValue(Value) == Outline)
+	{
+		return;
+	}
+	// The mesh was just imported: components pick the overlay up when they register.
+	Mesh->Modify();
+	Property->SetObjectPropertyValue(Value, Outline);
+	Mesh->MarkPackageDirty();
 }
 
 void UVRMMaterialPostImportPipeline::ResolveParents()
 {
+	using namespace VRMMaterialPipelinePrivate;
 	TArray<UMaterialInstanceConstant*> Instances;
 	for (const TWeakObjectPtr<UMaterialInstanceConstant>& Weak : ImportedInstances)
 	{
@@ -88,44 +201,42 @@ void UVRMMaterialPostImportPipeline::ResolveParents()
 		}
 	}
 
-	// Per-material instances are MI_VRM_<Character>_<Material> in the same folder as the
-	// character instance MI_VRM_<Character>. Nothing happens until the character instance arrives.
-	UMaterialInstanceConstant* Parent = nullptr;
+	// Per-material instances are MI_VRM_<Character>_<Material> in the same folder as the character
+	// instances MI_VRM_<Character> (M_VRM_Master) and MI_VRM_<Character>__MToon (M_VRM_MToon). Each
+	// goes to the character instance with its master, once that one has arrived.
+	TArray<UMaterialInstanceConstant*> Parents;
 	for (UMaterialInstanceConstant* Candidate : Instances)
 	{
-		if (!CharacterInstanceName.IsEmpty() && Candidate->GetName() == CharacterInstanceName)
+		if (!CharacterInstanceName.IsEmpty()
+			&& (Candidate->GetName() == CharacterInstanceName || Candidate->GetName() == CharacterInstanceName + MToonCharacterSuffix))
 		{
-			Parent = Candidate;
-			break;
+			Parents.Add(Candidate);
 		}
 	}
-	if (!Parent)
+	if (Parents.Num() == 0)
 	{
 		return;
 	}
 
-	const FString Prefix = Parent->GetName() + TEXT("_");
-	const FString ParentFolder = GetFolderPath(Parent);
-	const UMaterial* ParentMaster = GetMasterMaterialOf(Parent);
-
+	const FString Prefix = CharacterInstanceName + TEXT("_");
 	for (UMaterialInstanceConstant* Child : Instances)
 	{
-		if (Child == Parent || Child->Parent == Parent)
+		if (Parents.Contains(Child) || !Child->GetName().StartsWith(Prefix))
 		{
 			continue;
 		}
-		if (!Child->GetName().StartsWith(Prefix) || GetFolderPath(Child) != ParentFolder)
-		{
-			continue;
-		}
-
-		// Only reparent within the same master material, so overrides keep their meaning.
 		const UMaterial* ChildMaster = GetMasterMaterialOf(Child);
-		if (!ChildMaster || ChildMaster != ParentMaster)
+		UMaterialInstanceConstant* const* Match = Parents.FindByPredicate([&](const UMaterialInstanceConstant* Candidate)
+		{
+			return GetMasterMaterialOf(Candidate) == ChildMaster && GetFolderPath(Candidate) == GetFolderPath(Child);
+		});
+		if (!ChildMaster || !Match || Child->Parent == *Match)
 		{
 			continue;
 		}
+		UMaterialInstanceConstant* Parent = *Match;
 
+		// Only within the same master material (the match above), so overrides keep their meaning.
 		Child->SetParentEditorOnly(Parent);
 		Child->PostEditChange();
 		Child->MarkPackageDirty();

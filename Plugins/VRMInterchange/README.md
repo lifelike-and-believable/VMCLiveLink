@@ -9,9 +9,9 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 ### Core Import Capabilities
 - **VRM Format Support**: Imports VRM 0.x and VRM 1.0 files (glTF 2.0-based avatar format)
 - **Skeletal Mesh**: Skeleton built from the skin joints. Bone rest rotations are reset to identity (see [Coordinate System](#coordinate-system))
-- **Textures**: Embedded PNG/JPEG textures imported and assigned to material instances, with colour space and compression set by use: base colour and emissive are sRGB; normal maps are linear with normal-map compression and the green channel flipped from glTF (+Y) to Unreal (-Y); metallic-roughness and occlusion are linear masks. An image a material uses in more than one way is imported once per use
+- **Textures**: Embedded PNG/JPEG textures imported and assigned to material instances, with colour space and compression set by use: base colour, emissive, and the MToon shade, matcap and rim textures are sRGB; normal maps are linear with normal-map compression and the green channel flipped from glTF (+Y) to Unreal (-Y); metallic-roughness, occlusion, and the MToon shading shift and outline width textures are linear masks. An image a material uses in more than one way is imported once per use
 - **Blend Shapes**: Morph target support for facial expressions
-- **Materials**: Basic material instances with texture assignments (glTF factors and MToon parameters are not yet applied)
+- **Materials**: MToon (VRM 0.x and 1.0) and unlit materials on a generated toon master material, with shade colour and toon ramp, rim and matcap, emission, alpha mode and cutoff, double-sided, texture transform, and outlines. glTF PBR materials get material instances with their textures. See [Materials](#materials)
 
 ### Spring Bones (Physics Hair/Clothing)
 - **Automatic Spring Data Generation**: Parses VRM spring bone configurations into data assets
@@ -79,7 +79,7 @@ Content/
     ├── YourCharacterName_Skeleton (Skeleton asset)
     ├── YourCharacterName_PhysicsAsset (Physics Asset)
     ├── <Mesh>_Avatar (Avatar description: humanoid bone map, expressions, look-at, licence)
-    ├── Materials/ (Generated materials)
+    ├── Materials/ (Material instances: MI_VRM_<Name>, MI_VRM_<Name>__MToon, MI_VRM_<Name>__Outline, one per VRM material)
     ├── Textures/ (Imported textures)
     ├── SpringBones/
     │   ├── YourCharacterName_SpringData (Spring configuration)
@@ -214,6 +214,30 @@ When the avatar description is generated, the importer also writes the humanoid 
 
 Keys use Unity `HumanBodyBones` names (what VMC senders stream). VRM 1.0's thumb is one joint off from Unity's: `leftThumbMetacarpal` is written as `LeftThumbProximal`, and `leftThumbProximal` as `LeftThumbIntermediate`. A reimport replaces the keys. Other tools can write the same keys to make any skeletal mesh mappable.
 
+### Materials
+
+VRM materials are imported as material instances. Which master material they use depends on the material:
+
+| VRM material | Master | Notes |
+|---|---|---|
+| MToon (`VRMC_materials_mtoon`, or VRM 0.x shader `VRM/MToon`) | `M_VRM_MToon` | VRM 0.x values are converted to VRM 1.0 ones the way UniVRM migrates 0.x files |
+| Unlit (`KHR_materials_unlit`, or VRM 0.x `VRM/Unlit*`) | `M_VRM_MToon` with **UnlitShading** on | Base colour and emission, no lighting |
+| glTF PBR (and `VRM_USE_GLTFSHADER`) | the plugin's `M_VRM_Master` | Textures only |
+
+`M_VRM_MToon` and `M_VRM_MToonOutline` are built by the plugin (in C++, since a plugin can't ship them otherwise) the first time a VRM with MToon or unlit materials is imported, in `/Game/VRMInterchange/Materials`. Save them with the imported assets. A newer plugin version rebuilds them in place if their graph changed; don't edit them, edit the instances.
+
+`M_VRM_MToon` follows the MToon 1.0 lighting model:
+
+- **Shade and toon ramp.** The lit and shade colours are mixed by `ShadingShiftFactor` (plus the shading shift texture) and `ShadingToonyFactor`.
+- **Rim and matcap.** Parametric rim (colour, fresnel power, lift, lighting mix, rim mask) and the matcap texture.
+- **Emission**, the normal map, and the base colour texture's texture transform, which applies to every texture.
+- **Lighting.** It is an unlit material that computes its own toon lighting from the level's **atmosphere sun light** (a directional light with *Atmosphere Sun Light* on, as in the default level) and the sky's scattered light. In a level without one, it uses the **FallbackLightDirection** and **FallbackLightColor** parameters. It doesn't receive shadows, and point and spot lights don't light it.
+- **Alpha.** Each instance's alpha mode and double-sidedness become its blend mode (opaque, masked or translucent) and two-sided overrides; the cutoff is the `AlphaCutoff` parameter.
+
+The per-material instances are parented to the character instance of their master (`MI_VRM_<Name>__MToon` or `MI_VRM_<Name>`), so you can tune shared parameters, such as the fallback light, in one place.
+
+**Outlines.** When MToon materials have outlines, `MI_VRM_<Name>__Outline` (on `M_VRM_MToonOutline`) is set as the skeletal mesh's **Overlay Material**. It draws the back faces pushed out along the normal, in metres (world mode) or as a fraction of the screen height (screen mode). A mesh has one overlay material, so the outline uses the settings of the material with the widest outline and covers the whole mesh. Clear the mesh's overlay material, or turn off **Apply MToon Outline** in the material pipeline, to remove it.
+
 ## Advanced Topics
 
 ### Re-importing VRM Files
@@ -343,7 +367,7 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 ## Known Limitations
 
 - **VRM Version**: Supports VRM 0.x and VRM 1.0 files.
-- **Materials**: MToon and glTF material factors (base colour, emissive, alpha mode, double-sided) are not applied.
+- **Materials**: MToon is basic (see [Materials](#materials)): no received shadows, only the atmosphere sun light lights it, one outline per mesh, and no UV animation, render queue offsets or transparent z-write. glTF PBR factors (base colour, emissive, metallic, roughness), alpha mode and double-sided are not applied to PBR materials. `COLOR_0` vertex colours are not imported (MToon ignores them).
 - **Morph Targets**: Morph targets are imported by name. Targets with the same name are one morph target: a mesh's primitives share them, and two meshes that use the same name are merged, with a warning, because an expression bound to either would move both. An unnamed target is named `<MeshName>_morph_<index>` and kept to its own mesh. A target's NORMAL deltas, when the file has them, turn its normals; a target without them keeps the base normals, so it changes shape but not shading.
 - **Texture Formats**: Embedded textures must be PNG or JPEG
 

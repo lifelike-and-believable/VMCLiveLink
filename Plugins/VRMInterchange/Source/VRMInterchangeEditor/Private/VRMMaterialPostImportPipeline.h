@@ -6,16 +6,25 @@
 #include "VRMMaterialPostImportPipeline.generated.h"
 
 class UMaterialInstanceConstant;
+class USkeletalMesh;
 
 /**
  * VRM Materials (Post-Import)
  *
- * The VRM translator creates one character material instance (MI_VRM_<Character>) and one
- * instance per VRM material (MI_VRM_<Character>_<Material>), all parented to the master material.
- * This pipeline reparents each per-material instance to the character instance, so shared
- * parameters can be tuned in one place.
+ * The VRM translator creates a character material instance per master material it uses
+ * (MI_VRM_<Character> on M_VRM_Master, MI_VRM_<Character>__MToon on M_VRM_MToon) and one instance
+ * per VRM material (MI_VRM_<Character>_<Material>). This pipeline:
  *
- * It only touches material instances created by the current import.
+ * - makes the generated MToon materials exist before the instances are created, when the import
+ *   uses them (VRM::MToon::FindOrCreateMToonMaterials);
+ * - turns each MToon instance's AlphaMode and DoubleSided parameters into its blend mode and
+ *   two-sided overrides;
+ * - reparents each per-material instance to the character instance with the same master, so shared
+ *   parameters can be tuned in one place;
+ * - sets MI_VRM_<Character>__Outline, when the model has MToon outlines, as the skeletal mesh's
+ *   overlay material.
+ *
+ * It only touches assets created by the current import.
  */
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, ClassGroup=(Interchange), meta=(DisplayName="VRM Materials (Post-Import)"))
 class VRMINTERCHANGEEDITOR_API UVRMMaterialPostImportPipeline : public UInterchangePipelineBase
@@ -30,20 +39,32 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VRM Materials")
 	bool bParentMaterialsToCharacterInstance = true;
 
+	/** Draw the MToon outline, as the skeletal mesh's overlay material. */
+	UPROPERTY(EditAnywhere, Category = "VRM Materials")
+	bool bApplyMToonOutline = true;
+
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
+
+	/** What ExecutePostImportPipeline does with each created asset. Public so tests can drive it. */
+	void HandleImportedAsset(UObject* CreatedAsset);
 
 protected:
 	virtual void ExecutePostImportPipeline(const UInterchangeBaseNodeContainer* BaseNodeContainer, const FString& NodeKey, UObject* CreatedAsset, bool bIsAReimport) override;
 
-	/** Reparenting edits UObjects, so post-import work must run on the game thread. */
+	/** Creating the MToon materials and editing the imported assets must run on the game thread. */
 	virtual bool CanExecuteOnAnyThread(EInterchangePipelineTask PipelineTask) override;
 
 private:
 	/** Pairs up the instances seen so far in this import; order of arrival does not matter. */
 	void ResolveParents();
 
+	/** Sets the outline instance as the mesh's overlay material once both have arrived. */
+	void ResolveOverlay();
+
 	/** Name the translator gives the character instance: MI_VRM_<source file base name>, sanitized. */
 	FString CharacterInstanceName;
 
 	TArray<TWeakObjectPtr<UMaterialInstanceConstant>> ImportedInstances;
+	TWeakObjectPtr<UMaterialInstanceConstant> OutlineInstance;
+	TWeakObjectPtr<USkeletalMesh> ImportedMesh;
 };

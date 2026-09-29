@@ -1,0 +1,300 @@
+{
+  "bones": {
+    "1": {
+      "name": "Hips",
+      "node": 1,
+      "world_position_gltf": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "2": {
+      "name": "Head",
+      "node": 2,
+      "world_position_gltf": [
+        0.0,
+        1.6,
+        0.0
+      ]
+    }
+  },
+  "materials": {
+    "Accessory": {
+      "master": "M_VRM_Master"
+    },
+    "Body": {
+      "alpha_mode": "OPAQUE",
+      "master": "MToon",
+      "outline": "world",
+      "outline_width": 0.004,
+      "shading_shift_texture": true,
+      "uv_offset": [
+        0.5,
+        0
+      ],
+      "uv_scale": [
+        2,
+        1
+      ]
+    },
+    "Face": {
+      "alpha_mode": "BLEND",
+      "master": "MToon",
+      "outline": "screen",
+      "outline_width": 0.001
+    },
+    "Hair": {
+      "alpha_cutoff": 0.4,
+      "alpha_mode": "MASK",
+      "double_sided": true,
+      "master": "MToon",
+      "unlit": true
+    }
+  },
+  "note": "The outline instance takes the widest outline (Body's). Image 1 is used only as data (shading shift and outline width), image 0 as colour.",
+  "outline_material": "Body",
+  "vertices": [
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Body",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Body",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Face",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Face",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Face",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Face",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Face",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Face",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Hair",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Hair",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Hair",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Hair",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Hair",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Hair",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Accessory",
+      "vertex": 0,
+      "world_position_gltf": [
+        -0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Accessory",
+      "vertex": 1,
+      "world_position_gltf": [
+        0.02,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 1,
+      "mesh_node": "Accessory",
+      "vertex": 2,
+      "world_position_gltf": [
+        0.0,
+        1.02,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Accessory",
+      "vertex": 3,
+      "world_position_gltf": [
+        -0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Accessory",
+      "vertex": 4,
+      "world_position_gltf": [
+        0.02,
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 2,
+      "mesh_node": "Accessory",
+      "vertex": 5,
+      "world_position_gltf": [
+        0.0,
+        1.62,
+        0.0
+      ]
+    }
+  ],
+  "vrm_version": "1.0"
+}

@@ -17,3 +17,4 @@ Do not edit these files by hand. Change the generator and regenerate.
 | `armature_transform` | Joints under a non-joint node with rotation and scale |
 | `bind_pose_offset` | Skinned mesh whose inverse bind matrices don't match the node rest pose |
 | `morph_targets` | Two meshes sharing a morph target name, an unnamed target on each, and NORMAL deltas |
+| `mtoon_materials` | Two MToon materials (world and screen outlines, shading shift texture, texture transform), an unlit masked double-sided material, a PBR material, and two 1x1 PNGs |

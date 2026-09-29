@@ -25,6 +25,10 @@ expected values computed here from the same scene description:
                                transforms). Skinning must move its vertices into the rest pose.
   morph_targets                Two meshes whose morph targets share a name ("Shared") and each
                                have an unnamed target; one target carries NORMAL deltas.
+  mtoon_materials              VRM 1.0 with four materials: two VRMC_materials_mtoon (world and
+                               screen outlines, a shading shift texture, a texture transform),
+                               one KHR_materials_unlit (masked, double-sided) and one glTF PBR.
+                               Two 1x1 PNG images.
 
 All geometry is in glTF space (right-handed, Y up, metres). Expected values in the sidecars are
 in glTF space too; tests convert them with the importer's conversion before comparing.
@@ -40,6 +44,7 @@ import math
 import os
 import struct
 import sys
+import zlib
 
 # ---------------------------------------------------------------------------------------------
 # Minimal math (column vectors, glTF conventions: quaternion (x, y, z, w), matrices column-major
@@ -134,6 +139,9 @@ class Scene:
         self.bin = bytearray()
         self.buffer_views = []
         self.accessors = []
+        self.images = []     # PNG bytes, one image each
+        self.textures = []   # dicts, written as they are
+        self.materials = []  # dicts, written as they are
 
     def node(self, *args, **kwargs):
         n = Node(*args, **kwargs)
@@ -200,6 +208,8 @@ class Scene:
                 attrs["WEIGHTS_0"] = self.accessor(m["weights"], 5126, "VEC4", count, "4f")
             indices = list(range(count))
             prim = {"attributes": attrs, "indices": self.accessor(indices, 5125, "SCALAR", count, "I"), "mode": 4}
+            if m.get("material") is not None:
+                prim["material"] = m["material"]
             mj = {"name": m["name"], "primitives": [prim]}
             if m["targets"]:
                 prim["targets"] = []
@@ -237,6 +247,14 @@ class Scene:
                 nj["skin"] = n.skin
             nodes_json.append(nj)
 
+        images_json = []
+        for png in self.images:
+            self._align()
+            offset = len(self.bin)
+            self.bin += png
+            self.buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": len(png)})
+            images_json.append({"bufferView": len(self.buffer_views) - 1, "mimeType": "image/png"})
+
         self._align()
         doc = {
             "asset": {"version": "2.0", "generator": "VMCLiveLink scripts/make_vrm_fixtures.py"},
@@ -250,6 +268,12 @@ class Scene:
         }
         if skins_json:
             doc["skins"] = skins_json
+        if images_json:
+            doc["images"] = images_json
+        if self.textures:
+            doc["textures"] = self.textures
+        if self.materials:
+            doc["materials"] = self.materials
         if extensions:
             doc["extensions"] = extensions
             doc["extensionsUsed"] = extensions_used or sorted(extensions.keys())
@@ -310,6 +334,15 @@ def nearest_joint_ancestor(node):
 def tri_at(center, size=0.02):
     x, y, z = center
     return [[x - size, y, z], [x + size, y, z], [x, y + size, z]]
+
+
+def png_1x1(rgba):
+    """A 1x1 RGBA PNG."""
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    pixels = zlib.compress(b"\x00" + bytes(rgba), 9)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", pixels) + chunk(b"IEND", b"")
 
 
 def mark_joints(joints):
@@ -622,6 +655,58 @@ def make_morph_targets(out_dir):
     }
 
 
+def make_mtoon_materials(out_dir):
+    s = Scene()
+    root = s.node("Root")
+    hips = s.node("Hips", root, t=[0, 1.0, 0])
+    head = s.node("Head", hips, t=[0, 0.6, 0])
+    mark_joints([hips, head])
+    names = ["Body", "Face", "Hair", "Accessory"]
+    for i, name in enumerate(names):
+        node = body_mesh(s, root, [hips, head], name=name)
+        s.meshes[node.mesh]["material"] = i
+    s.images = [png_1x1([255, 0, 0, 255]), png_1x1([128, 128, 128, 255])]
+    s.textures = [{"source": 0}, {"source": 1}]
+    s.materials = [
+        {"name": "Body",
+         "pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, 1],
+                                  "baseColorTexture": {"index": 0, "extensions": {"KHR_texture_transform": {"offset": [0.5, 0], "scale": [2, 1]}}}},
+         "extensions": {"VRMC_materials_mtoon": {
+             "specVersion": "1.0", "shadeColorFactor": [0.5, 0.25, 0.25], "shadeMultiplyTexture": {"index": 0},
+             "shadingShiftFactor": -0.1, "shadingShiftTexture": {"index": 1, "scale": 0.5}, "shadingToonyFactor": 0.8,
+             "parametricRimColorFactor": [1, 1, 1], "parametricRimFresnelPowerFactor": 3,
+             "outlineWidthMode": "worldCoordinates", "outlineWidthFactor": 0.004,
+             "outlineWidthMultiplyTexture": {"index": 1}, "outlineColorFactor": [0.1, 0, 0], "outlineLightingMixFactor": 0.5}}},
+        {"name": "Face", "alphaMode": "BLEND",
+         "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}},
+         "extensions": {"VRMC_materials_mtoon": {
+             "specVersion": "1.0", "outlineWidthMode": "screenCoordinates", "outlineWidthFactor": 0.001}}},
+        {"name": "Hair", "alphaMode": "MASK", "alphaCutoff": 0.4, "doubleSided": True,
+         "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}},
+         "extensions": {"KHR_materials_unlit": {}}},
+        {"name": "Accessory", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0}},
+    ]
+    ext = {"VRMC_vrm": {"specVersion": "1.0", "meta": vrm1_meta(),
+                        "humanoid": {"humanBones": {"hips": {"node": hips.index}, "head": {"node": head.index}}}}}
+    used = ["KHR_materials_unlit", "KHR_texture_transform", "VRMC_materials_mtoon", "VRMC_vrm"]
+    s.write(os.path.join(out_dir, "mtoon_materials.vrm"), ext, used)
+    return {
+        "vrm_version": "1.0",
+        "bones": s.expected_bones([hips, head]),
+        "vertices": sum((s.expected_vertices(n) for n in s.nodes if n.mesh is not None), []),
+        "materials": {
+            "Body": {"master": "MToon", "alpha_mode": "OPAQUE", "outline": "world", "outline_width": 0.004,
+                     "shading_shift_texture": True, "uv_offset": [0.5, 0], "uv_scale": [2, 1]},
+            "Face": {"master": "MToon", "alpha_mode": "BLEND", "outline": "screen", "outline_width": 0.001},
+            "Hair": {"master": "MToon", "unlit": True, "alpha_mode": "MASK", "alpha_cutoff": 0.4, "double_sided": True},
+            "Accessory": {"master": "M_VRM_Master"},
+        },
+        "outline_material": "Body",
+        "note": "The outline instance takes the widest outline (Body's). Image 1 is used only as data "
+                "(shading shift and outline width), image 0 as colour.",
+    }
+
+
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "Plugins", "VRMInterchange", "Tests", "Fixtures")
@@ -635,6 +720,7 @@ def main():
         "armature_transform": make_armature_transform,
         "bind_pose_offset": make_bind_pose_offset,
         "morph_targets": make_morph_targets,
+        "mtoon_materials": make_mtoon_materials,
     }
     for name, maker in makers.items():
         expected = maker(out_dir)
