@@ -91,7 +91,7 @@ graph TD
 |---|---|---|
 | **VRMCore** | Runtime | `FVRMDocument`: a `.vrm`/`.glb`/`.gltf` file read and parsed once (JSON, nodes, version, and geometry through cgltf). `VRM::BuildParsedModel`: skeleton, meshes, morph targets, images and materials in UE space. The avatar data (humanoid map, expressions, look-at, meta) and its parser, the `UVRMAvatarDescription` asset, the MToon and material parameter parser, the coordinate conversion, and the VRM Expressions anim node. The only module that uses cgltf. |
 | **VRMInterchange** | Runtime | `UVRMTranslator`, the Interchange translator for `.vrm`: builds the Interchange node graph from the parsed model and serves mesh and texture payloads. The spring bone parser and validation. `VRM::ImportMessages`, which collects an import's warnings for the editor's report. |
-| **VRMInterchangeEditor** | Editor | The post-import pipelines (spring bones, IK Rig, Live Link scaffold, avatar description, materials) on `UVRMPipelineBase`; the IK Rig builder; the MToon master materials, built in C++; the import report (notification and message log); pipeline registration and project settings; the spring data details panel. |
+| **VRMInterchangeEditor** | Editor | The post-import pipelines: spring bones, IK Rig, Live Link scaffold and avatar description on `UVRMPipelineBase`, and the material pipeline, which derives from `UInterchangePipelineBase` directly; the IK Rig builder; the MToon master materials, built in C++; the import report (notification and message log); pipeline registration and project settings; the spring data details panel. |
 | **VRMSpringBonesRuntime** | Runtime | `UVRMSpringBoneData` (the spring configuration asset and its custom version), `FVRMSpringSolver`, and the `FAnimNode_VRMSpringBones` anim node. |
 | **VRMSpringBonesEditor** | UncookedOnly | The AnimGraph nodes for spring bones and VRM Expressions. |
 
@@ -108,8 +108,8 @@ graph LR
   P --> R[FVRMImportReport<br/>notification + message log]
 ```
 
-1. **Translate.** `UVRMTranslator::Translate` opens the file once as an `FVRMDocument` and builds the parsed model: the skeleton from the skin joints (rest rotations reset to identity, decision D-3), meshes, morph targets, images and materials, all converted to UE space. It creates the Interchange node graph from it and parses the spring bones and avatar data onto an `UInterchangeVRMNode`.
-2. **Payloads.** Interchange asks the translator for mesh and texture payloads, which it builds from the same document on worker threads.
+1. **Translate.** `UVRMTranslator::Translate` opens the file once as an `FVRMDocument` and builds the parsed model: the skeleton from the skin joints (rest rotations reset to identity, decision D-3), meshes, morph targets, images and materials, all converted to UE space. It creates the Interchange node graph from it, and stores the document's JSON and the avatar data on an `UInterchangeVRMNode`, from which the spring bone pipeline parses the springs.
+2. **Payloads.** Interchange asks the translator for mesh and texture payloads, which it builds on worker threads from the `FVRMParsedModel` that `Translate` kept (the document itself is released when `Translate` returns).
 3. **Factories.** Interchange's own factories create the skeletal mesh, skeleton, physics asset, textures and materials.
 4. **Pipelines.** Each VRM pipeline stages its work in `ExecutePipeline`, then Interchange reports every asset this import created to `ExecutePostImportPipeline`. When the skeletal mesh arrives, the pipelines create their assets: the spring data, the IK Rig (retarget chains from the humanoid map), the avatar description (and the humanoid metadata on the mesh), the MToon material instances and outline overlay, and the Live Link actor and Animation Blueprint copied from templates.
 5. **Report.** `FVRMImportReport` collects what was imported and the warnings logged under each file, and shows a notification and a message log page.
@@ -118,7 +118,7 @@ At runtime, `FAnimNode_VRMSpringBones` simulates the spring data on the animated
 
 ### Threading
 
-- **Translation** runs where Interchange runs it, and **payloads** run on Interchange's worker threads. The `FVRMDocument` is read-only after `Translate`, so payload calls share it.
+- **Translation** runs where Interchange runs it, and **payloads** run on Interchange's worker threads, in parallel. They share the translator's `FVRMParsedModel`, which is read-only after `Translate`; the one mutable shared member is the cached base mesh payload, under `BasePayloadLock`.
 - **Pipelines:** `ExecutePipeline` may run on any thread (`UVRMPipelineBase::CanExecuteOnAnyThread`); post-import runs on the game thread, since it creates assets. The material pipeline runs entirely on the game thread, since it builds materials.
 - **Import messages:** `VRM::ImportMessages` attributes a log line to the file the logging thread is importing, through a thread-local scope stack (`FScope`) set in `Translate`, the payload calls and each pipeline. It assumes `FOutputDeviceRedirector` calls a device that can be used on any thread on the logging thread itself. A line that can't be attributed is listed apart on the report.
 - **Spring bones:** the anim node runs on animation worker threads. It caches its chains per instance and rebuilds them when the asset, its `EditRevision` or its `SourceHash` changes; editing tools on the game thread bump `EditRevision`. The solver steps at a fixed rate (`SubstepHz`) and caps a long frame at `MaxDeltaTime`.
@@ -129,8 +129,8 @@ UE space is left-handed, Z up, in centimetres. A character faces +Y, like the UE
 
 | Source | Space | Conversion to UE |
 |---|---|---|
-| VMC (Unity) | Left-handed, Y up, Z forward, metres | Position (x, y, z) → (−x, z, y) × 100. Quaternion (x, y, z, w) → (−x, z, y, w). A rotation of the axes, so left stays left. Then the optional yaw offset about UE Z. |
-| glTF / VRM | Right-handed, Y up, metres | Position (x, y, z) → (x, z, y) × 100. Swapping Y and Z also converts handedness. VRM 0.x models, which face −Z, also get a 180° turn about UE Z. |
+| VMC (Unity) | Left-handed, Y up, Z forward, metres | Position (x, y, z) → (−x, z, y) × 100. Quaternion (x, y, z, w) → (−x, z, y, w). A rotation of the axes, so left stays left. Then the optional yaw offset about UE Z, for the root, devices and camera only (bone-local transforms aren't turned). |
+| glTF / VRM | Right-handed, Y up, metres | Position (x, y, z) → (x, z, y) × 100. Quaternion (x, y, z, w) → (−x, −z, −y, w). Swapping Y and Z is a reflection, which converts handedness. VRM 0.x models, which face −Z, also get a 180° turn about UE Z (for positions (−x, −y, z); for quaternions X and Y negated again). |
 
 Both conversions put the character's forward (Unity +Z, VRM 1.0 +Z) on UE +Y, so a VRM imported by VRM Interchange and a VMC stream agree without a yaw offset.
 
@@ -146,27 +146,27 @@ Both conversions put the character's forward (Unity +Z, VRM 1.0 +Z) on UE +Y, so
 |---|---|
 | `UVRMSpringBoneData` | `FVRMSpringDataCustomVersion`. Each version that changes the meaning of saved data adds an entry; `PostLoad` upgrades what it can (for example, copying per-spring parameters to joints) and flags data that needs a reimport. The asset records the version it was loaded with (`LoadedDataVersion`). |
 | `M_VRM_MToon`, `M_VRM_MToonOutline` | Built by the plugin in C++, with the graph version stored as an internal scalar parameter. A newer plugin whose graph changed rebuilds them in place, keeping references. |
-| `UVMCLiveLinkMappingAsset` | `SignatureVersion`. Signatures saved by an older version of `ComputeSignature` are recomputed on load from the example meshes. |
+| `UVMCLiveLinkMappingAsset` | `SignatureVersion`. Signatures saved by an older version of `ComputeSignature` are recomputed from the example meshes the first time the asset is matched (`MatchesMesh`) or edited, not in `PostLoad` (loading other assets there isn't safe). Until then the asset's registry tag doesn't list them. |
 | Live Link connection string | `FVMCConnectionSettings::FromString` reads every earlier format; unknown keys are ignored. |
-| Generated assets (IK Rig, AnimBP, actor) | Recreated or updated in place on reimport. |
+| Generated assets (IK Rig, AnimBP, actor) | Not versioned. By default a reimport creates new copies under unique names. With the pipelines' **Update Existing** option, the IK Rig is rebuilt in place, and the actor and AnimBP are reused (pointed at the new mesh, user edits kept); they don't pick up changes to the plugin's templates. |
 
 A change to a saved `USTRUCT`/`UCLASS` layout, or to what saved data means, must add a version and an upgrade path, with a test that loads the old form (rule 5 of the plan's B.0 rules).
 
 ## Test strategy
 
-Every test is an Unreal automation test, run headless by CI on every pull request (`Automation RunTests VRM.+VMC.`). A pull request is mergeable only with every test passing and no test reporting a warning.
+Every test is an Unreal automation test, run headless by CI on every pull request (`Automation RunTests VRM.+VMC.`). A pull request is mergeable only with every test passing and no test reporting a warning. CI fails on a failed test; the warning count is checked by hand, on the `Tests:` line of the test step.
 
 | Area | Tests | What they cover |
 |---|---|---|
 | VMC protocol | `VMC.Protocol.*`, `VMC.OscParser.*`, `VMC.Humanoid` | Every address and argument form, malformed input, bundles, the coordinate conversion. |
 | VMC assembly and source | `VMC.FrameAssembler.*`, `VMC.Receiver`, `VMC.SenderFilter`, `VMC.ConnectionSettings.*`, `VMC.Diagnostics.*` | Frames, static data, curve holding, devices, the socket, sender filtering, settings round trips, status texts. |
-| VMC replay | `VMC.Replay` | Recorded captures (`Plugins/VMCLiveLink/Tests/Captures`) replayed through the full path. |
+| VMC replay | `VMC.Replay` | A synthetic capture (`Plugins/VMCLiveLink/Tests/Captures`) replayed through the OSC parser and the frame assembler (not the source, Live Link or the remapper). |
 | Remapper | `VMC.Remapper.*`, `VMC.MappingAsset.*` | Presets, the normalizer, rest translations, humanoid metadata, signatures, the mapping table. |
 | VRM parsing | `VRM.Document.*`, `VRM.Coordinates.*`, `VRM.Avatar.*`, `VRM.Materials.*`, `VRM.Textures.*`, `VRM.MorphTargets` | The document, conversions, avatar data, MToon and PBR parameters, texture decoding, morph targets. |
 | VRM import | `VRM.Translator`, `VRM.Pipeline.*`, `VRM.IKRig.*`, `VRM.Import.*`, `VRM.Integration.*`, `VRM.Fixtures.*` | Full imports of the fixtures through Interchange, each pipeline's output, the import report. |
 | Spring bones | `VRM.SpringBones.*` | Parsing both VRM versions, validation, custom version upgrades, the solver (colliders, gravity, branches, sub-steps, frame-rate independence, center space), the anim node (swapping data, LOD changes, live edits), the editing tools. |
 | Expressions | `VRM.Expressions.*` | The expression node's rules for both VRM versions. |
-| Performance | `VMC.Perf.*`, `VRM.Perf.*` | Timing checks for the VMC hot path, the spring solver, mesh payloads and texture decoding. |
+| Performance | `VMC.Perf.*`, `VRM.Perf.*` | Timings for the VMC hot path, the spring solver, mesh payloads and texture decoding, reported in the test log. They don't fail on a slowdown. |
 
 **Fixtures.** The VRM fixtures in `Plugins/VRMInterchange/Tests/Fixtures` are small synthetic files made by `scripts/make_vrm_fixtures.py`, each with an `.expected.json` of the values an importer should produce. `scripts/check_vrm_fixtures.py` validates them with cgltf. Only synthetic fixtures and captures of our own are committed (decision D-8). The VMC captures are recorded or generated with `scripts/vmc_sender.py`.
 
