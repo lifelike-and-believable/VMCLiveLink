@@ -189,7 +189,7 @@ Pass if the face follows with no curve map on the remapper, and blinking stops w
 **E-F1. Motion.** *(P2.1, P2.3, P1.12, P1.13)*
 1. Place the VRM 0.x and 1.0 Live Link actors and press **Simulate**; move and turn each actor with the gizmo, or play an animation.
 
-Pass if hair and skirts swing when the character moves or turns (no External Velocity needed), whole hair strands move rather than only their roots (VRM 0.x, P1.12), and on VRM 1.0 the tip joints move more freely where the file gives them lower stiffness (P1.13).
+Pass if hair and skirts swing when the character moves or turns (no External Velocity needed; for a file whose springs name a `center`, such as VRoid Studio's `Root`, turn off **Use Spring Centers** on the spring node first), whole hair strands move rather than only their roots (VRM 0.x, P1.12), and on VRM 1.0 the tip joints move more freely where the file gives them lower stiffness (P1.13).
 
 **E-F2. Compared with a reference.** *(P2.1)*
 1. Record the same model and motion in UniVRM or three-vrm, and in the editor.

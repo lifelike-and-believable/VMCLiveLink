@@ -251,6 +251,54 @@ bool FVRMSpringSolverCenter::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringSolverIgnoreCenters, "VRM.SpringBones.Solver.IgnoreCenters",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMSpringSolverIgnoreCenters::RunTest(const FString& Parameters)
+{
+	using namespace VRMSpringSolverTests;
+	// The character turns on the spot (yaw about the component origin) with a horizontal chain whose
+	// center is the chain's root. With centers used the chain turns with the character; with centers
+	// ignored it is simulated in world space and its tip trails the turn.
+	for (const bool bUseCenters : { true, false })
+	{
+		FChainRig Rig(3, FVector(1, 0, 0), 10.f, 0.5f, 0.4f, FVector::ZeroVector);
+		Rig.Setup.Chains[0].CenterBone = Rig.Anchor();
+		FVRMSpringSolverSettings Settings;
+		Settings.bUseCenterBones = bUseCenters;
+		FVRMSpringSolver Solver;
+		Solver.Init(Rig.Setup, Settings);
+		for (int32 Frame = 0; Frame <= 30; ++Frame)
+		{
+			Solver.Step(1.f / 60.f, Rig.Bones, FTransform(FRotator(0.f, 3.f * Frame, 0.f)));
+		}
+		const float TipY = Tip(Solver).Y; // component space; the rest tip is at Y = 0
+		if (bUseCenters)
+		{
+			TestTrue(FString::Printf(TEXT("Centers used: no trailing (component Y %.4f cm)"), TipY), FMath::Abs(TipY) < 0.01f);
+		}
+		else
+		{
+			TestTrue(FString::Printf(TEXT("Centers ignored: the tip trails the turn (component Y %.3f cm)"), TipY), FMath::Abs(TipY) > 1.f);
+		}
+	}
+
+	// Turning centers off at runtime restarts the tails from the next pose instead of reading
+	// center-space tails as world positions (far from a character away from the origin).
+	FChainRig Rig(3, FVector(1, 0, 0), 10.f, 0.5f, 0.4f, FVector::ZeroVector);
+	Rig.Setup.Chains[0].CenterBone = Rig.Anchor();
+	FVRMSpringSolver Solver;
+	Solver.Init(Rig.Setup);
+	const FTransform FarAway(FVector(5000, 0, 0));
+	Solver.Step(1.f / 60.f, Rig.Bones, FarAway);
+	FVRMSpringSolverSettings NoCenters;
+	NoCenters.bUseCenterBones = false;
+	Solver.SetSettings(NoCenters);
+	Solver.Step(1.f / 60.f, Rig.Bones, FarAway);
+	TestTrue(TEXT("After turning centers off the chain still rests on the character"), FVector::Dist(Tip(Solver), Rig.Base[3]) < 1.f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMSpringSolverSubsteps, "VRM.SpringBones.Solver.Substeps",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 

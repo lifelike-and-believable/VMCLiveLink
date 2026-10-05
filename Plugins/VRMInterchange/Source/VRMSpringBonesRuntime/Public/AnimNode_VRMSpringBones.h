@@ -7,7 +7,7 @@
 #include "VRMSpringSolver.h"
 #include "AnimNode_VRMSpringBones.generated.h"
 
-/** Where spring tails are simulated, for springs without a center bone. */
+/** Where spring tails are simulated, for springs without a center bone (or every spring, when the node ignores centers). */
 UENUM(BlueprintType)
 enum class EVRMSpringSimulationSpace : uint8
 {
@@ -51,9 +51,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spring", meta = (PinShownByDefault))
 	float ExternalVelocityScale = 1.f;
 
-	/** Where tails are simulated. Springs with a center bone always use that bone's space. */
+	/** Where tails are simulated. Springs with a center bone use that bone's space instead, unless Use Spring Centers is off. */
 	UPROPERTY(EditAnywhere, Category = "Spring|Simulation")
 	EVRMSpringSimulationSpace SimulationSpace = EVRMSpringSimulationSpace::World;
+
+	/**
+	 * Simulate springs that name a center bone in that bone's space, as the VRM file asks: moving or
+	 * turning the character doesn't swing them. Turn off to put every spring in Simulation Space; with
+	 * World, moving and turning the character then swing them all. If External Velocity is fed from
+	 * the character's movement, set External Velocity Scale to 0, or movement counts twice.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Spring|Simulation")
+	bool bUseSpringCenters = true;
 
 	/** Simulation steps per second. The result doesn't depend on the frame rate; higher is smoother and costs more. */
 	UPROPERTY(EditAnywhere, Category = "Spring|Simulation", meta = (ClampMin = "10", ClampMax = "480", UIMin = "30", UIMax = "240", Units = "Hz"))

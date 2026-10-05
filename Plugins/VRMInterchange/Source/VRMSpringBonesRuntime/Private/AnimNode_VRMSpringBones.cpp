@@ -105,6 +105,7 @@ FVRMSpringSolverSettings FAnimNode_VRMSpringBones::MakeSolverSettings() const
 	Settings.SubstepHz = FMath::Clamp(SubstepHz, 10.f, 480.f);
 	Settings.MaxDeltaTime = FMath::Clamp(MaxDeltaTime, 0.f, 1.f);
 	Settings.bWorldSpace = SimulationSpace == EVRMSpringSimulationSpace::World;
+	Settings.bUseCenterBones = bUseSpringCenters;
 	return Settings;
 }
 

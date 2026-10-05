@@ -4,6 +4,9 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 
 ## [Unreleased]
 
+### Added
+- **Use Spring Centers** on the spring bone node. Turned off, springs that name a `center` bone are simulated in the node's Simulation Space instead, so moving and turning the character swings them (VRoid Studio gives every spring the `Root` center, which makes the character's own motion add nothing).
+
 ### Fixed
 - VRM imports created their MToon material instances without a parent material (no textures, every slot on the default material) and made no avatar description. The material and avatar description pipelines were registered as class paths, which Interchange can't instantiate; they now ship as pipeline assets in `DefaultPipelines`, and registering the pipelines again replaces the old class-path entries.
 

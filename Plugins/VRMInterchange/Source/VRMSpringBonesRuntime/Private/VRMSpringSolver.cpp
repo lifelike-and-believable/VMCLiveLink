@@ -37,7 +37,8 @@ void FVRMSpringSolver::SetSettings(const FVRMSpringSolverSettings& InSettings)
 	{
 		return;
 	}
-	if (New.bWorldSpace != Settings.bWorldSpace || New.VirtualTailLength != Settings.VirtualTailLength)
+	if (New.bWorldSpace != Settings.bWorldSpace || New.bUseCenterBones != Settings.bUseCenterBones
+		|| New.VirtualTailLength != Settings.VirtualTailLength)
 	{
 		bHasState = false; // tails are stored in the old space; bone lengths may change
 	}
@@ -136,8 +137,9 @@ FTransform FVRMSpringSolver::BoneOrIdentity(TConstArrayView<FTransform> BonesCS,
 FTransform FVRMSpringSolver::SimSpaceToComponent(const FVRMSpringSolverSetup::FChain& Chain, TConstArrayView<FTransform> BonesCS, const FTransform& ComponentToWorld) const
 {
 	// Center space: the center bone's frame, so its motion (and the character's) adds no inertia.
-	// Otherwise world space, so the character's motion does, or component space if asked.
-	if (Chain.CenterBone != INDEX_NONE)
+	// Otherwise (or when centers are ignored) world space, so the character's motion does, or
+	// component space if asked.
+	if (Settings.bUseCenterBones && Chain.CenterBone != INDEX_NONE)
 	{
 		return BonesCS[Chain.CenterBone];
 	}
