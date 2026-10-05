@@ -109,6 +109,30 @@ namespace VRMSkinMappingTests
 				ActualBonePos.Equals(ExpectedBonePos, PositionTolerance));
 		}
 
+		// Spring nodes that no skin lists (spring tails) are bones too, at their rest positions.
+		const TSharedPtr<FJsonObject>* SpringBones = nullptr;
+		if (Expected->TryGetObjectField(TEXT("spring_bones"), SpringBones))
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*SpringBones)->Values)
+			{
+				const int32 Node = int32(Pair.Value->AsObject()->GetNumberField(TEXT("node")));
+				const int32 BoneIndex = Model.Bones.IndexOfByPredicate([Node](const FVRMParsedBone& B) { return B.NodeIndex == Node; });
+				if (!Test.TestTrue(FString::Printf(TEXT("%s: spring node %d is a bone"), Name, Node), Model.NodeToBoneMap.Contains(Node) && BoneIndex != INDEX_NONE))
+				{
+					continue;
+				}
+				const FVector ExpectedBonePos = ExpectedPosition(Pair.Value->AsObject(), Model);
+				const FVector ActualBonePos = BoneRestPosition(Model, BoneIndex);
+				Test.TestTrue(FString::Printf(TEXT("%s: spring node %d rest position %s (expected %s)"), Name, Node, *ActualBonePos.ToString(), *ExpectedBonePos.ToString()),
+					ActualBonePos.Equals(ExpectedBonePos, PositionTolerance));
+				// Its parent bone is its glTF parent node (nodes between it and its joint are bones too).
+				const int32 ParentBone = Model.Bones[BoneIndex].Parent;
+				const int32 ExpectedParentNode = int32(Pair.Value->AsObject()->GetNumberField(TEXT("parent_node")));
+				Test.TestEqual(FString::Printf(TEXT("%s: spring node %d parent node"), Name, Node),
+					Model.Bones.IsValidIndex(ParentBone) ? Model.Bones[ParentBone].NodeIndex : INDEX_NONE, ExpectedParentNode);
+			}
+		}
+
 		const TSharedPtr<FJsonObject>* ExpectedNames = nullptr;
 		if (Expected->TryGetObjectField(TEXT("expected_bone_names_by_node"), ExpectedNames))
 		{
@@ -164,6 +188,8 @@ bool FVRMSkinMappingTest::RunTest(const FString& Parameters)
 		TEXT("unnamed_and_duplicate_nodes"),
 		TEXT("armature_transform"),
 		TEXT("bind_pose_offset"),
+		TEXT("spring_tails"),
+		TEXT("spring_tails_vrm0"),
 	};
 	for (const TCHAR* Name : Fixtures)
 	{

@@ -8,6 +8,8 @@
 #include "Misc/Base64.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Dom/JsonObject.h"
+#include "Templates/Function.h"
 
 #include "cgltf.h"
 
@@ -60,9 +62,14 @@ static void ParseMorphTargets(const cgltf_data* Data, const TArray<FVRMMeshInsta
 // New helper: reset parsed model to a known default state
 static void ResetParsedModel(FVRMParsedModel& Out);
 
-// Bone population: every joint of every skin, parents before children, unique names.
+// Nodes the VRM spring bones name (VRM 1.0 joints, colliders and centers; VRM 0.x bone group
+// subtrees, collider groups and centers), as glTF node indices.
+static TSet<int32> CollectSpringNodes(const cgltf_data* Data, const FJsonObject& Root);
+
+// Bone population: every joint of every skin, plus the ExtraNodes below a joint (and the nodes
+// between them and that joint), parents before children, unique names.
 // Fills OutNodeToBone (glTF node index -> bone index).
-static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone);
+static void PopulateBonesFromSkins(const cgltf_data* Data, const TSet<int32>& ExtraNodes, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone);
 
 // glTF -> UE conversion lives in VRMCoordinateConversion.h (shared with the spring bone parser).
 // Everything here converts through the parsed model's Convention(), which carries the facing.
@@ -468,8 +475,10 @@ bool VRM::BuildParsedModel(const FVRMDocument& Document, FVRMParsedModel& Out)
         UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] '%s' has no VRM or VRMC_vrm extension: not a VRM file, importing as generic glTF (facing +Z, like VRM 1.0)."), *Filename);
     }
 
+    // Spring tails (VRoid's J_Sec_*_end) are often not skin joints; they become bones too, so the
+    // spring data can name them.
     TMap<int32, int32> NodeToBone;
-    PopulateBonesFromSkins(Data, Out, NodeToBone);
+    PopulateBonesFromSkins(Data, CollectSpringNodes(Data, *Document.GetJsonRoot()), Out, NodeToBone);
     if (Data->skins_count > 0 && Out.Bones.Num() == 0)
     {
         // Preserve previous failure behavior when a skin exists but no joints were produced
@@ -999,7 +1008,125 @@ static void BuildReferencePoseBinds(const TArray<FVector>& RestPositions, TArray
     }
 }
 
-static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone)
+static TSet<int32> CollectSpringNodes(const cgltf_data* Data, const FJsonObject& Root)
+{
+    TSet<int32> Nodes;
+    if (!Data)
+    {
+        return Nodes;
+    }
+    const int32 NumNodes = int32(Data->nodes_count);
+    // A node index, or an object { "node": n } (a non-spec form the spring parser also accepts).
+    auto AddNode = [&](const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field)
+    {
+        int32 Index = INDEX_NONE;
+        const TSharedPtr<FJsonObject>* Inner = nullptr;
+        if (!Obj.IsValid())
+        {
+            return;
+        }
+        if (!Obj->TryGetNumberField(Field, Index) && Obj->TryGetObjectField(Field, Inner) && Inner && Inner->IsValid())
+        {
+            (*Inner)->TryGetNumberField(TEXT("node"), Index);
+        }
+        if (Index >= 0 && Index < NumNodes)
+        {
+            Nodes.Add(Index);
+        }
+    };
+    auto ForEachObject = [](const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field, TFunctionRef<void(const TSharedPtr<FJsonObject>&)> Fn)
+    {
+        const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
+        if (Obj.IsValid() && Obj->TryGetArrayField(Field, Array) && Array)
+        {
+            for (const TSharedPtr<FJsonValue>& Value : *Array)
+            {
+                const TSharedPtr<FJsonObject>* Item = nullptr;
+                if (Value.IsValid() && Value->TryGetObject(Item) && Item)
+                {
+                    Fn(*Item);
+                }
+            }
+        }
+    };
+
+    const TSharedPtr<FJsonObject>* Extensions = nullptr;
+    if (!Root.TryGetObjectField(TEXT("extensions"), Extensions) || !Extensions)
+    {
+        return Nodes;
+    }
+
+    // VRM 1.0: every joint is listed, including the tail that only marks the last bone's end.
+    const TSharedPtr<FJsonObject>* Spring = nullptr;
+    if ((*Extensions)->TryGetObjectField(TEXT("VRMC_springBone"), Spring) && Spring)
+    {
+        ForEachObject(*Spring, TEXT("springs"), [&](const TSharedPtr<FJsonObject>& S)
+        {
+            AddNode(S, TEXT("center"));
+            ForEachObject(S, TEXT("joints"), [&](const TSharedPtr<FJsonObject>& J) { AddNode(J, TEXT("node")); });
+        });
+        ForEachObject(*Spring, TEXT("colliders"), [&](const TSharedPtr<FJsonObject>& C) { AddNode(C, TEXT("node")); });
+
+        // Non-spec: collider shapes stored on the nodes (VRMC_node_collider); the spring parser
+        // makes colliders on those nodes when VRMC_springBone has none.
+        const TArray<TSharedPtr<FJsonValue>>* JsonNodes = nullptr;
+        if (Root.TryGetArrayField(TEXT("nodes"), JsonNodes) && JsonNodes)
+        {
+            for (int32 i = 0; i < JsonNodes->Num() && i < NumNodes; ++i)
+            {
+                const TSharedPtr<FJsonObject>* NodeObj = nullptr;
+                const TSharedPtr<FJsonObject>* NodeExt = nullptr;
+                if ((*JsonNodes)[i].IsValid() && (*JsonNodes)[i]->TryGetObject(NodeObj) && NodeObj
+                    && (*NodeObj)->TryGetObjectField(TEXT("extensions"), NodeExt) && NodeExt
+                    && (*NodeExt)->HasField(TEXT("VRMC_node_collider")))
+                {
+                    Nodes.Add(i);
+                }
+            }
+        }
+    }
+
+    // VRM 0.x: a bone group lists chain roots and the whole subtree below each moves, so every
+    // descendant is a spring node. Mesh nodes stop the walk, as in the spring parser.
+    const TSharedPtr<FJsonObject>* Vrm = nullptr;
+    const TSharedPtr<FJsonObject>* Secondary = nullptr;
+    if ((*Extensions)->TryGetObjectField(TEXT("VRM"), Vrm) && Vrm
+        && (*Vrm)->TryGetObjectField(TEXT("secondaryAnimation"), Secondary) && Secondary)
+    {
+        TFunction<void(const cgltf_node*)> AddSubtree = [&](const cgltf_node* Node)
+        {
+            if (!Node || Node->mesh)
+            {
+                return;
+            }
+            Nodes.Add(int32(Node - Data->nodes));
+            for (size_t ci = 0; ci < Node->children_count; ++ci)
+            {
+                AddSubtree(Node->children[ci]);
+            }
+        };
+        ForEachObject(*Secondary, TEXT("boneGroups"), [&](const TSharedPtr<FJsonObject>& G)
+        {
+            AddNode(G, TEXT("center"));
+            const TArray<TSharedPtr<FJsonValue>>* Bones = nullptr;
+            if (G->TryGetArrayField(TEXT("bones"), Bones) && Bones)
+            {
+                for (const TSharedPtr<FJsonValue>& B : *Bones)
+                {
+                    double Index = -1.0;
+                    if (B.IsValid() && B->TryGetNumber(Index) && Index >= 0.0 && Index < double(NumNodes))
+                    {
+                        AddSubtree(&Data->nodes[int32(Index)]);
+                    }
+                }
+            }
+        });
+        ForEachObject(*Secondary, TEXT("colliderGroups"), [&](const TSharedPtr<FJsonObject>& G) { AddNode(G, TEXT("node")); });
+    }
+    return Nodes;
+}
+
+static void PopulateBonesFromSkins(const cgltf_data* Data, const TSet<int32>& ExtraNodes, FVRMParsedModel& Out, TMap<int32, int32>& OutNodeToBone)
 {
     Out.Bones.Reset();
     Out.NodeToBoneMap.Reset();
@@ -1022,6 +1149,31 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
                 JointNodes.Add(Skin.joints[ji]);
             }
         }
+    }
+
+    // Extra nodes below a joint become bones, with the nodes between them and that joint so each
+    // keeps its own parent. One with no joint above it is left out: making it (and its non-joint
+    // ancestors) bones could put a new bone above existing joints and change their parents. Mesh
+    // nodes stay out, as in the spring parser's VRM 0.x walk; rigid meshes follow their nearest bone.
+    const TSet<const cgltf_node*> SkinJoints = JointNodes;
+    for (const int32 NodeIndex : ExtraNodes)
+    {
+        const cgltf_node* Node = &Data->nodes[NodeIndex];
+        if (JointNodes.Contains(Node) || Node->mesh)
+        {
+            continue;
+        }
+        TArray<const cgltf_node*> Path;
+        const cgltf_node* P = Node;
+        for (; P && !SkinJoints.Contains(P); P = P->parent)
+        {
+            Path.Add(P);
+        }
+        if (!P || Path.ContainsByPredicate([](const cgltf_node* N) { return N->mesh != nullptr; }))
+        {
+            continue;
+        }
+        JointNodes.Append(Path);
     }
 
     // Order bones by a pre-order walk of the node hierarchy so every parent precedes its children
@@ -1048,8 +1200,37 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
     }
 
     // Unique names. Bone names compare case-insensitively (FName), so duplicates are found that way.
-    // Unnamed joints become Node_<glTF node index>; repeats get _1, _2, ... in bone order.
+    // Unnamed joints become Node_<glTF node index>; repeats get _1, _2, ... in bone order. Skin
+    // joints are named first, so an added spring node never takes a joint's name (renaming the
+    // joint would break animations and retargets that name it).
     TSet<FName> UsedNames;
+    TArray<FString> Names;
+    Names.SetNum(Ordered.Num());
+    for (const bool bSkinJoints : { true, false })
+    {
+        for (int32 bi = 0; bi < Ordered.Num(); ++bi)
+        {
+            const cgltf_node* J = Ordered[bi];
+            if (SkinJoints.Contains(J) != bSkinJoints)
+            {
+                continue;
+            }
+            const int32 NodeIndex = int32(J - Data->nodes);
+            const FString BaseName = (J->name && J->name[0]) ? FString(UTF8_TO_TCHAR(J->name)) : FString::Printf(TEXT("Node_%d"), NodeIndex);
+            FString Name = BaseName;
+            for (int32 Suffix = 1; UsedNames.Contains(FName(*Name)); ++Suffix)
+            {
+                Name = FString::Printf(TEXT("%s_%d"), *BaseName, Suffix);
+            }
+            if (Name != BaseName)
+            {
+                UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Joint node %d '%s' renamed to '%s' to keep bone names unique."), NodeIndex, *BaseName, *Name);
+            }
+            UsedNames.Add(FName(*Name));
+            Names[bi] = MoveTemp(Name);
+        }
+    }
+
     Out.Bones.SetNum(Ordered.Num());
     TArray<FVector> RestPositions;
     RestPositions.SetNum(Ordered.Num());
@@ -1061,20 +1242,8 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, FVRMParsedModel& Out,
 
         FVRMParsedBone& B = Out.Bones[bi];
         B.NodeIndex = NodeIndex;
-
-        const FString BaseName = (J->name && J->name[0]) ? FString(UTF8_TO_TCHAR(J->name)) : FString::Printf(TEXT("Node_%d"), NodeIndex);
-        FString Name = BaseName;
-        for (int32 Suffix = 1; UsedNames.Contains(FName(*Name)); ++Suffix)
-        {
-            Name = FString::Printf(TEXT("%s_%d"), *BaseName, Suffix);
-        }
-        if (Name != BaseName)
-        {
-            UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Joint node %d '%s' renamed to '%s' to keep bone names unique."), NodeIndex, *BaseName, *Name);
-        }
-        UsedNames.Add(FName(*Name));
-        B.Name = Name;
-        Out.NodeToBoneMap.Add(NodeIndex, FName(*Name));
+        B.Name = Names[bi];
+        Out.NodeToBoneMap.Add(NodeIndex, FName(*B.Name));
 
         // Parent: nearest ancestor that is also a joint (already in Out.Bones thanks to the ordering).
         B.Parent = INDEX_NONE;

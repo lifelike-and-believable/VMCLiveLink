@@ -16,5 +16,7 @@ Do not edit these files by hand. Change the generator and regenerate.
 | `unnamed_and_duplicate_nodes` | Joints with no name and joints sharing a name |
 | `armature_transform` | Joints under a non-joint node with rotation and scale |
 | `bind_pose_offset` | Skinned mesh whose inverse bind matrices don't match the node rest pose |
+| `spring_tails` | VRM 1.0 spring ending in a tail node no skin lists, below a non-joint grouping node; both must become bones |
+| `spring_tails_vrm0` | VRM 0.x spring group whose subtree ends in a leaf no skin lists; it must become a bone |
 | `morph_targets` | Two meshes sharing a morph target name, an unnamed target on each, and NORMAL deltas |
 | `mtoon_materials` | Two MToon materials (world and screen outlines, shading shift texture, texture transform), an unlit masked double-sided material, a PBR material, and two 1x1 PNGs |
