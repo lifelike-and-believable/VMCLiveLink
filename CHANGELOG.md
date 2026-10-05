@@ -8,6 +8,7 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 - **Use Spring Centers** on the spring bone node. Turned off, springs that name a `center` bone are simulated in the node's Simulation Space instead, so moving and turning the character swings them (VRoid Studio gives every spring the `Root` center, which makes the character's own motion add nothing).
 
 ### Fixed
+- Spring nodes that no skin lists weren't made bones: VRoid Studio's `J_Sec_*_end` tails (22 in a typical avatar) and the leaves of a VRM 0.x bone group. In VRM 1.0 a joint whose tail is missing isn't simulated, so the last bone of each of those chains stayed still, and the spring data reported bones not in the skeleton. The skeleton now includes every spring node below a skin joint, with any nodes between it and that joint. Reimport affected VRM files.
 - VRM imports created their MToon material instances without a parent material (no textures, every slot on the default material) and made no avatar description. The material and avatar description pipelines were registered as class paths, which Interchange can't instantiate; they now ship as pipeline assets in `DefaultPipelines`, and registering the pipelines again replaces the old class-path entries.
 
 ## [1.0.0] - 2026-09-29

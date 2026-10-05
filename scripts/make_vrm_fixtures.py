@@ -25,6 +25,10 @@ expected values computed here from the same scene description:
                                transforms). Skinning must move its vertices into the rest pose.
   morph_targets                Two meshes whose morph targets share a name ("Shared") and each
                                have an unnamed target; one target carries NORMAL deltas.
+  spring_tails                 A VRM 1.0 spring ending in a tail node that is not a skin joint,
+                               below a non-joint grouping node. Both must become bones.
+  spring_tails_vrm0            A VRM 0.x spring group whose subtree ends in a leaf no skin lists.
+                               It must become a bone.
   mtoon_materials              VRM 1.0 with four materials: two VRMC_materials_mtoon (world and
                                screen outlines, a shading shift texture, a texture transform),
                                one KHR_materials_unlit (masked, double-sided) and one glTF PBR.
@@ -495,6 +499,61 @@ def make_vrm1(out_dir):
     }
 
 
+def make_spring_tails(out_dir):
+    """VRM 1.0 spring nodes that aren't skin joints (VRoid's J_Sec_*_end): the spring ends in a
+    tail node below a non-joint grouping node. Both must become bones."""
+    s = Scene()
+    root, hips, spine, head, hair1, hair2, hair3 = base_humanoid(s)
+    group = s.node("HairTipGroup", hair3, t=[0, -0.05, 0])
+    tail = s.node("Hair_end", group, t=[0, -0.05, 0])
+    joints = [hips, spine, head, hair1, hair2, hair3]
+    mark_joints(joints)
+    body = body_mesh(s, root, joints)
+    ext = {
+        "VRMC_vrm": {"specVersion": "1.0", "meta": vrm1_meta(),
+                     "humanoid": {"humanBones": {"hips": {"node": hips.index}, "spine": {"node": spine.index},
+                                                 "head": {"node": head.index}}}},
+        "VRMC_springBone": {
+            "specVersion": "1.0",
+            "springs": [{"name": "hair", "joints": [{"node": n.index} for n in (hair1, hair2, hair3, tail)]}],
+        },
+    }
+    s.write(os.path.join(out_dir, "spring_tails.vrm"), ext, ["VRMC_springBone", "VRMC_vrm"])
+    return {
+        "vrm_version": "1.0",
+        "bones": s.expected_bones(joints),
+        "spring_bones": s.expected_bones([group, tail]),
+        "vertices": s.expected_vertices(body),
+        "note": "spring_bones are not skin joints; the importer must still make them bones "
+                "(HairTipGroup sits between the tail and its nearest joint).",
+    }
+
+
+def make_spring_tails_vrm0(out_dir):
+    """VRM 0.x: a bone group's subtree ends in a leaf no skin lists. It must become a bone."""
+    s = Scene()
+    root, hips, spine, head, hair1, hair2, hair3 = base_humanoid(s)
+    tip = s.node("HairTip", hair3, t=[0, -0.1, 0])
+    joints = [hips, spine, head, hair1, hair2, hair3]
+    mark_joints(joints)
+    body = body_mesh(s, root, joints)
+    ext = {"VRM": {
+        "exporterVersion": "fixture", "specVersion": "0.0", "meta": vrm0_meta(),
+        "humanoid": {"humanBones": [{"bone": "hips", "node": hips.index},
+                                    {"bone": "spine", "node": spine.index},
+                                    {"bone": "head", "node": head.index}]},
+        "secondaryAnimation": {"boneGroups": [{"comment": "hair", "bones": [hair1.index]}], "colliderGroups": []},
+    }}
+    s.write(os.path.join(out_dir, "spring_tails_vrm0.vrm"), ext)
+    return {
+        "vrm_version": "0.x",
+        "bones": s.expected_bones(joints),
+        "spring_bones": s.expected_bones([tip]),
+        "vertices": s.expected_vertices(body),
+        "note": "HairTip is not a skin joint but is in the hair group's subtree; it must become a bone.",
+    }
+
+
 def make_multi_skin(out_dir):
     s = Scene()
     root = s.node("Root")
@@ -721,6 +780,8 @@ def main():
         "bind_pose_offset": make_bind_pose_offset,
         "morph_targets": make_morph_targets,
         "mtoon_materials": make_mtoon_materials,
+        "spring_tails": make_spring_tails,
+        "spring_tails_vrm0": make_spring_tails_vrm0,
     }
     for name, maker in makers.items():
         expected = maker(out_dir)

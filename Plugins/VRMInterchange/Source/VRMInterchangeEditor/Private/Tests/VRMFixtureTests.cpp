@@ -28,6 +28,8 @@ namespace VRMFixtures
 		TEXT("unnamed_and_duplicate_nodes"),
 		TEXT("armature_transform"),
 		TEXT("bind_pose_offset"),
+		TEXT("spring_tails"),
+		TEXT("spring_tails_vrm0"),
 	};
 }
 
