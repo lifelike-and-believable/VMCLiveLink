@@ -28,6 +28,10 @@ jobs:
       group: pr-build-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     runs-on: [self-hosted, Windows, X64]
+    # pull-requests: write only for the success comment (the last step).
+    permissions:
+      contents: read
+      pull-requests: write
     timeout-minutes: 120
     defaults:
       run:
@@ -99,6 +103,7 @@ jobs:
           $Report = Get-Content $Index -Raw -Encoding UTF8 | ConvertFrom-Json
           $Ran = $Report.succeeded + $Report.succeededWithWarnings + $Report.failed
           Write-Host "Tests: $($Report.succeeded) passed, $($Report.succeededWithWarnings) passed with warnings, $($Report.failed) failed, $($Report.notRun) not run"
+          "TEST_SUMMARY=$($Report.succeeded) passed, $($Report.succeededWithWarnings) passed with warnings, $($Report.failed) failed" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
           foreach ($t in $Report.tests) {
             if ($t.state -eq 'Fail') {
@@ -127,3 +132,19 @@ jobs:
           name: automation-report
           path: TestReport
           if-no-files-found: ignore
+
+      # A comment on success, so whoever watches the PR (the Claude desktop app's PR monitor relays
+      # comments) hears that it is green; a passing check alone sends no notification.
+      - name: Comment on success
+        if: success() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $Body = "PR Build and Tests passed for $env:HEAD_SHA (Editor, Development and Shipping builds; $env:TEST_SUMMARY). [Run]($env:RUN_URL)"
+          $Uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/issues/$env:PR_NUMBER/comments"
+          $Headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body (@{ body = $Body } | ConvertTo-Json) | Out-Null
+          Write-Host "Commented on PR #$env:PR_NUMBER"
