@@ -137,6 +137,8 @@ jobs:
       # comments) hears that it is green; a passing check alone sends no notification.
       - name: Comment on success
         if: success() && github.event_name == 'pull_request'
+        # A failed notification (API error, rate limit) mustn't turn a green build red.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
