@@ -125,7 +125,11 @@ namespace VRMSkinMappingTests
 				const FVector ActualBonePos = BoneRestPosition(Model, BoneIndex);
 				Test.TestTrue(FString::Printf(TEXT("%s: spring node %d rest position %s (expected %s)"), Name, Node, *ActualBonePos.ToString(), *ExpectedBonePos.ToString()),
 					ActualBonePos.Equals(ExpectedBonePos, PositionTolerance));
-				Test.TestTrue(FString::Printf(TEXT("%s: spring node %d has a parent bone"), Name, Node), Model.Bones[BoneIndex].Parent != INDEX_NONE);
+				// Its parent bone is its glTF parent node (nodes between it and its joint are bones too).
+				const int32 ParentBone = Model.Bones[BoneIndex].Parent;
+				const int32 ExpectedParentNode = int32(Pair.Value->AsObject()->GetNumberField(TEXT("parent_node")));
+				Test.TestEqual(FString::Printf(TEXT("%s: spring node %d parent node"), Name, Node),
+					Model.Bones.IsValidIndex(ParentBone) ? Model.Bones[ParentBone].NodeIndex : INDEX_NONE, ExpectedParentNode);
 			}
 		}
 

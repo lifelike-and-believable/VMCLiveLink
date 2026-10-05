@@ -1016,10 +1016,20 @@ static TSet<int32> CollectSpringNodes(const cgltf_data* Data, const FJsonObject&
         return Nodes;
     }
     const int32 NumNodes = int32(Data->nodes_count);
+    // A node index, or an object { "node": n } (a non-spec form the spring parser also accepts).
     auto AddNode = [&](const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field)
     {
         int32 Index = INDEX_NONE;
-        if (Obj.IsValid() && Obj->TryGetNumberField(Field, Index) && Index >= 0 && Index < NumNodes)
+        const TSharedPtr<FJsonObject>* Inner = nullptr;
+        if (!Obj.IsValid())
+        {
+            return;
+        }
+        if (!Obj->TryGetNumberField(Field, Index) && Obj->TryGetObjectField(Field, Inner) && Inner && Inner->IsValid())
+        {
+            (*Inner)->TryGetNumberField(TEXT("node"), Index);
+        }
+        if (Index >= 0 && Index < NumNodes)
         {
             Nodes.Add(Index);
         }
@@ -1056,6 +1066,24 @@ static TSet<int32> CollectSpringNodes(const cgltf_data* Data, const FJsonObject&
             ForEachObject(S, TEXT("joints"), [&](const TSharedPtr<FJsonObject>& J) { AddNode(J, TEXT("node")); });
         });
         ForEachObject(*Spring, TEXT("colliders"), [&](const TSharedPtr<FJsonObject>& C) { AddNode(C, TEXT("node")); });
+
+        // Non-spec: collider shapes stored on the nodes (VRMC_node_collider); the spring parser
+        // makes colliders on those nodes when VRMC_springBone has none.
+        const TArray<TSharedPtr<FJsonValue>>* JsonNodes = nullptr;
+        if (Root.TryGetArrayField(TEXT("nodes"), JsonNodes) && JsonNodes)
+        {
+            for (int32 i = 0; i < JsonNodes->Num() && i < NumNodes; ++i)
+            {
+                const TSharedPtr<FJsonObject>* NodeObj = nullptr;
+                const TSharedPtr<FJsonObject>* NodeExt = nullptr;
+                if ((*JsonNodes)[i].IsValid() && (*JsonNodes)[i]->TryGetObject(NodeObj) && NodeObj
+                    && (*NodeObj)->TryGetObjectField(TEXT("extensions"), NodeExt) && NodeExt
+                    && (*NodeExt)->HasField(TEXT("VRMC_node_collider")))
+                {
+                    Nodes.Add(i);
+                }
+            }
+        }
     }
 
     // VRM 0.x: a bone group lists chain roots and the whole subtree below each moves, so every
@@ -1124,8 +1152,9 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, const TSet<int32>& Ex
     }
 
     // Extra nodes below a joint become bones, with the nodes between them and that joint so each
-    // keeps its own parent. One with no joint above it is left out: the skeleton has one root.
-    // Mesh nodes stay out; rigid meshes already follow their nearest joint.
+    // keeps its own parent. One with no joint above it is left out: making it (and its non-joint
+    // ancestors) bones could put a new bone above existing joints and change their parents. Mesh
+    // nodes stay out, as in the spring parser's VRM 0.x walk; rigid meshes follow their nearest bone.
     const TSet<const cgltf_node*> SkinJoints = JointNodes;
     for (const int32 NodeIndex : ExtraNodes)
     {
@@ -1171,8 +1200,37 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, const TSet<int32>& Ex
     }
 
     // Unique names. Bone names compare case-insensitively (FName), so duplicates are found that way.
-    // Unnamed joints become Node_<glTF node index>; repeats get _1, _2, ... in bone order.
+    // Unnamed joints become Node_<glTF node index>; repeats get _1, _2, ... in bone order. Skin
+    // joints are named first, so an added spring node never takes a joint's name (renaming the
+    // joint would break animations and retargets that name it).
     TSet<FName> UsedNames;
+    TArray<FString> Names;
+    Names.SetNum(Ordered.Num());
+    for (const bool bSkinJoints : { true, false })
+    {
+        for (int32 bi = 0; bi < Ordered.Num(); ++bi)
+        {
+            const cgltf_node* J = Ordered[bi];
+            if (SkinJoints.Contains(J) != bSkinJoints)
+            {
+                continue;
+            }
+            const int32 NodeIndex = int32(J - Data->nodes);
+            const FString BaseName = (J->name && J->name[0]) ? FString(UTF8_TO_TCHAR(J->name)) : FString::Printf(TEXT("Node_%d"), NodeIndex);
+            FString Name = BaseName;
+            for (int32 Suffix = 1; UsedNames.Contains(FName(*Name)); ++Suffix)
+            {
+                Name = FString::Printf(TEXT("%s_%d"), *BaseName, Suffix);
+            }
+            if (Name != BaseName)
+            {
+                UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Joint node %d '%s' renamed to '%s' to keep bone names unique."), NodeIndex, *BaseName, *Name);
+            }
+            UsedNames.Add(FName(*Name));
+            Names[bi] = MoveTemp(Name);
+        }
+    }
+
     Out.Bones.SetNum(Ordered.Num());
     TArray<FVector> RestPositions;
     RestPositions.SetNum(Ordered.Num());
@@ -1184,20 +1242,8 @@ static void PopulateBonesFromSkins(const cgltf_data* Data, const TSet<int32>& Ex
 
         FVRMParsedBone& B = Out.Bones[bi];
         B.NodeIndex = NodeIndex;
-
-        const FString BaseName = (J->name && J->name[0]) ? FString(UTF8_TO_TCHAR(J->name)) : FString::Printf(TEXT("Node_%d"), NodeIndex);
-        FString Name = BaseName;
-        for (int32 Suffix = 1; UsedNames.Contains(FName(*Name)); ++Suffix)
-        {
-            Name = FString::Printf(TEXT("%s_%d"), *BaseName, Suffix);
-        }
-        if (Name != BaseName)
-        {
-            UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Joint node %d '%s' renamed to '%s' to keep bone names unique."), NodeIndex, *BaseName, *Name);
-        }
-        UsedNames.Add(FName(*Name));
-        B.Name = Name;
-        Out.NodeToBoneMap.Add(NodeIndex, FName(*Name));
+        B.Name = Names[bi];
+        Out.NodeToBoneMap.Add(NodeIndex, FName(*B.Name));
 
         // Parent: nearest ancestor that is also a joint (already in Out.Bones thanks to the ordering).
         B.Parent = INDEX_NONE;

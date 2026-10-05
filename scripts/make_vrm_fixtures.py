@@ -499,6 +499,14 @@ def make_vrm1(out_dir):
     }
 
 
+def spring_bones(scene, nodes):
+    """expected_bones plus each node's glTF parent, which must be its parent bone too."""
+    bones = scene.expected_bones(nodes)
+    for n in nodes:
+        bones[str(n.index)]["parent_node"] = n.parent.index
+    return bones
+
+
 def make_spring_tails(out_dir):
     """VRM 1.0 spring nodes that aren't skin joints (VRoid's J_Sec_*_end): the spring ends in a
     tail node below a non-joint grouping node. Both must become bones."""
@@ -506,7 +514,10 @@ def make_spring_tails(out_dir):
     root, hips, spine, head, hair1, hair2, hair3 = base_humanoid(s)
     group = s.node("HairTipGroup", hair3, t=[0, -0.05, 0])
     tail = s.node("Hair_end", group, t=[0, -0.05, 0])
-    joints = [hips, spine, head, hair1, hair2, hair3]
+    # A skin joint with the tail's name, later in the hierarchy walk than the tail: it must keep
+    # the plain name (skin joints are named first) and the tail gets the suffix.
+    namesake = s.node("Hair_end", spine, t=[0.1, 0.3, 0])
+    joints = [hips, spine, head, hair1, hair2, hair3, namesake]
     mark_joints(joints)
     body = body_mesh(s, root, joints)
     ext = {
@@ -522,10 +533,12 @@ def make_spring_tails(out_dir):
     return {
         "vrm_version": "1.0",
         "bones": s.expected_bones(joints),
-        "spring_bones": s.expected_bones([group, tail]),
+        "spring_bones": spring_bones(s, [group, tail]),
+        "expected_bone_names_by_node": {str(namesake.index): "Hair_end", str(tail.index): "Hair_end_1"},
         "vertices": s.expected_vertices(body),
         "note": "spring_bones are not skin joints; the importer must still make them bones "
-                "(HairTipGroup sits between the tail and its nearest joint).",
+                "(HairTipGroup sits between the tail and its nearest joint). The skin joint "
+                "Hair_end keeps its name; the spring tail of the same name is renamed.",
     }
 
 
@@ -548,7 +561,7 @@ def make_spring_tails_vrm0(out_dir):
     return {
         "vrm_version": "0.x",
         "bones": s.expected_bones(joints),
-        "spring_bones": s.expected_bones([tip]),
+        "spring_bones": spring_bones(s, [tip]),
         "vertices": s.expected_vertices(body),
         "note": "HairTip is not a skin joint but is in the hair group's subtree; it must become a bone.",
     }

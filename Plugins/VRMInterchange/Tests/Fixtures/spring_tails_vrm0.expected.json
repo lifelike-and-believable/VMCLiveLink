@@ -60,6 +60,7 @@
     "7": {
       "name": "HairTip",
       "node": 7,
+      "parent_node": 6,
       "world_position_gltf": [
         0.0,
         1.4,

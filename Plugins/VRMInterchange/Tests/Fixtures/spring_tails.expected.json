@@ -53,13 +53,27 @@
         1.5,
         -0.05
       ]
+    },
+    "9": {
+      "name": "Hair_end",
+      "node": 9,
+      "world_position_gltf": [
+        0.1,
+        1.5,
+        0.0
+      ]
     }
   },
-  "note": "spring_bones are not skin joints; the importer must still make them bones (HairTipGroup sits between the tail and its nearest joint).",
+  "expected_bone_names_by_node": {
+    "8": "Hair_end_1",
+    "9": "Hair_end"
+  },
+  "note": "spring_bones are not skin joints; the importer must still make them bones (HairTipGroup sits between the tail and its nearest joint). The skin joint Hair_end keeps its name; the spring tail of the same name is renamed.",
   "spring_bones": {
     "7": {
       "name": "HairTipGroup",
       "node": 7,
+      "parent_node": 6,
       "world_position_gltf": [
         0.0,
         1.45,
@@ -69,6 +83,7 @@
     "8": {
       "name": "Hair_end",
       "node": 8,
+      "parent_node": 7,
       "world_position_gltf": [
         0.0,
         1.4,
@@ -255,6 +270,36 @@
         0.0,
         1.52,
         -0.05
+      ]
+    },
+    {
+      "dominant_bone_node": 9,
+      "mesh_node": "Body",
+      "vertex": 18,
+      "world_position_gltf": [
+        0.08,
+        1.5,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 9,
+      "mesh_node": "Body",
+      "vertex": 19,
+      "world_position_gltf": [
+        0.12,
+        1.5,
+        0.0
+      ]
+    },
+    {
+      "dominant_bone_node": 9,
+      "mesh_node": "Body",
+      "vertex": 20,
+      "world_position_gltf": [
+        0.1,
+        1.52,
+        0.0
       ]
     }
   ],
