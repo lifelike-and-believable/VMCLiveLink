@@ -95,7 +95,11 @@ void UAnimGraphNode_VRMSpringBones::ValidateAnimNodeDuringCompilation(USkeleton*
         };
         for (const FVRMSpringJoint& Joint : Cfg.Joints) Check(Joint.BoneName, Joint.NodeIndex);
         for (const FVRMSpringCollider& Collider : Cfg.Colliders) Check(Collider.BoneName, Collider.NodeIndex);
-        for (const FVRMSpring& Spring : Cfg.Springs) Check(Spring.CenterBoneName, Spring.CenterNodeIndex);
+        // Center bones only matter when the node uses them.
+        if (Node.bUseSpringCenters)
+        {
+            for (const FVRMSpring& Spring : Cfg.Springs) Check(Spring.CenterBoneName, Spring.CenterNodeIndex);
+        }
 
         if (Missing.Num() > 0)
         {

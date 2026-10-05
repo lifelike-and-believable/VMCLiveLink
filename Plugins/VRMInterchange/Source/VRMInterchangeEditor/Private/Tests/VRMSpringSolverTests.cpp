@@ -282,6 +282,20 @@ bool FVRMSpringSolverIgnoreCenters::RunTest(const FString& Parameters)
 			TestTrue(FString::Printf(TEXT("Centers ignored: the tip trails the turn (component Y %.3f cm)"), TipY), FMath::Abs(TipY) > 1.f);
 		}
 	}
+
+	// Turning centers off at runtime restarts the tails from the next pose instead of reading
+	// center-space tails as world positions (far from a character away from the origin).
+	FChainRig Rig(3, FVector(1, 0, 0), 10.f, 0.5f, 0.4f, FVector::ZeroVector);
+	Rig.Setup.Chains[0].CenterBone = Rig.Anchor();
+	FVRMSpringSolver Solver;
+	Solver.Init(Rig.Setup);
+	const FTransform FarAway(FVector(5000, 0, 0));
+	Solver.Step(1.f / 60.f, Rig.Bones, FarAway);
+	FVRMSpringSolverSettings NoCenters;
+	NoCenters.bUseCenterBones = false;
+	Solver.SetSettings(NoCenters);
+	Solver.Step(1.f / 60.f, Rig.Bones, FarAway);
+	TestTrue(TEXT("After turning centers off the chain still rests on the character"), FVector::Dist(Tip(Solver), Rig.Base[3]) < 1.f);
 	return true;
 }
 
