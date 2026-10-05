@@ -47,26 +47,6 @@ jobs:
       - name: Set PowerShell Execution Policy
         run: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
-      # TEMPORARY (PR #185): diagnose "Not in a Git repository" in the LFS step. Remove once fixed.
-      - name: Diagnose git environment
-        continue-on-error: true
-        run: |
-          Write-Host "whoami: $(whoami)"
-          Write-Host "PWD: $PWD"
-          Write-Host "GITHUB_WORKSPACE: $env:GITHUB_WORKSPACE"
-          Write-Host "HOME: $env:HOME  USERPROFILE: $env:USERPROFILE"
-          Write-Host "--- GIT_* environment"
-          Get-ChildItem env: | Where-Object { $_.Name -like 'GIT*' } | ForEach-Object { Write-Host "$($_.Name)=$($_.Value)" }
-          Write-Host "--- .git present: $(Test-Path (Join-Path $PWD '.git'))"
-          Get-Item -Force (Join-Path $PWD '.git') -ErrorAction SilentlyContinue | Format-List FullName, Attributes, Mode
-          Write-Host "--- git rev-parse"
-          git rev-parse --show-toplevel --git-dir 2>&1 | ForEach-Object { Write-Host $_ }
-          Write-Host "--- git config --show-origin --list"
-          # Values that may hold credentials are hidden.
-          git config --show-origin --list 2>&1 | ForEach-Object { if ("$_" -match '(?i)extraheader|token|password|credential|auth|url\..*\.insteadof') { Write-Host (("$_" -split '=')[0] + '=<hidden>') } else { Write-Host $_ } }
-          Write-Host "--- git lfs env"
-          git lfs env 2>&1 | ForEach-Object { Write-Host $_ }
-
       - name: Git LFS pull
         run: |
           git lfs install

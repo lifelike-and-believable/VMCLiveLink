@@ -3,27 +3,30 @@
 
 #include "InterchangeProjectSettings.h"
 #include "VRMTranslator.h"
-#include "VRMSpringBonesPostImportPipeline.h"
-#include "VRMIKRigPostImportPipeline.h"
-#include "VRMLiveLinkPostImportPipeline.h"
-#include "VRMMaterialPostImportPipeline.h"
-#include "VRMAvatarDescriptionPipeline.h"
 #include "VRMInterchangeLog.h"
 
 namespace
 {
-	/** Resolves a plugin pipeline asset if it exists, otherwise the pipeline class path. */
-	FSoftObjectPath ResolvePipelinePath(const TCHAR* AssetPath, UClass* AssetClass, const TCHAR* ClassPath)
+	/**
+	 * The plugin's pipeline assets, in the order they run after the assets pipeline. Interchange
+	 * only instantiates pipeline assets (UE::Interchange::GeneratePipelineInstance); a class path
+	 * such as /Script/VRMInterchangeEditor.VRMMaterialPostImportPipeline loads a UClass, which it
+	 * rejects as "type is unknown", so every pipeline needs an asset here.
+	 */
+	const TCHAR* const VRMPostImportPipelineAssets[] =
 	{
-		if (AssetPath)
-		{
-			if (UObject* Existing = StaticLoadObject(AssetClass, nullptr, AssetPath))
-			{
-				return FSoftObjectPath(Existing);
-			}
-		}
-		return FSoftObjectPath(ClassPath);
-	}
+		TEXT("/VRMInterchange/DefaultPipelines/DefaultSpringBonesPipeline.DefaultSpringBonesPipeline"),
+		TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMIKRigPipeline.DefaultVRMIKRigPipeline"),
+		TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMLiveLinkPipeline.DefaultVRMLiveLinkPipeline"),
+		TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMMaterialPipeline.DefaultVRMMaterialPipeline"),
+		// After the spring pipeline, so the description can point at its spring data.
+		TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMAvatarDescriptionPipeline.DefaultVRMAvatarDescriptionPipeline"),
+	};
+
+	const TCHAR* const VRMAssetsPipelineAsset = TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMAssetsPipeline.DefaultVRMAssetsPipeline");
+
+	/** Class paths that earlier versions registered for pipelines without an asset; they never instantiate. */
+	const TCHAR* const StaleClassPathPrefix = TEXT("/Script/VRMInterchangeEditor.");
 
 	// Templated like UpdateRegistration, which calls it, so both take whatever type the project
 	// settings' ContentImportSettings has.
@@ -67,6 +70,19 @@ namespace
 		bOutDirty = true;
 	}
 
+	/** Removes the VRM class-path entries that earlier versions saved; Interchange can't instantiate them. */
+	void RemoveStaleClassPaths(FInterchangeTranslatorPipelines& Per, bool& bOutDirty)
+	{
+		const int32 Removed = Per.Pipelines.RemoveAll([](const FSoftObjectPath& Path)
+		{
+			return Path.ToString().StartsWith(StaleClassPathPrefix);
+		});
+		if (Removed > 0)
+		{
+			bOutDirty = true;
+		}
+	}
+
 	/**
 	 * Makes the plugin's VRM assets pipeline the first entry for the VRM translator and removes the
 	 * generic assets pipeline from the VRM translator's list only (the project's global stack is
@@ -74,10 +90,7 @@ namespace
 	 */
 	void EnsureVRMAssetsPipelineIsFirst(FInterchangeTranslatorPipelines& Per, bool& bOutDirty)
 	{
-		const FSoftObjectPath DesiredPath = ResolvePipelinePath(
-			TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMAssetsPipeline.DefaultVRMAssetsPipeline"),
-			UObject::StaticClass(),
-			TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMAssetsPipeline.DefaultVRMAssetsPipeline"));
+		const FSoftObjectPath DesiredPath(VRMAssetsPipelineAsset);
 		const FString Desired = DesiredPath.ToString();
 
 		for (int32 i = Per.Pipelines.Num() - 1; i >= 0; --i)
@@ -143,27 +156,11 @@ namespace
 		bool bDirty = false;
 		if (FInterchangeTranslatorPipelines* Per = FindOrAddPerTranslator(InOut, bDirty))
 		{
-			AppendIfMissing(*Per, ResolvePipelinePath(
-				TEXT("/VRMInterchange/DefaultPipelines/DefaultSpringBonesPipeline.DefaultSpringBonesPipeline"),
-				UVRMSpringBonesPostImportPipeline::StaticClass(),
-				TEXT("/Script/VRMInterchangeEditor.VRMSpringBonesPostImportPipeline")), bDirty);
-			AppendIfMissing(*Per, ResolvePipelinePath(
-				TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMIKRigPipeline.DefaultVRMIKRigPipeline"),
-				UVRMIKRigPostImportPipeline::StaticClass(),
-				TEXT("/Script/VRMInterchangeEditor.VRMIKRigPostImportPipeline")), bDirty);
-			AppendIfMissing(*Per, ResolvePipelinePath(
-				TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMLiveLinkPipeline.DefaultVRMLiveLinkPipeline"),
-				UVRMLiveLinkPostImportPipeline::StaticClass(),
-				TEXT("/Script/VRMInterchangeEditor.VRMLiveLinkPostImportPipeline")), bDirty);
-			AppendIfMissing(*Per, ResolvePipelinePath(
-				nullptr,
-				UVRMMaterialPostImportPipeline::StaticClass(),
-				TEXT("/Script/VRMInterchangeEditor.VRMMaterialPostImportPipeline")), bDirty);
-			// After the spring pipeline, so the description can point at its spring data.
-			AppendIfMissing(*Per, ResolvePipelinePath(
-				nullptr,
-				UVRMAvatarDescriptionPipeline::StaticClass(),
-				TEXT("/Script/VRMInterchangeEditor.VRMAvatarDescriptionPipeline")), bDirty);
+			RemoveStaleClassPaths(*Per, bDirty);
+			for (const TCHAR* AssetPath : VRMPostImportPipelineAssets)
+			{
+				AppendIfMissing(*Per, FSoftObjectPath(AssetPath), bDirty);
+			}
 			EnsureVRMAssetsPipelineIsFirst(*Per, bDirty);
 		}
 		EnsureTextureDialogOverride(InOut, bDirty);
@@ -201,5 +198,26 @@ namespace VRMImportPipelineRegistration
 		Settings->SaveConfig();
 		UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] Registered the VRM import pipelines in the Interchange project settings."));
 		return true;
+	}
+
+	TArray<FSoftObjectPath> PreviewVRMTranslatorPipelines(const TArray<FSoftObjectPath>* SeedPipelines)
+	{
+		const UInterchangeProjectSettings* Settings = GetDefault<UInterchangeProjectSettings>();
+		if (!Settings)
+		{
+			return {};
+		}
+		auto Copy = Settings->ContentImportSettings;
+		bool bUnused = false;
+		if (SeedPipelines)
+		{
+			if (FInterchangeTranslatorPipelines* Per = FindOrAddPerTranslator(Copy, bUnused))
+			{
+				Per->Pipelines = *SeedPipelines;
+			}
+		}
+		UpdateRegistration(Copy);
+		const FInterchangeTranslatorPipelines* Per = FindOrAddPerTranslator(Copy, bUnused);
+		return Per ? Per->Pipelines : TArray<FSoftObjectPath>();
 	}
 }

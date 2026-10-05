@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/SoftObjectPath.h"
 
 /**
  * Registers the VRM import pipelines in the project's Interchange settings.
@@ -17,4 +18,12 @@ namespace VRMImportPipelineRegistration
 
 	/** Adds any missing VRM pipeline entries and saves the Interchange project settings. Returns true if anything changed. */
 	bool Apply();
+
+	/**
+	 * The VRM translator's pipeline list as Apply() would save it, computed on a copy of the
+	 * settings (nothing is modified). With SeedPipelines, the VRM translator's current list is
+	 * replaced by it first, so tests can check how an older registration is migrated. Empty when the
+	 * settings have no "Assets" pipeline stack.
+	 */
+	TArray<FSoftObjectPath> PreviewVRMTranslatorPipelines(const TArray<FSoftObjectPath>* SeedPipelines = nullptr);
 }

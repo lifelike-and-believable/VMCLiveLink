@@ -45,7 +45,7 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 
 4. If prompted, allow Unreal to rebuild the plugin modules.
 
-5. **Register the VRM import pipelines.** The first time the editor starts with the plugin, a notification offers to register them. Click **Register**, or use **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** at any time. This adds the spring bone, IK Rig, Live Link and material pipelines to the `.vrm` entry in **Project Settings > Interchange** and saves that setting. The plugin does not change your project settings unless you ask it to.
+5. **Register the VRM import pipelines.** The first time the editor starts with the plugin, a notification offers to register them. Click **Register**, or use **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** at any time. This adds the spring bone, IK Rig, Live Link, material and avatar description pipelines to the `.vrm` entry in **Project Settings > Interchange** and saves that setting. The plugin does not change your project settings unless you ask it to.
 
 ### Requirements
 
@@ -303,6 +303,10 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 
 ### VRM Pipelines Missing From the Import Dialog
 - Run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines**
+
+### Materials Import Without Textures, or No Avatar Description
+- Symptoms: every material slot shows the default grid material, the Output Log has `No parent material was found` and `Cannot generate a pipeline instance because the pipeline asset /Script/VRMInterchangeEditor... type is unknown`, and no avatar description asset is made.
+- Projects registered with version 1.0.0 have the material and avatar description pipelines saved in a form Interchange can't load. Run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** again, then reimport the VRM file.
 
 ### Import Dialog Doesn't Appear
 - Ensure the Interchange and InterchangeEditor plugins are enabled
