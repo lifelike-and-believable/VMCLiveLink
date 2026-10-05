@@ -22,7 +22,8 @@ namespace VRMImportPipelineRegistration
 	/**
 	 * The VRM translator's pipeline list as Apply() would save it, computed on a copy of the
 	 * settings (nothing is modified). With SeedPipelines, the VRM translator's current list is
-	 * replaced by it first, so tests can check how an older registration is migrated.
+	 * replaced by it first, so tests can check how an older registration is migrated. Empty when the
+	 * settings have no "Assets" pipeline stack.
 	 */
 	TArray<FSoftObjectPath> PreviewVRMTranslatorPipelines(const TArray<FSoftObjectPath>* SeedPipelines = nullptr);
 }

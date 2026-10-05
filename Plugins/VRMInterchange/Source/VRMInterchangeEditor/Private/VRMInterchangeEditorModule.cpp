@@ -99,7 +99,7 @@ void FVRMInterchangeEditorModule::OnPostEngineInit()
 	};
 
 	FNotificationInfo Info(LOCTEXT("RegisterPipelinesPrompt", "The VRM import pipelines are not registered in this project."));
-	Info.SubText = LOCTEXT("RegisterPipelinesPromptSub", "Registering adds spring bone, IK Rig, Live Link and material set-up to .vrm imports (Project Settings > Interchange).");
+	Info.SubText = LOCTEXT("RegisterPipelinesPromptSub", "Registering adds spring bone, IK Rig, Live Link, material and avatar description set-up to .vrm imports (Project Settings > Interchange).");
 	Info.bFireAndForget = false;
 	Info.bUseLargeFont = false;
 	Info.ButtonDetails.Add(FNotificationButtonInfo(

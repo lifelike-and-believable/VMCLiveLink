@@ -34,9 +34,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelineRegistrationInstantiableTest, "VRM.
 bool FVRMPipelineRegistrationInstantiableTest::RunTest(const FString& Parameters)
 {
 	using namespace VRMPipelineRegistrationTestsPrivate;
-	const TArray<FSoftObjectPath> Paths = VRMImportPipelineRegistration::PreviewVRMTranslatorPipelines();
-	if (!TestTrue(TEXT("The registration produces a VRM translator pipeline list"), Paths.Num() > 0))
+	// Seeded with an empty list, so only the plugin's own pipelines are checked, whatever else the
+	// project's Interchange settings register.
+	const TArray<FSoftObjectPath> Empty;
+	const TArray<FSoftObjectPath> Paths = VRMImportPipelineRegistration::PreviewVRMTranslatorPipelines(&Empty);
+	if (Paths.Num() == 0)
 	{
+		AddError(TEXT("No VRM translator pipeline list: the project's Interchange settings have no \"Assets\" pipeline stack."));
 		return false;
 	}
 
@@ -64,6 +68,11 @@ bool FVRMPipelineRegistrationMigrationTest::RunTest(const FString& Parameters)
 		FSoftObjectPath(TEXT("/Script/VRMInterchangeEditor.VRMAvatarDescriptionPipeline")),
 	};
 	const TArray<FSoftObjectPath> Paths = VRMImportPipelineRegistration::PreviewVRMTranslatorPipelines(&Old);
+	if (Paths.Num() == 0)
+	{
+		AddError(TEXT("No VRM translator pipeline list: the project's Interchange settings have no \"Assets\" pipeline stack."));
+		return false;
+	}
 
 	for (const FSoftObjectPath& Path : Paths)
 	{
@@ -71,6 +80,17 @@ bool FVRMPipelineRegistrationMigrationTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("The material pipeline is registered"), HasInstantiablePipeline<UVRMMaterialPostImportPipeline>(Paths));
 	TestTrue(TEXT("The avatar description pipeline is registered"), HasInstantiablePipeline<UVRMAvatarDescriptionPipeline>(Paths));
+
+	// The VRM assets pipeline runs first, and the avatar description after the spring pipeline,
+	// whose spring data it points at.
+	auto IndexOf = [&Paths](const TCHAR* AssetName)
+	{
+		return Paths.IndexOfByPredicate([AssetName](const FSoftObjectPath& Path) { return Path.GetAssetName() == AssetName; });
+	};
+	TestEqual(TEXT("The VRM assets pipeline is first"), IndexOf(TEXT("DefaultVRMAssetsPipeline")), 0);
+	const int32 Springs = IndexOf(TEXT("DefaultSpringBonesPipeline"));
+	const int32 Avatar = IndexOf(TEXT("DefaultVRMAvatarDescriptionPipeline"));
+	TestTrue(TEXT("The avatar description runs after the spring pipeline"), Springs != INDEX_NONE && Avatar > Springs);
 	return true;
 }
 
