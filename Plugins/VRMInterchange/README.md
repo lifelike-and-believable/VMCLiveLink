@@ -281,7 +281,9 @@ The spring bone solver follows the VRM 1.0 reference (UniVRM, three-vrm):
 - Only rotations are written, so bone lengths never change
 - A collider on a bone the skeleton doesn't have is ignored
 
-The node's **Simulation** settings change this: **Simulation Space** (World, or Component to ignore the character's motion), **Substep Hz** (default 60) and **Max Delta Time** (default 0.1 s). Its **Debug** settings draw that node's colliders and joints, like the console commands below.
+The node's **Simulation** settings change this: **Simulation Space** (World, or Component to ignore the character's motion), **Use Spring Centers**, **Substep Hz** (default 60) and **Max Delta Time** (default 0.1 s).
+
+Some exporters give every spring a `center` (VRoid Studio uses the `Root` bone), so moving or turning the character doesn't swing anything. To have it swing them, turn off **Use Spring Centers** and leave **Simulation Space** on World. If **External Velocity** is fed from the character's movement, set **External Velocity Scale** to 0 as well, or movement counts twice. Its **Debug** settings draw that node's colliders and joints, like the console commands below.
 
 Compiling the AnimBlueprint warns when the node has no spring data, when the data needs a reimport, and when the data names bones the skeleton doesn't have (usually spring data from another character). At runtime those joints and colliders are skipped, with one log warning per asset.
 

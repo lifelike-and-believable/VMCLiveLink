@@ -90,12 +90,16 @@ struct VRMSPRINGBONESRUNTIME_API FVRMSpringSolverSettings
 	/** Tails of springs without a center bone live in world space, so moving the character adds
 	 *  inertia. When false they live in component space and only the animation moves them. */
 	bool bWorldSpace = true;
+	/** Springs with a center bone simulate in that bone's space (VRM). When false the center is
+	 *  ignored and every spring uses bWorldSpace, so the character's motion swings them too. */
+	bool bUseCenterBones = true;
 
 	/** Whether every setting is the same. */
 	bool operator==(const FVRMSpringSolverSettings& Other) const
 	{
 		return SubstepHz == Other.SubstepHz && MaxDeltaTime == Other.MaxDeltaTime
-			&& VirtualTailLength == Other.VirtualTailLength && bWorldSpace == Other.bWorldSpace;
+			&& VirtualTailLength == Other.VirtualTailLength && bWorldSpace == Other.bWorldSpace
+			&& bUseCenterBones == Other.bUseCenterBones;
 	}
 };
 
