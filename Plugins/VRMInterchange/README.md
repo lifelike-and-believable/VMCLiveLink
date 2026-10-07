@@ -4,6 +4,8 @@
 
 The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Engine 5.6+ that leverages the modern Interchange framework. It imports VRM avatars with complete support for skeletal meshes, textures, blend shapes (morph targets), and advanced features like physics-based spring bones, IK rigs, and Live Link integration.
 
+The [User Guide](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/docs/USER_GUIDE.md) walks through importing an avatar and driving it live with [VMC Live Link](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/Plugins/VMCLiveLink/README.md), step by step; this README is the reference.
+
 ## Features
 
 ### Core Import Capabilities
@@ -18,7 +20,7 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 - **Real-time Physics Simulation**: Verlet-style spring bone solver (see [Spring Bone Simulation Details](#spring-bone-simulation-details) for current limitations)
 - **Collider Support**: Sphere, capsule and plane colliders, including inside colliders
 - **Animation Blueprint Integration**: Optional post-process AnimBP for automatic spring simulation
-- **Customizable Parameters**: Stiffness, gravity, damping, and more
+- **Customizable Parameters**: Stiffness, drag, gravity, hit radius and colliders
 
 ### IK Rig Integration
 - **IK Rig from the humanoid map**: The retarget root and chains come from the VRM's humanoid bone map, so they fit whatever the bones are called
@@ -45,11 +47,11 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 
 4. If prompted, allow Unreal to rebuild the plugin modules.
 
-5. **Register the VRM import pipelines.** The first time the editor starts with the plugin, a notification offers to register them. Click **Register**, or use **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** at any time. This adds the spring bone, IK Rig, Live Link, material and avatar description pipelines to the `.vrm` entry in **Project Settings > Interchange** and saves that setting. The plugin does not change your project settings unless you ask it to.
+5. **Register the VRM import pipelines.** While they aren't registered (or after a plugin update changes them), the editor shows a notification when it starts. Click **Register**, or use **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** at any time. **Don't ask again** stops the notification. Registering edits only the VRM translator's entry in **Project Settings > Interchange** (Assets pipeline stack): it puts the plugin's assets pipeline first in place of the generic one, adds the spring bone, IK Rig, Live Link, material and avatar description pipelines, and shows the import dialog for VRM textures. Then it saves that setting. The plugin does not change your project settings unless you ask it to.
 
 ### Requirements
 
-- **Unreal Engine**: 5.6 or later
+- **Unreal Engine**: 5.6 (the version it is built and tested with; later versions are untested)
 - **Platform**: Windows (Win64) only, for now: that is the only platform the plugin is built and tested on (the CI runner is Windows). The editor modules are allowlisted for Win64 in the `.uplugin`; the runtime modules have no platform list. Nothing in the code is known to be Windows-specific; Mac and Linux can be added once they are built and tested.
 - **Dependencies**: 
   - Interchange (built-in)
@@ -70,28 +72,37 @@ The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Eng
 
 ### What Gets Created
 
-After import, you'll find:
+After importing `<FileName>.vrm`, you'll find:
 
 ```
-Content/
-└── YourCharacterName/
-    ├── YourCharacterName_SkeletalMesh (Skeletal Mesh)
-    ├── YourCharacterName_Skeleton (Skeleton asset)
-    ├── YourCharacterName_PhysicsAsset (Physics Asset)
+<import folder>/
+└── <FileName>/
     ├── <Mesh>_Avatar (Avatar description: humanoid bone map, expressions, look-at, licence)
-    ├── Materials/ (Material instances: MI_VRM_<Name>, MI_VRM_<Name>__MToon, MI_VRM_<Name>__Outline, one per VRM material)
-    ├── Textures/ (Imported textures)
+    ├── SkeletalMeshes/
+    │   ├── <Mesh> (Skeletal Mesh)
+    │   ├── <Mesh>_Skeleton
+    │   └── <Mesh>_PhysicsAsset
+    ├── Materials/
+    │   ├── MI_VRM_<FileName>_<Material> (one per VRM material)
+    │   ├── MI_VRM_<FileName>__MToon (shared parent of the MToon and unlit materials)
+    │   ├── MI_VRM_<FileName> (shared parent of the glTF PBR materials)
+    │   └── MI_VRM_<FileName>__Outline (overlay material, when MToon outlines are used)
+    ├── Textures/
     ├── SpringBones/
-    │   ├── YourCharacterName_SpringData (Spring configuration)
-    │   └── ABP_SpringBones_YourCharacterName (Optional AnimBP)
+    │   ├── <Mesh>_SpringData (Spring configuration)
+    │   └── PP_ABP_VRMSpringBones_<Mesh> (Post-process AnimBP that runs the springs)
     ├── IKRigDefinition/
-    │   └── IK_Rig_VRM_YourCharacterName (IK Rig asset)
+    │   └── IK_Rig_VRM_<Mesh> (IK Rig asset)
     └── LiveLink/
-        ├── BP_LL_YourCharacterName (Character Actor)
-        ├── Animation/
-        │   └── ABP_LL_YourCharacterName (Live Link AnimBP)
-        └── RetargetActor_YourCharacterName (Retargeting actor)
+        ├── BP_LL_VRM_<Mesh> (Live Link character actor)
+        ├── BP_LL_VRM_To_UE5_<Mesh> (Retarget actor: the character's Live Link pose on the UE5 mannequin)
+        └── Animation/
+            └── ABP_LL_VRM_<Mesh> (Live Link AnimBP)
+
+/Game/VRMInterchange/Materials/ (shared by every VRM import; see Materials)
 ```
+
+`<Mesh>` is the skeletal mesh's name, which is the file name. The shared parent material instances are made only when a material uses them. Folder names are the defaults; each pipeline has a folder option in the import dialog.
 
 ## Configuration
 
@@ -99,19 +110,29 @@ Content/
 
 Configure default import behavior in **Edit → Project Settings → Plugins → VRM Interchange**:
 
+These are the defaults the import dialog's VRM options start from.
+
 #### Spring Bones Settings
 - **Generate Spring Bone Data**: Parse and create spring bone data assets during import (default: enabled)
-- **Generate Post Process AnimBP**: Create and assign an AnimBP for spring simulation (default: disabled)
-- **Assign Post Process ABP**: Automatically assign the generated AnimBP to the skeletal mesh (default: disabled)
-- **Overwrite Existing Spring Assets**: On re-import, update the existing spring data asset in place, so AnimBlueprints that use it keep working (default: disabled; a new asset with a unique name is created)
-- **Overwrite Existing Post Process ABP**: On re-import, reuse the existing post-process AnimBP and give it the new spring data (default: disabled)
-- **Reuse Post Process ABP On Reimport**: Reuse existing AnimBP when re-importing (default: enabled)
+- **Generate Post Process AnimBP**: Create a post-process AnimBP (`PP_ABP_VRMSpringBones_<Mesh>`) that runs the springs (default: disabled, but see the note below)
+- **Assign Post Process ABP**: Set that AnimBP as the skeletal mesh's post-process AnimBP, so the springs run wherever the mesh is used (default: disabled, but see the note below)
+- **Overwrite Existing Spring Assets**: On re-import, update the existing spring data asset in place, so AnimBlueprints that use it keep working (default: disabled, but see the note below; otherwise a new asset with a unique name is created)
+- **Overwrite Existing Post Process ABP** / **Reuse Post Process ABP On Reimport**: If `PP_ABP_VRMSpringBones_<Mesh>` already exists, reuse it and give it the new spring data; your graph edits are kept. Either one turns this on. With both off, a new AnimBP with a unique name is made (defaults: disabled / enabled, so the existing AnimBP is reused)
+
+**Note:** the plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing** whatever these settings say, so imports create and assign the post-process AnimBP and update the spring data in place. The IK Rig pipeline asset likewise turns on its **Update Existing**. Change these per import in the import dialog. See [Known Limitations](#known-limitations).
 
 #### IK Rig Settings
-- **Generate IK Rig Assets**: Create IK Rig definitions from templates (default: enabled)
+- **Generate IK Rig Assets**: Create an IK Rig for each imported character, built from its humanoid map (default: enabled)
 
 #### Live Link Settings
-- **Generate Live Link Actor Scaffold**: Create Actor and AnimBP scaffolds for Live Link (default: enabled)
+- **Generate Live Link Actor Scaffold**: Create the Live Link actor and AnimBP (default: enabled)
+
+#### Avatar Description Settings
+- **Generate Avatar Description**: Create the `<Mesh>_Avatar` asset (humanoid map, expressions, licence) and write the humanoid map onto the mesh (default: enabled)
+
+#### Import Pipelines Settings
+- **Prompt To Register Import Pipelines**: When the VRM pipelines aren't registered, offer to register them when the editor starts (default: enabled)
+- **Register VRM Import Pipelines**: Registers them now
 
 ### Per-Import Settings
 
@@ -128,16 +149,17 @@ When the import finishes, one notification lists:
 - those only pointed at the new mesh (existing Actor and Animation Blueprints; your edits are kept);
 - the avatar's licence and usage permissions.
 
-**Show in Content Browser** selects the assets. **Show problems** (or **Show import log**) opens the **VRM Import** message log. It has one page for each report: normally one import, or several files imported together. For each file, the page lists every warning and error that import logged: unresolved bones, lenient spring layouts, non-VRM glTF files, and so on.
+**Show in Content Browser** selects the assets. **Show N problems** (or **Show import log** when there are none) opens the **VRM Import** message log. It has one page for each report: normally one import, or several files imported together. For each file, the page lists every warning and error that import logged: unresolved bones, lenient spring layouts, non-VRM glTF files, and so on.
 
 ## Using Spring Bones
 
 ### Automatic Setup (Recommended)
 
-1. Enable **Generate Spring Bone Data** in project settings
-2. Optionally enable **Generate Post Process AnimBP** and **Assign Post Process ABP**
-3. Import your VRM file
-4. The spring bone system will be automatically configured and applied
+1. Keep **Spring Bones** on in the import dialog, with **Generate Post Process AnimBP** and **Assign Post Process ABP** (both on by default; see the note under [Spring Bones Settings](#spring-bones-settings))
+2. Import your VRM file
+3. The mesh's post-process AnimBP (`PP_ABP_VRMSpringBones_<Mesh>`) then runs the springs wherever the mesh is used, including under the Live Link AnimBP
+
+Without the post-process AnimBP, the spring data is made but nothing runs it: the generated Live Link AnimBP has no spring bone node. Add one yourself (see Manual Setup).
 
 ### Editing Spring Data
 
@@ -174,38 +196,36 @@ Some VRM 1.0 files use layouts from before the spec was final: a collider `shape
 
 ## Using IK Rigs
 
-The generated IK Rig assets enable:
-- **Animation Retargeting**: Transfer animations between different skeletons
-- **IK Chains**: Inverse kinematics for procedural animation
-- **Runtime Poses**: Control character poses programmatically
+The generated IK Rig is for retargeting: use it with an IK Retargeter to transfer animations between this character and other skeletons.
 
 ### Basic Usage
 
-1. Open the generated `IK_Rig_VRM_YourCharacterName` asset
-2. The retarget root is the hips, and there is one chain per limb, finger, spine, neck and head that the VRM's humanoid map covers. Chains whose bones the file doesn't map (no fingers, say) are left out, and a chain whose bones the skeleton lacks is skipped with a warning in the Output Log.
+1. Open the generated `IK_Rig_VRM_<Mesh>` asset
+2. The retarget root is the hips, and there is one chain per clavicle, limb, finger, spine, neck and head that the VRM's humanoid map covers. Chains whose bones the file doesn't map (no fingers, say) are left out, and a chain whose bones the skeleton lacks is skipped with a warning in the Output Log.
 3. Create an IK Retargeter from this rig to the UE5 mannequin's IK Rig: the chain names match, so the chains map automatically
-4. Reference in your Animation Blueprints for IK control
 
-The rig has retarget chains only, no IK goals or solvers. A file without a humanoid map, or an import with **Build From Humanoid** unticked, gets a copy of the template IK Rig instead, whose chains assume VRoid bone names (`J_Bip_*`).
+The rig has retarget chains only, no IK goals or solvers. A file without a humanoid map (or whose map has no hips bone), or an import with **IK Rig: Build From Humanoid Map** unticked, gets a copy of the template IK Rig instead, whose chains assume VRoid bone names (`J_Bip_*`).
 
 ## Using Live Link
 
 ### Automatic Scaffold
 
 When **Generate Live Link Actor Scaffold** is enabled, the plugin creates:
-- **Character Actor BP**: Ready-to-place character with skeletal mesh
-- **Animation BP**: Live Link-enabled animation blueprint
-- **Retarget Actor**: For animation retargeting workflows
+- **Character Actor BP** (`BP_LL_VRM_<Mesh>`): the character with its skeletal mesh, driven by Live Link
+- **Animation BP** (`ABP_LL_VRM_<Mesh>`): a Live Link Pose AnimBlueprint
+
+The **Retarget Actor** option (on by default, import dialog only) also creates `BP_LL_VRM_To_UE5_<Mesh>`, which retargets the character's Live Link pose to the UE5 mannequin.
 
 ### Setting Up VMC Protocol
 
-1. Place the generated `BP_LL_YourCharacterName` actor in your level
-2. Open **Window → Live Link**
+1. Place the generated `BP_LL_VRM_<Mesh>` actor in your level
+2. Open **Window → Virtual Production → Live Link**
 3. Add a **VMC Live Link Source** (requires VMCLiveLink plugin)
 4. Configure your external VMC application to send to Unreal's IP and port
-5. The character will animate in real-time with incoming motion data
+5. Select the placed actor and set its **Subject** (in the Details panel) to the source's subject name, `VMC_Subject` by default. It starts empty, so the actor follows no subject until you set it.
+6. The character will animate in real-time with incoming motion data
 
-The [VMC Live Link README](../VMCLiveLink/README.md) covers sender setup, the source settings, the remapper and troubleshooting.
+The [VMC Live Link README](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/Plugins/VMCLiveLink/README.md) covers sender setup, the source settings, the remapper and troubleshooting. The [User Guide](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/docs/USER_GUIDE.md) walks through the whole setup.
 
 ### Customizing the Live Link Setup
 
@@ -234,7 +254,7 @@ When the avatar description is generated, the importer also writes the humanoid 
 
 Keys use Unity `HumanBodyBones` names (what VMC senders stream). VRM 1.0's thumb is one joint off from Unity's: `leftThumbMetacarpal` is written as `LeftThumbProximal`, and `leftThumbProximal` as `LeftThumbIntermediate`. A reimport replaces the keys. Other tools can write the same keys to make any skeletal mesh mappable.
 
-### Materials
+## Materials
 
 VRM materials are imported as material instances. Which master material they use depends on the material:
 
@@ -244,7 +264,7 @@ VRM materials are imported as material instances. Which master material they use
 | Unlit (`KHR_materials_unlit`, or VRM 0.x `VRM/Unlit*`) | `M_VRM_MToon` with **UnlitShading** on | Base colour and emission, no lighting |
 | glTF PBR (and `VRM_USE_GLTFSHADER`) | the plugin's `M_VRM_Master` | Textures only |
 
-`M_VRM_MToon` and `M_VRM_MToonOutline` are built by the plugin (in C++, since a plugin can't ship them otherwise) the first time a VRM with MToon or unlit materials is imported, in `/Game/VRMInterchange/Materials`. Save them with the imported assets. A newer plugin version rebuilds them in place if their graph changed; don't edit them, edit the instances.
+`M_VRM_MToon`, `M_VRM_MToonOutline` and the texture they use, `T_VRM_MToonWhiteMask`, are built by the plugin (in C++, since a plugin can't ship them otherwise) the first time a VRM with MToon or unlit materials is imported, in `/Game/VRMInterchange/Materials`. Save them with the imported assets. A newer plugin version rebuilds them in place if their graph changed; don't edit them, edit the instances.
 
 `M_VRM_MToon` follows the MToon 1.0 lighting model:
 
@@ -256,17 +276,18 @@ VRM materials are imported as material instances. Which master material they use
 
 The per-material instances are parented to the character instance of their master (`MI_VRM_<Name>__MToon` or `MI_VRM_<Name>`), so you can tune shared parameters, such as the fallback light, in one place.
 
-**Outlines.** When MToon materials have outlines, `MI_VRM_<Name>__Outline` (on `M_VRM_MToonOutline`) is set as the skeletal mesh's **Overlay Material**. It draws the back faces pushed out along the normal, in metres (world mode) or as a fraction of the screen height (screen mode). A mesh has one overlay material, so the outline uses the settings of the material with the widest outline and covers the whole mesh. Clear the mesh's overlay material, or turn off **Apply MToon Outline** in the material pipeline, to remove it.
+**Outlines.** When MToon materials have outlines, `MI_VRM_<Name>__Outline` (on `M_VRM_MToonOutline`) is set as the skeletal mesh's **Overlay Material**. It draws the back faces pushed out along the normal, in metres (world mode) or as a fraction of the screen height (screen mode). A mesh has one overlay material, so the outline uses the settings of the material with the widest outline and covers the whole mesh. Clear the mesh's overlay material, or turn off **Materials: MToon Outline** in the import dialog, to remove it.
 
 ## Advanced Topics
 
 ### Re-importing VRM Files
 
-When re-importing:
-1. Existing assets are updated based on overwrite settings
-2. Spring bone data is regenerated from the VRM file
-3. Manual edits to generated blueprints are preserved
-4. Texture and material updates are applied
+When re-importing, each generated asset is updated in place only if its **Update Existing** option is on in the import dialog (Spring Bones, IK Rig, Actors, Avatar Description). Otherwise a new copy with a unique name (`_1`, `_2`, ...) is made and the old one is left alone. Updated in place:
+1. Spring data and the avatar description are replaced from the file (edits to them are lost).
+2. The IK Rig is rebuilt.
+3. The actors and AnimBlueprints are pointed at the new mesh, and your graph edits are kept.
+
+The mesh, materials and textures are reimported by Interchange. A reimport can add bones (see Core Import Capabilities).
 
 Spring data assets record the version of the importer that wrote them. After a plugin update that changes how spring data is converted, older assets are flagged **Needs Reimport** (shown in the asset's details, logged when the asset loads, and reported as a warning when an AnimBlueprint that uses it compiles). The springs still run, but may not match a fresh import. Reimport the VRM file to regenerate them. Re-saving an old asset does not clear the flag.
 
@@ -295,18 +316,24 @@ Debug visualization is available via console commands:
 ```
 vrm.SpringBones.DrawColliders 1    // Enable collider debug draw
 vrm.SpringBones.DrawColliders 0    // Disable collider debug draw
-vrm.SpringBones.DrawSprings 1      // Enable spring debug draw
+vrm.SpringBones.DrawSprings 1      // Draw each joint's head and tail
+vrm.SpringBones.DrawSprings 2      // Also draw each tail's velocity
+vrm.SpringBones.DrawSprings 3      // Also draw the rest target
 vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 ```
 
+These commands, and the node's Debug settings, are not available in Shipping or Test builds.
+
 ## Troubleshooting
+
+The plugin logs to `LogVRMInterchange` (import, materials, IK Rig, Live Link), `LogVRMSpring` (spring bone import), `LogVRMSpringBones` (the spring bone node) and `LogVRMSpringData` (spring data assets). Filter the Output Log by these. Import warnings are also in the **VRM Import** message log.
 
 ### VRM Pipelines Missing From the Import Dialog
 - Run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines**
 
 ### Materials Import Without Textures, or No Avatar Description
 - Symptoms: every material slot shows the default grid material, the Output Log has `No parent material was found` and `Cannot generate a pipeline instance because the pipeline asset /Script/VRMInterchangeEditor... type is unknown`, and no avatar description asset is made.
-- Projects registered with version 1.0.0 have the material and avatar description pipelines saved in a form Interchange can't load. Run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** again, then reimport the VRM file.
+- Projects registered before the pipelines shipped as assets (1.0.0 and earlier builds) have the material and avatar description pipelines saved as class paths, which Interchange can't load. The editor offers to register the pipelines again when it starts. Click **Register** (or run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines**), then reimport the VRM file.
 
 ### Import Dialog Doesn't Appear
 - Ensure the Interchange and InterchangeEditor plugins are enabled
@@ -316,15 +343,16 @@ vrm.SpringBones.DrawSprings 0      // Disable spring debug draw
 ### Spring Bones Not Animating
 - Check that the VRM Spring Bones AnimGraph node is enabled
 - Verify the Spring Data asset is assigned
-- Ensure the Spring Data asset is not empty (check SpringConfig)
+- Ensure the Spring Data asset is not empty (its **Springs** and **Joints** lists)
+- If the springs run but don't swing when the character moves or turns, the file's springs probably name a `center` bone (VRoid Studio files do): see [Spring Bone Simulation Details](#spring-bone-simulation-details)
 - Confirm bone names in Spring Data match your skeleton
 - If the Spring Data asset shows **Needs Reimport**, it was made by an older plugin version (colliders and gravity in the old axes, or VRM 0.x chains without their descendant bones). Reimport the VRM file
 
 ### IK Rig Not Generated
 - Enable **Generate IK Rig Assets** in project settings
 - Ensure IKRig plugin is enabled in your project
-- Check the Output Log for `IK Rig for '<mesh>'` warnings (a missing hips bone, or chains whose bones aren't in the skeleton)
-- With **Build From Humanoid** off, or for a file without a humanoid map, check that the template IK Rig asset exists in the plugin content
+- Check the Output Log for `IK Rig for '<mesh>'` warnings (chains whose bones aren't in the skeleton) or a warning that the humanoid map has no hips bone (the template is copied instead)
+- With **IK Rig: Build From Humanoid Map** off, or for a file without a humanoid map, check that the template IK Rig asset (`/VRMInterchange/Animation/IK_Rig_VRMTemplate`) exists
 
 ### Live Link Actor Missing Components
 - Verify LiveLink plugin is enabled
@@ -350,6 +378,8 @@ The plugin consists of five modules:
 1. **VRMCore** (Runtime)
    - `FVRMDocument`: a .vrm/.glb/.gltf file read and parsed once (JSON, nodes, version, and geometry through cgltf); an import reads the file from this document instead of opening it again
    - `VRM::BuildParsedModel`: skeleton, mesh, morph targets, images and materials in Unreal space
+   - `UVRMAvatarDescription` and the avatar parser (humanoid map, expressions, look-at, meta)
+   - `FAnimNode_VRMExpressions`: the VRM Expressions anim node
    - The glTF to Unreal coordinate conversion; the only module that uses cgltf
 
 2. **VRMInterchange** (Runtime)
@@ -358,18 +388,18 @@ The plugin consists of five modules:
    - Spring bone parser
 
 3. **VRMInterchangeEditor** (Editor)
-   - Post-import pipelines for Spring Bones, IK Rig, and Live Link
-   - Project settings integration
-   - Asset generation and wiring
+   - Post-import pipelines for spring bones, IK Rig, Live Link, materials (including the generated MToon materials) and the avatar description
+   - Pipeline registration and project settings
+   - The import notification and VRM Import message log
+   - The spring data asset's Editing Tools
 
 4. **VRMSpringBonesRuntime** (Runtime)
    - `FAnimNode_VRMSpringBones`: Animation node for spring simulation
    - `UVRMSpringBoneData`: Data asset for spring configuration
    - Physics solver implementation
 
-5. **VRMSpringBonesEditor** (Editor)
-   - `UAnimGraphNode_VRMSpringBones`: AnimGraph node wrapper
-   - Editor customizations and debugging tools
+5. **VRMSpringBonesEditor** (UncookedOnly)
+   - `UAnimGraphNode_VRMSpringBones` and `UAnimGraphNode_VRMExpressions`: AnimGraph node wrappers, with the spring node's compile-time checks
 
 ### File Format
 
@@ -392,12 +422,12 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 
 ## Known Limitations
 
-- **VRM Version**: Supports VRM 0.x and VRM 1.0 files.
+- **Import settings**: The plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing**, and the IK Rig pipeline asset its **Update Existing**, whatever the project settings say. Change them per import in the import dialog.
 - **Materials**: MToon is basic (see [Materials](#materials)): no received shadows, only the atmosphere sun light lights it, one outline per mesh, and no UV animation, render queue offsets or transparent z-write. glTF PBR factors (base colour, emissive, metallic, roughness), alpha mode and double-sided are not applied to PBR materials. `COLOR_0` vertex colours are not imported (MToon ignores them).
 - **Morph Targets**: Morph targets are imported by name. Targets with the same name are one morph target: a mesh's primitives share them, and two meshes that use the same name are merged, with a warning, because an expression bound to either would move both. An unnamed target is named `<MeshName>_morph_<index>` and kept to its own mesh. A target's NORMAL deltas, when the file has them, turn its normals; a target without them keeps the base normals, so it changes shape but not shading.
 - **Texture Formats**: Embedded textures must be PNG or JPEG
 
-See `Planning Docs/Code_Review_and_Refactor_Plan_2026-09.md` for the plan that addresses these.
+See the [CHANGELOG](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/CHANGELOG.md) for what changes between versions.
 
 ## Support and Contribution
 

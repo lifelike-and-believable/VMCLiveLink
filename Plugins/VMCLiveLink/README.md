@@ -8,7 +8,7 @@ VMC Live Link receives the [VMC protocol](https://protocol.vmc.info/english) (OS
 - **Remapper** that renames VMC's bones and curves for your mesh, with presets, reusable mapping assets and a live mapping table showing which names reach the mesh.
 - **Low latency:** packets are received and frames built on a thread of their own, each frame timestamped when it arrives.
 
-It works on its own. [VRM Interchange](../VRMInterchange/README.md), the companion plugin, imports VRM avatars that it can drive directly.
+It works on its own. [VRM Interchange](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/Plugins/VRMInterchange/README.md), the companion plugin, imports VRM avatars that it can drive directly. The [User Guide](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/docs/USER_GUIDE.md) walks through using the two together, step by step; this README is the reference.
 
 ## Contents
 
@@ -26,7 +26,7 @@ It works on its own. [VRM Interchange](../VRMInterchange/README.md), the compani
 
 ## Requirements
 
-- **Unreal Engine** 5.6 or later.
+- **Unreal Engine** 5.6 (the version it is built and tested on).
 - **Windows (Win64)** only for now: that is the only platform the plugin is built and tested on.
 - The **Live Link** and **OSC** plugins, which ship with the engine. VMC Live Link enables them.
 
@@ -39,11 +39,11 @@ It works on its own. [VRM Interchange](../VRMInterchange/README.md), the compani
    - Set **Target → Reference Skeleton** to the skeletal mesh you want to drive.
    - For a mesh imported with VRM Interchange, click **Map Bones From Humanoid Metadata**. Otherwise, see [The Remapper](#the-remapper).
    - Open **Live Mapping**: every bone and curve received is listed, with a note on any that don't reach the mesh.
-5. **Drive the character.** In the mesh's Animation Blueprint, add a **Live Link Pose** node, set its subject to `VMC_Subject` and connect it to the output pose. Place the character in the level, select its skeletal mesh component and tick **Update Animation in Editor** (in **Animation**) so it animates outside Play; or press **Play** or **Simulate**. It moves as soon as data arrives.
+5. **Drive the character.** In the mesh's Animation Blueprint, add a **Live Link Pose** node, set its subject to `VMC_Subject` and connect it to the output pose. Place the character in the level, select its skeletal mesh component and tick **Update Animation in Editor** (in **Skeletal Mesh**, under the advanced options; it isn't saved, so tick it again after reopening the level) so it animates outside Play; or press **Play** or **Simulate**. It moves as soon as data arrives.
 
 To keep the source and the remapper settings between editor sessions, save a **Live Link preset** from the Live Link panel (**Presets → Save As Preset**). Set it as the default in **Project Settings → Plugins → Live Link → Default Live Link Preset** to load it at startup.
 
-A mesh imported with VRM Interchange can use the generated Live Link actor and Animation Blueprint instead of step 5; see *Using Live Link* in the [VRM Interchange README](../VRMInterchange/README.md#using-live-link).
+A mesh imported with VRM Interchange can use the generated Live Link actor and Animation Blueprint instead of step 5; see *Using Live Link* in the [VRM Interchange README](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/Plugins/VRMInterchange/README.md#using-live-link), and set the actor's **Subject** to the subject name.
 
 ## Sender Setup
 
@@ -81,7 +81,7 @@ The plugin follows the [VMC protocol specification](https://protocol.vmc.info/en
 
 ## Source Settings
 
-Every setting is in the source's details in the Live Link panel, and in the creation panel. Edits apply to the running source: a new port or bind address restarts the listener, and a new subject name moves the data to the new subject. Hover a setting in the editor for its tooltip.
+Every setting is in the source's details in the Live Link panel, and in the creation panel. Edits apply to the running source. A change to the port, bind address, **Receive Thread**, the sender rules or the device and camera settings restarts the listener. A new subject name moves the data to a new subject, which gets a new remapper: set up its maps again, or apply a mapping asset. An invalid value is logged to the Output Log and the setting goes back to its previous value. Hover a setting in the editor for its tooltip.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -93,10 +93,10 @@ Every setting is in the source's details in the Live Link panel, and in the crea
 | **Convert Metres to Centimetres** | On | VMC sends metres; UE uses centimetres. Leave on for VMC senders. |
 | **Yaw Offset Deg** | 0 | Extra turn of the root about UE's up axis. 180 turns the character round. |
 | **Zero Missing Curves** | Off | Curves the sender didn't send since the last frame read 0. Off: they hold their last value, which suits senders that only send blend shapes that changed. |
-| **Prefer Incoming Translations** | Off | Uses every bone's streamed translation. Off: only Hips does, and the other bones get the reference skeleton's (see [The Remapper](#the-remapper)). |
+| **Prefer Incoming Translations** | Off | Uses every bone's streamed translation. Off: only Hips does; the other bones get the reference skeleton's rest translations from the remapper (**Use Reference Translations**, with a Reference Skeleton set), or none (see [The Remapper](#the-remapper)). |
 | **Allowed Senders** | Empty | Only packets from these IPv4 addresses are used. Empty: any sender. |
-| **Lock to First Sender** | Off | Uses only the first sender heard from until the source restarts, so a second sender on the network can't take over the subject. |
-| **Device Subjects** | Off | Publishes each tracker, headset and controller the sender streams as a Transform subject named `<Subject>_<serial>`. |
+| **Lock to First Sender** | Off | Uses only the first sender heard from until the listener restarts (after an edit to the port, bind address or sender settings, say), so a second sender on the network can't take over the subject. |
+| **Device Subjects** | Off | Publishes each tracker, headset and controller the sender streams as a Transform subject named `<Subject>_<serial>` (with `_2` added if two devices would share a name). |
 | **Camera Subject** | Off | Publishes the sender's camera as a Camera subject named `<Subject>_<camera name>`, with its field of view. |
 
 ### Status
@@ -110,12 +110,15 @@ The Live Link panel's status column says what the source is doing:
 | *No data for 5 s (last from 192.168.1.20)* | Frames were arriving and have stopped. |
 | *Port 39539 in use* | Another program (or another source) is listening on the port. |
 | *Can't listen on 192.168.1.5:39539 (...)* | The bind address isn't one of this computer's, or the port is in use. |
+| *Stopped* | Live Link has shut the source down. |
 
-Notes may follow: what the sender says about itself (*no avatar loaded*, *calibrating*, *tracking lost*), *locked to this sender*, the number of device subjects, or *ignoring N other senders*.
+Notes may follow: what the sender says about itself (*sender: no avatar loaded*, *calibrating*, *tracking lost*, ...), *locked to this sender*, the number of device and camera subjects, or *ignoring N other senders*.
+
+The creation panel warns before you click **Create** if the port can't be opened. With **Receive Thread** off, the OSC plugin doesn't report a port it can't open, so the status reads *Listening...* even when the port is taken.
 
 ### VMC.Stats
 
-Type `VMC.Stats` in the editor's console (or the output log's command line) to print, for each VMC source, the packets and messages per second for each VMC address since the last report, and any addresses the plugin doesn't use.
+Type `VMC.Stats` in the editor's console (or the output log's command line) to print, for each VMC source, the packets and messages per second for each VMC address since the last report, and any addresses the plugin doesn't use. Packets refused by **Allowed Senders** or **Lock to First Sender** aren't counted. With **Receive Thread** off, the packet count is a message count.
 
 ## The Remapper
 
@@ -137,15 +140,15 @@ Select the subject in the Live Link panel to edit its remapper. The details are 
   |---|---|
   | None / Manual | Nothing is added. |
   | ARKit (MetaHuman-friendly) | Senders that send ARKit names: maps them to themselves, so they are listed. |
-  | VMC / VRM 0.x expressions (ARKit targets) | VRM 0.x expressions to ARKit curves: `Blink_L` → `eyeBlinkLeft`, `Joy` → `mouthSmileLeft`, `A` → `jawOpen`, `U` → `mouthPucker`, `O` → `mouthFunnel`, and the brows. |
-  | VMC / VRM 1.0 expressions (ARKit targets) | The same for VRM 1.0 names: `blinkLeft`, `happy`, `sad`, `aa`, `ou`, `oh`. |
+  | VMC / VRM 0.x expressions (ARKit targets) | VRM 0.x expressions to ARKit curves: `Blink_L` → `eyeBlinkLeft`, `Joy` → `mouthSmileLeft`, `Sorrow` → `mouthFrownLeft`, `Fun` → `cheekPuff`, `A` → `jawOpen`, `U` → `mouthPucker`, `O` → `mouthFunnel`, and the brows. Turn on the **Normalizer** to add the right side of the smile. |
+  | VMC / VRM 1.0 expressions (ARKit targets) | The same for VRM 1.0 names (`blinkLeft`, `happy`, `sad`, `aa`, `ou`, `oh`), without the brows. |
   | VMC / VRoid | Unity humanoid bones to VRoid Studio's skeleton (`Hips` → `J_Bip_C_Hips`, fingers included), and VRM 0.x expressions to VRoid's `Fcl_*` morph targets (`Joy` → `Fcl_ALL_Joy`, `A` → `Fcl_MTH_A`, `Blink_L` → `Fcl_EYE_Close_L`, ...). |
   | Rokoko (ARKit names) | ARKit names, plus Rokoko's `mouthSmile_L`/`_R`. |
-  | Custom (JSON) | Nothing is added; for maps loaded with `LoadCustomCurveMapFromJSON`. Applying it still removes the previous preset's unedited entries. |
+  | Custom (JSON) | Nothing is added; for maps loaded with the remapper's `LoadCustomCurveMapFromJSON` Blueprint function (`{"Curves": {...}, "Bones": {...}}`). Applying it still removes the previous preset's unedited entries. |
 
   Expressions with no single ARKit equivalent (`I`, `E`, `Angry`, `Surprised`, ...) are left unmapped, so they pass through under their own names. Applying a different preset removes the previous preset's entries that you haven't edited.
 - **Mapping Asset:** a saved pair of maps (below).
-- **Auto Detect Mapping From Reference:** while both maps are empty, the remapper finds the mapping asset made for the reference skeleton and applies it when the subject is created. This needs the remapper's own **Reference Skeleton** to be set at that point (for example, from a saved Live Link preset); otherwise use **Auto-Detect Mapping**.
+- **Auto Detect Mapping From Reference** (on by default): while both maps are empty, when the subject is created, the remapper maps itself for its **Reference Skeleton**: the selected **Mapping Asset** if it matches the mesh, else the mesh's humanoid metadata (a VRM Interchange mesh), else the mapping asset made for the mesh. This needs the remapper's own **Reference Skeleton** to be set at that point (for example, from a saved Live Link preset); otherwise use the buttons below.
 
 To drive a VRM avatar's expressions by their own names, leave expression curves unmapped and use the **VRM Expressions** AnimGraph node from VRM Interchange, which handles both VRM versions' names.
 
@@ -156,12 +159,12 @@ To drive a VRM avatar's expressions by their own names, leave expression curves 
 | **Apply Preset** | Adds the selected preset's entries to the maps. Entries you edited are kept. With a Reference Skeleton set and data arriving, it also maps the body bones to UE mannequin-style names it finds on the mesh (`pelvis`, `spine_01`, `upperarm_l`, ...), replacing those bone entries. |
 | **Seed From Subject** | Lists every name the subject is receiving in the maps (as itself, ready to edit) and applies the preset that fits them. |
 | **Map Bones From Humanoid Metadata** | Replaces the bone map with the humanoid map stored on the reference skeleton. VRM Interchange writes it on import (`VRM.Humanoid.*` metadata), so this maps every bone exactly. Curves are left alone. |
-| **Apply Mapping Asset** | Replaces the maps with the selected mapping asset's. |
-| **Auto-Detect Mapping** | Finds the mapping asset made for the reference skeleton and applies it. |
+| **Apply Mapping Asset** | Replaces the maps with the selected mapping asset's. Sets **Preset** to *Custom*. |
+| **Auto-Detect Mapping** | Finds the mapping asset made for the reference skeleton and applies it; if none was made for it, applies the one whose bone names best match the mesh. Sets **Preset** to *Custom*. |
 | **Save to Mapping Asset** | Saves the maps into the selected mapping asset, with the reference skeleton's signature if **Capture Signature On Save** is on. |
 | **Create Mapping Asset...** | Creates a mapping asset from the current maps and the reference skeleton's signature. |
 
-Every button can be undone.
+Every button can be undone (an asset made by **Create Mapping Asset...** stays).
 
 ### Mapping Assets
 
@@ -169,7 +172,7 @@ A **VMC Live Link Mapping Asset** (Content Browser: the **Add** menu; search for
 
 ### Normalizer
 
-For ARKit targets such as MetaHuman, fed by senders that send only some ARKit curves. Off by default. When on, it adds:
+For ARKit targets such as MetaHuman, fed by senders that send only some ARKit curves. Off by default; turn on **Enable Meta Human Curve Normalizer**. When on, it adds:
 
 - the missing side of `eyeBlinkLeft`/`eyeBlinkRight`, as a copy of the other side scaled by **Blink Mirror Strength**;
 - the missing side of `mouthSmileLeft`/`mouthSmileRight`, scaled by **Joy To Smile Strength**;
@@ -187,11 +190,11 @@ The table lists every bone and curve the subject receives, what it is renamed to
 - **Unmapped: passes through as sent.**
 - **Added by the normalizer.**
 
-Tick **Only names that don't reach the mesh** to list just the problems. The table refreshes itself while shown.
+Tick **Only names that don't reach the mesh** to list just the problems. The table is shown when one subject is selected, and refreshes itself while shown. It only checks names against the mesh when the remapper (or the project) has a Reference Skeleton.
 
 ### Meshes Whose Rest Pose Isn't a T-Pose With Unrotated Bones
 
-VMC senders send each bone's rotation relative to a humanoid rest pose with no bone rotations (VRM's normalized T-pose). A mesh imported with VRM Interchange has this rest pose, so renaming is enough. A mesh whose bones are rotated at rest, such as the UE mannequin and most FBX rigs, twists if driven directly. Drive a VRM-style skeleton with the stream and retarget it to the mesh with an IK Retargeter instead. **VMC Retarget Actor**, in the Content Browser's **Add** menu, creates a copy of the plugin's template retarget actor to start from.
+VMC senders send each bone's rotation relative to a humanoid rest pose with no bone rotations (VRM's normalized T-pose). A mesh imported with VRM Interchange has this rest pose, so renaming is enough. A mesh whose bones are rotated at rest, such as the UE mannequin and most FBX rigs, twists if driven directly. Drive a VRM-style skeleton with the stream and retarget it to the mesh with an IK Retargeter instead. **VMC Retarget Actor**, in the Content Browser's **Add** menu, creates a copy of the plugin's template retarget actor to start from. The plugin's `Retargeting` folder also has an IK Rig for each skeleton (`IKR_VRM`, `IKR_UE5`) and a VRM-to-UE5 retargeter (`RTG_VRMToUE5`).
 
 ## Supported Messages
 
@@ -230,12 +233,15 @@ Bone transforms are local to the bone's parent in the humanoid hierarchy. The ro
 
 ## Troubleshooting
 
+The Output Log's `LogVMCLiveLink` category says when senders are refused, bones are added under Hips, settings are rejected or packets are malformed.
+
 ### The status stays at "waiting for data"
 
 - Check that the sender is sending to this computer's IP and the source's port. `127.0.0.1` only works when both run on the same computer.
 - If the sender is on another computer, allow *Unreal Editor* through the Windows firewall (private networks) and check that both computers are on the same network.
 - Check that **Bind Address** is `0.0.0.0` or an address of this computer.
 - If **Allowed Senders** is set, the sender's IP must be listed. The status says *ignoring N other senders* when packets are refused.
+- The sender must end each frame with `/VMC/Ext/Blend/Apply`; without it no frame (and no subject) is made. `VMC.Stats` shows whether packets arrive and whether Apply is among them.
 
 ### The status says "Port 39539 in use"
 
@@ -243,10 +249,9 @@ Another program, or another VMC source, is listening on that port; for example, 
 
 ### The subject is receiving but the character doesn't move
 
-- In the editor viewport, a placed character only animates with **Update Animation in Editor** ticked on its skeletal mesh component, or during **Play** or **Simulate**.
+- In the editor viewport, a placed character only animates with **Update Animation in Editor** ticked on its skeletal mesh component (**Skeletal Mesh**, advanced; not saved with the level), or during **Play** or **Simulate**.
 - The Animation Blueprint's **Live Link Pose** node must use the subject's name (`VMC_Subject` by default).
-- Open the remapper's **Live Mapping** table. If the bones say *No bone of this name on the reference mesh*, the names don't match the mesh: map them (see [The Remapper](#the-remapper)).
-- The sender must end each frame with `/VMC/Ext/Blend/Apply`. `VMC.Stats` shows whether it does.
+- Open the remapper's **Live Mapping** table (with its Reference Skeleton set). If the bones say *No bone of this name on the reference mesh*, the names don't match the mesh: map them (see [The Remapper](#the-remapper)).
 
 ### The character stays in a T-pose, or only the root moves
 
@@ -275,7 +280,7 @@ Keep **Receive Thread** on. Its status shows the jitter; a few milliseconds is n
 ## Performance
 
 - Building a frame from its messages costs about 10 µs of CPU for 55 bones and 60 curves (measured by the `VMC.Perf.StreamFrame` test, which leaves out the socket, packet parsing and the push to Live Link). It runs on the receive thread by default, so it costs the game thread nothing.
-- Parsing makes no heap allocation per message.
+- On the receive thread, parsing makes no heap allocation per message.
 - The remapper resolves its maps when the names change, not every frame, and copies each frame by index.
 - Static data (the bone and curve names) is sent to Live Link only when a new name arrives or a setting changes.
 
@@ -303,6 +308,7 @@ Run it with `--help` for the other options (VRM 1.0 names, v2.1 root, packets wi
 - A source receives one sender stream on one port. Use one source per sender.
 - Frames are timed by their arrival; the sender's `/VMC/Ext/T` only becomes their scene time, at an assumed 60 fps.
 - The generated Animation Blueprints in VRM Interchange don't add the VRM Expressions node; add it by hand.
+- Humanoid metadata (**Map Bones From Humanoid Metadata**, and its automatic use at subject creation) is read only in the editor. A packaged game uses the maps saved in the Live Link preset or a mapping asset.
 
 ## License
 

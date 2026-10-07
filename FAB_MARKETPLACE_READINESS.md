@@ -1,6 +1,10 @@
 # Fab Marketplace Readiness Report
 
 **Date:** 2026-07-13
+
+> **Status (2026-10-06).** This report predates the 1.0.0 work; parts of it are out of date.
+> - **Done since:** `DocsURL` and `SupportURL` are set in both `.uplugin` files (both point at the root README, which leads to the [User Guide](docs/USER_GUIDE.md)); both plugins are version 1.0.0; PR #96 merged (2026-07-13); every pull request builds the Game target in Shipping and runs the tests (`pr-build.yml`); Win64-only is a decision (D-2) and the READMEs say so.
+> - **Still open:** `Plugins/VRMInterchange/Resources/Icon128.png` (missing); `SupportedTargetPlatforms` in both `.uplugin` files; a LICENSE file in each plugin root (the plan, P7.5, asks for one before the 1.0.0 tag; the owner must supply the terms); the `release/1.0.0` tag, then a check that the Fab zips package clean; listing assets and example content; the publisher-side steps.
 **Scope:** `Plugins/VMCLiveLink` and `Plugins/VRMInterchange` (both plugins in this repo), assessed against Epic's Fab publisher/technical requirements.
 
 ## Sourcing note (read this first)
@@ -50,7 +54,7 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 - **`jsmn`** (embedded inside `cgltf.h`, from `github.com/zserge/jsmn`) — also MIT-licensed upstream; the embedded copy inherits the same permissive terms as the cgltf.h license block covers the whole file.
 - Per search results, the Fab EULA/Distribution Agreement prohibits combining Licensed Technology with **GPL/LGPL/copyleft/"ShareAlike"-style** licensed code. Neither `cgltf` nor `jsmn` triggers this — **no copyleft-license conflict found**. ✅
 - Both plugin READMEs already have a "Credits" section attributing `cgltf` to Johannes Kuhlmann and the VRM format to the VRM Consortium — good practice for the Fab listing description, which typically wants third-party attributions spelled out. ✅
-- **No repository-root `LICENSE` file exists.** Both plugin READMEs state "All Rights Reserved" for the plugin's own code. This is fine for a commercial Fab listing (Fab's own EULA governs buyer terms), but there's no harm in adding an explicit root `LICENSE` file for clarity — not a blocker either way. ➖ Optional
+- **No repository-root `LICENSE` file exists.** Both plugin READMEs state "All Rights Reserved" for the plugin's own code. This is fine for a commercial Fab listing (Fab's own EULA governs buyer terms), but there's no harm in adding an explicit root `LICENSE` file for clarity. ⚠️ Open: the plan (P7.5) now asks for a LICENSE file in each plugin root before the 1.0.0 tag; the owner must supply the terms.
 - **`Plugins/VRMInterchange/README.md`** currently on `main` still says `Copyright (c) 2024 ... All Rights Reserved.` and links the stale `atgoldberg/VMCLiveLink` GitHub URL — both already fixed in the still-open, unmerged **PR #96**. Worth merging before a Fab submission so the listing description (often derived from the README) doesn't ship stale text.
 
 ## 4. Platform & Engine-Version Coverage

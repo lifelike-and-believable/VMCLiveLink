@@ -2,7 +2,7 @@
 
 Small synthetic VRM files used by the VRMInterchange automation tests (`VRM.*`). Each `<name>.vrm` has a `<name>.expected.json` with the values an importer should produce, in glTF space (Y up, metres).
 
-- Generate: `python scripts/make_vrm_fixtures.py` (standard library only; output is reproducible)
+- Generate: `python scripts/make_vrm_fixtures.py [output_dir]` (standard library only; output is reproducible; default output is this folder)
 - Check: `python scripts/check_vrm_fixtures.py` (needs a C compiler). Validates every file with the bundled cgltf (`cgltf_validate`), confirms the expected values match glTF semantics, and confirms the files match a fresh generator run.
 
 Do not edit these files by hand. Change the generator and regenerate.

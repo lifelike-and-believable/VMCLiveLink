@@ -1,3 +1,5 @@
+> **Archived (2026-10-06).** Superseded by [CONTRIBUTING.md](../../../CONTRIBUTING.md), [REVIEW.md](../../../REVIEW.md) and [`.claude/agents/code-reviewer.md`](../../../.claude/agents/code-reviewer.md). Not maintained.
+
 ---
 name: Planning Agent
 description: Analyzes issues and proposals to create detailed, actionable development plans for VMCLiveLink.

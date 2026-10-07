@@ -2,79 +2,64 @@
 
 **Real-time performance meets Unreal Engine.**
 
-VMCLiveLink is an Unreal Engine project that brings the **VMC (Virtual Motion Capture) protocol** directly into Unreal. It’s designed for creators who want to animate digital characters live — from VTubers to XR performers to virtual production teams.
+Two Unreal Engine plugins for driving digital characters live, from VTubers to XR performers to virtual production:
 
-## What It Does
+- **[VMC Live Link](Plugins/VMCLiveLink/README.md)** receives the VMC (Virtual Motion Capture) protocol from apps such as VSeeFace and VirtualMotionCapture and streams it into Unreal's Live Link: body, face, tracked devices and camera.
+- **[VRM Interchange](Plugins/VRMInterchange/README.md)** imports VRM avatars (`.vrm`, VRM 0.x and 1.0) with toon materials, expressions, spring bone physics for hair and clothes, an IK Rig for retargeting, and a ready-to-place Live Link character.
 
-- **Turns motion into presence.** Stream body and facial capture data straight into Unreal in real time.  
-- **Bridges tools and stages.** Connects external mocap apps (like Virtual Motion Capture, VSeeFace, etc.) with Unreal’s Live Link system.  
-- **Empowers performers.** Built for interactive avatars, live shows, and experiments in virtual puppetry.  
+Together they take a VRoid or other VRM avatar from file to a live, performer-driven character in a few minutes. Each also works on its own.
 
-## Why It Matters
+**New here? Start with the [User Guide](docs/USER_GUIDE.md).**
 
-VMCLiveLink is more than a plugin — it’s part of a larger movement: treating technology like an *instrument* that artists can play. By lowering technical barriers, it enables performers and storytellers to focus on the message, the character, and the moment.
+## Quick start
 
-Whether you’re crafting an XR dance performance, streaming a VTuber show, or building a virtual stage for a live audience, VMCLiveLink gives you the bridge between raw performance and expressive digital presence.
+1. Copy `Plugins/VMCLiveLink` and `Plugins/VRMInterchange` into your project's `Plugins` folder and open the project.
+2. When the editor offers to register the VRM import pipelines, click **Register**.
+3. Drag a `.vrm` file into the Content Browser and import it.
+4. Open **Window → Virtual Production → Live Link** and add a **VMC Live Link Source**. Point your VMC sender at this computer, port 39539.
+5. Select the `VMC_Subject` subject, set its remapper's **Reference Skeleton** to the imported mesh and click **Map Bones From Humanoid Metadata**.
+6. Place the imported `BP_LL_VRM_<name>` actor, set its **Subject** to `VMC_Subject`, and press **Simulate**.
 
-## Plugins in This Repo
+The [User Guide](docs/USER_GUIDE.md) walks through each step, then facial expressions, spring bones, retargeting and troubleshooting.
 
-- **[VMCLiveLink](Plugins/VMCLiveLink)** — receives the VMC protocol over OSC and streams it into Unreal’s Live Link system. See its [README](Plugins/VMCLiveLink/README.md) for the quick start, sender setup and troubleshooting.
-- **[VRMInterchange](Plugins/VRMInterchange)** — imports VRM avatars (spring bone physics, IK rigs, Live Link actor scaffolding). See its [README](Plugins/VRMInterchange/README.md) for details.
+## Requirements
 
-Both plugins are Windows (Win64) only for now: that is the only platform they are built and tested on. Mac and Linux can be added once they are built and tested there.
+- Unreal Engine 5.6.
+- Windows (Win64). It is the only platform the plugins are built and tested on; Mac and Linux can be added once they are built and tested there.
 
 ## Documentation
 
-- [VMC Live Link README](Plugins/VMCLiveLink/README.md): setup, senders, the remapper, troubleshooting.
-- [VRM Interchange README](Plugins/VRMInterchange/README.md): importing VRM avatars, spring bones, materials, Live Link.
-- [Architecture](docs/ARCHITECTURE.md): modules, data flow, threading, coordinates, versioning, tests.
-- [Contributing](CONTRIBUTING.md): building, testing and submitting changes.
-- [Editor test plan](docs/EDITOR_TESTS.md): step-by-step checks that need a person in the editor.
+| Document | For |
+|---|---|
+| [User Guide](docs/USER_GUIDE.md) | Using both plugins, step by step: install, import, stream, expressions, spring bones, retargeting, troubleshooting. |
+| [VMC Live Link README](Plugins/VMCLiveLink/README.md) | Reference: source settings, senders, the remapper, supported messages, coordinates, troubleshooting. |
+| [VRM Interchange README](Plugins/VRMInterchange/README.md) | Reference: import options and settings, generated assets, spring bones, IK Rig, Live Link, materials, troubleshooting. |
+| [CHANGELOG](CHANGELOG.md) | What changed in each version, and what to do after updating. |
+| [Contributing](CONTRIBUTING.md) | Building, testing, CI and releases, and submitting changes. |
+| [Architecture](docs/ARCHITECTURE.md) | Modules, data flow, threading, coordinates, versioning and tests. |
+| [Editor test plan](docs/EDITOR_TESTS.md) | Step-by-step checks that need a person in the editor. |
 
-## Getting Started
+## Getting the source
 
-1. Clone the repo (requires [Git LFS](https://git-lfs.github.com/)):
-   ```bash
-   git clone https://github.com/lifelike-and-believable/VMCLiveLink.git
-   cd VMCLiveLink
-   git lfs pull
-   ```
+The repository uses [Git LFS](https://git-lfs.github.com/) for its binary assets:
 
-## 🚀 Fab Plugin CI/CD
-
-This repository includes automated GitHub Actions to keep the plugins Fab-ready.
-
-### ✅ Pull Request Build and Tests
-Runs on every pull request to `main` (from branches in this repository) and manually via **Actions → PR Build and Tests**:
-- Verifies copyright headers in both plugins.
-- Compiles the project's Editor target and the Game target (Development and Shipping) against UE 5.6.
-- Runs the plugin automation tests (`VRM.*`, `VMC.*`) headless and uploads the report as an artifact. The job fails if any test fails or no tests run.
-
-### 🔎 Verify Build & Package
-[![Fab Plugin Builds](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/fab-plugin-build.yml/badge.svg)](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/fab-plugin-build.yml)
-
-Runs on tag push (`release/*`) or manually via **Actions → Fab Plugin Builds**:
-- Verifies all source files in both plugins have a valid copyright header.
-- Builds both the VMCLiveLink and VRMInterchange plugins against the UE 5.6 engine root configured in the workflow.
-- Produces Fab-ready zips (a combined package plus one per plugin) as downloadable artifacts.
-- On a `release/*` tag push, also publishes those zips to a GitHub Release. Manual `workflow_dispatch` runs skip release creation and only produce the build artifacts.
-
-**Usage:**
-- To cut a release: push a tag matching `release/*` (e.g. `release/1.2.0`).
-- To test a build without releasing: go to **Actions → Fab Plugin Builds → Run workflow** and run it against any branch. The engine root/version and plugin paths are fixed in the workflow file, not configurable per-run.
-
-### 🛠️ Auto-fix Headers
-[![Auto-fix Headers](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/header-autofix.yml/badge.svg)](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/header-autofix.yml)
-
-Ensures every `.h/.cpp` file starts with:
-
-```cpp
-// Copyright (c) YYYY Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
+```bash
+git clone https://github.com/lifelike-and-believable/VMCLiveLink.git
 ```
 
-**Usage:**
-1. Go to **Actions → Auto-fix Headers → Run workflow**.
-2. Fill in:
-   - `plugin_dir` → path to the plugin folder (default: `Plugins/VMCLiveLink`)
-   - `holder` → copyright holder text to enforce (default: `Lifelike & Believable Animation Design, Inc. | Athomas Goldberg`)
-3. If any headers were missing or out of date, the workflow commits the fix on a new branch and opens a pull request.
+```bash
+git lfs pull
+```
+
+Run `git lfs pull` inside the cloned `VMCLiveLink` folder. To build and test the plugins, see [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests are built and tested by CI; release packages for Fab are built from `release/*` tags ([CI and releases](CONTRIBUTING.md#ci-and-releases)).
+
+[![PR Build and Tests](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/pr-build.yml/badge.svg)](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/pr-build.yml)
+[![Fab Plugin Builds](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/fab-plugin-build.yml/badge.svg)](https://github.com/lifelike-and-believable/VMCLiveLink/actions/workflows/fab-plugin-build.yml)
+
+## Support
+
+Report bugs and request features on [GitHub Issues](https://github.com/lifelike-and-believable/VMCLiveLink/issues). [CONTRIBUTING.md](CONTRIBUTING.md#reporting-issues) lists what to include.
+
+## License
+
+Copyright (c) 2025-2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
