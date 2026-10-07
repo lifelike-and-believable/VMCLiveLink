@@ -84,12 +84,12 @@ public:
     virtual bool CanImportSourceData(const UInterchangeSourceData* InSourceData) const override;
     virtual bool Translate(UInterchangeBaseNodeContainer& NodeContainer) const override;
 
-    // IInterchangeMeshPayloadInterface (UE 5.6). Only the attribute-storage overload is
+    // IInterchangeMeshPayloadInterface (UE 5.6 to 5.8). Only the attribute-storage overload is
     // implemented; the FTransform overload is deprecated in 5.6, so it isn't overridden (overriding
     // it would raise the deprecation warning).
     virtual TOptional<UE::Interchange::FMeshPayloadData> GetMeshPayloadData(const FInterchangeMeshPayLoadKey& PayLoadKey, const UE::Interchange::FAttributeStorage& PayloadAttributes) const override;
 
-    // IInterchangeTexturePayloadInterface (UE 5.6)
+    // IInterchangeTexturePayloadInterface (UE 5.6 to 5.8)
     virtual TOptional<UE::Interchange::FImportImage> GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& AlternateTexturePath) const override;
 
 private:

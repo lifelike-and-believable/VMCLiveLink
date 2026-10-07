@@ -4,7 +4,7 @@ This document describes how the two plugins in this repository are built: their 
 
 The two plugins ship separately (on Fab) and neither depends on the other. Each depends only on plugins that ship with Unreal (decision D-4 in the [refactor plan](../Planning%20Docs/Code_Review_and_Refactor_Plan_2026-09.md)). They cooperate through a documented convention instead: VRM Interchange writes the humanoid bone map onto the skeletal mesh as editor metadata, and VMC Live Link reads it (see [Humanoid Map Metadata](#humanoid-map-metadata)).
 
-Both are built and tested on Windows (Win64) with UE 5.6 only.
+Both are built and tested on Windows (Win64) with UE 5.6, 5.7 and 5.8, from one source tree. Where the engines differ, the code uses `UE_VERSION_NEWER_THAN_OR_EQUAL` guards (for example UE 5.8's Interchange joint nodes in `VRMTranslator.cpp`), and the content is saved from 5.6, the oldest (see [CONTRIBUTING.md](../CONTRIBUTING.md)). The [support plan](../Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md) lists every difference.
 
 ## VMC Live Link
 

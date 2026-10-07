@@ -10,7 +10,7 @@ How to use it:
 
 ## What you need
 
-- The project built and open in UE 5.6 on Windows (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
+- The project built and open on Windows in the engine being checked: UE 5.6, 5.7 or 5.8 (see [CONTRIBUTING.md](../CONTRIBUTING.md)). For a release, run the checks a change affects on each engine. To check on 5.7 or 5.8, run the checks in a copy of the project (or choose **Open a copy** in the editor's convert dialog), so nothing saved by 5.7 or 5.8 reaches the repository (CONTRIBUTING explains why). Don't commit a changed `EngineAssociation` in the `.uproject`: it stays `5.6`.
 - **VRM files:**
   - a VRoid Studio export in **VRM 0.x** and one in **VRM 1.0** (the same character in both is ideal), with hair and skirt springs and about 60 blend shapes;
   - a VRM whose bones are *not* named by VRoid (`J_Bip_*`), for example a UniVRM export of a custom rig;

@@ -2,7 +2,9 @@
 
 **Date:** 2026-07-13
 
-> **Status (2026-10-06).** This report predates the 1.0.0 work; parts of it are out of date.
+> **Status (2026-10-07).** This report predates the 1.0.0 work; parts of it are out of date.
+> - **Engine versions:** both plugins now build and are tested on UE 5.6, 5.7 and 5.8, and the Fab workflow makes a package per engine (see the [support plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md)). Sections 1, 2 and 4 are updated for this.
+> - **Packages contain `Binaries` and `Intermediate`:** `RunUAT BuildPlugin -Package` output includes them, and `build_fab.ps1` doesn't remove them (section 2 said otherwise). Check whether Fab's code-plugin submission wants them removed before submitting.
 > - **Done since:** `DocsURL` and `SupportURL` are set in both `.uplugin` files (both point at the root README, which leads to the [User Guide](docs/USER_GUIDE.md)); both plugins are version 1.0.0; PR #96 merged (2026-07-13); every pull request builds the Game target in Shipping and runs the tests (`pr-build.yml`); Win64-only is a decision (D-2) and the READMEs say so.
 > - **Still open:** `Plugins/VRMInterchange/Resources/Icon128.png` (missing); `SupportedTargetPlatforms` in both `.uplugin` files; a LICENSE file in each plugin root (the plan, P7.5, asks for one before the 1.0.0 tag; the owner must supply the terms); the `release/1.0.0` tag, then a check that the Fab zips package clean; listing assets and example content; the publisher-side steps.
 **Scope:** `Plugins/VMCLiveLink` and `Plugins/VRMInterchange` (both plugins in this repo), assessed against Epic's Fab publisher/technical requirements.
@@ -34,7 +36,7 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 | `FriendlyName` / `Description` | Set, accurate | Set, accurate | Required | ✅ |
 | `Category` | `"Live Link"` | `"Importers"` | Should match a real Fab/Marketplace category | ✅ (verify current Fab category taxonomy — categories were reorganized when Marketplace → Fab migrated) |
 | `CreatedBy` / `CreatedByURL` | Set | Set | Required for listing attribution | ✅ |
-| `EngineVersion` | Not set in the source; each package sets it | Not set in the source; each package sets it | Fab takes one package per engine version. A `"5.6.0"` in the source descriptor makes UE 5.7 and later refuse to load the plugin, so `build_fab.ps1` sets it per package instead | ✅ 5.6, 5.7 and 5.8 planned ([plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md)) |
+| `EngineVersion` | Not set in the source; each package sets it | Not set in the source; each package sets it | Fab takes one package per engine version. A `"5.6.0"` in the source descriptor makes UE 5.7 and later refuse to load the plugin, so `build_fab.ps1` sets it per package instead | ✅ Packaged per engine for 5.6, 5.7 and 5.8 by `fab-plugin-build.yml` ([plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md)) |
 | `SupportedTargetPlatforms` | Not set (module-level `IncludeListPlatforms: ["Win64"]` only) | Not set (Win64-only on Editor/Spring-Bones-Editor modules) | Fab wants explicit, accurate platform support declared | ⚠️ Should be declared explicitly; also both plugins are Windows-only today (see §4) |
 | `DocsURL` / `SupportURL` | Empty | Empty | Not strictly required, but expected for a paid/listed plugin and improves review odds | ⚠️ Empty |
 | `MarketplaceURL` | Empty | Empty | Populated by Epic after first listing, not a submission blocker | ➖ N/A pre-submission |
@@ -44,9 +46,9 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 ## 2. Code Plugin Packaging Requirements
 
 - **Module structure**: Both plugins declare proper Runtime/Editor/UncookedOnly modules with correct `LoadingPhase` values — this matches Fab's "must contain compiled code, not just Blueprints/content" bar for a Code Plugin listing. ✅
-- **Build pipeline**: `.github/workflows/fab-plugin-build.yml` invokes `scripts/build_fab.ps1`, which shells out to `RunUAT.bat BuildPlugin -Plugin=... -Package=... -Rocket -VeryVerbose`. UAT's `BuildPlugin` step is the same mechanism Epic's own docs describe for packaging a plugin for distribution, and it does not carry `Binaries`/`Intermediate` folders into the packaged output — satisfies the "no build artifacts in the zip" requirement. ✅
-- **No errors/warnings**: Not verifiable in this sandbox (no UE toolchain available here). Fab's technical review explicitly checks that a plugin packages clean in a stock project via the editor's own "Package Plugin" flow — **this must be manually verified on a Windows box with UE 5.6 installed before submission**. ⚠️ Unverified
-- **Zip output**: The workflow produces a combined zip plus one zip per plugin. Fab accepts a `.zip` (optionally password-protected, with the password disclosed in the submission's version notes) — the current setup produces an unprotected zip, which is the simpler and equally valid path. ✅
+- **Build pipeline**: `.github/workflows/fab-plugin-build.yml` invokes `scripts/build_fab.ps1`, which shells out to `RunUAT.bat BuildPlugin -Plugin=... -Package=... -Rocket -VeryVerbose`. UAT's `BuildPlugin` step is the same mechanism Epic's own docs describe for packaging a plugin for distribution, but its packaged output **does** include `Binaries` and `Intermediate` (checked on a 5.8 package), and `build_fab.ps1` doesn't strip them. ⚠️ Check Fab's current rule for code plugins before submitting; removing them would also mean a packaged GitHub release needs Visual Studio to build (the User Guide says a release with `Binaries` doesn't).
+- **No errors/warnings**: Not verifiable in this sandbox (no UE toolchain available here). Fab's technical review explicitly checks that a plugin packages clean in a stock project via the editor's own "Package Plugin" flow — **this must be manually verified on a Windows box, in each engine (5.6, 5.7, 5.8), before submission**. The Fab workflow's BuildPlugin runs for every engine build without errors, and CI's builds have no plugin warnings. ⚠️ Editor check still to do
+- **Zip output**: The workflow produces, for each engine, a combined zip plus one zip per plugin, and checks that each package's `.uplugin` names its engine. Fab accepts a `.zip` (optionally password-protected, with the password disclosed in the submission's version notes) — the current setup produces an unprotected zip, which is the simpler and equally valid path. ✅
 
 ## 3. Licensing / Third-Party Content
 
@@ -60,7 +62,7 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 ## 4. Platform & Engine-Version Coverage
 
 - Both plugins currently build **Win64-only** (`VMCLiveLink`'s Runtime module, `VRMInterchangeEditor`, and `VRMSpringBonesEditor` all restrict `IncludeListPlatforms` to `["Win64"]`). VMC/OSC networking and VRM parsing have no inherent Windows dependency, so this is very likely a build-target choice rather than a technical constraint — but it does mean the Fab listing must clearly state "Windows only" (Fab allows single-platform listings; it must just be accurately declared, not silently assumed). ⚠️ Declare explicitly in the listing, or invest in cross-platform module support if broader reach is wanted later.
-- Single `EngineVersion: "5.6.0"` target only. Fab's guidance (per Epic's own multi-engine-version packaging tooling and community docs) favors testing/shipping against the widest reasonable engine range a plugin's dependencies allow. `scripts/build_fab.ps1` already supports multiple `EngineRoots`/`EngineVersions` as parallel arrays — the workflow just isn't currently configured to build more than 5.6.0. If UE 5.4/5.5 compatibility is feasible, wiring that up would strengthen the submission; not a hard blocker for a first listing. ⚠️ Nice-to-have, not required
+- **Engine versions: UE 5.6, 5.7 and 5.8.** CI builds and tests every pull request on all three, and the Fab workflow packages each plugin for each (decision D-9 of the [support plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md): support the three newest engines). Upload one package per engine version to each listing. ✅
 
 ## 5. Listing Assets (Icons, Screenshots, Description)
 
@@ -87,7 +89,7 @@ These aren't things this repo can satisfy — they're account/business steps on 
 
 1. **Merge PR #96** (documentation fixes) — no reason to submit with a stale README copyright line/URL still on `main`.
 2. **Add a `Resources/Icon128.png` to `Plugins/VRMInterchange`** — currently missing entirely.
-3. **Manually verify a clean Shipping-config package build** for both plugins on an actual Windows/UE 5.6 machine (cannot be verified from this sandbox — no UE toolchain here).
+3. **Manually verify a clean package** for both plugins in each engine (5.6, 5.7, 5.8): install the Fab zips in a clean project (the support plan's U6).
 4. **Produce listing assets**: Fab store thumbnail, screenshots, and ideally a short demo video for both plugins — not a code task.
 5. **Add example content** (sample `.vrm` file + demo map/setup) — flagged independently by both this report and the existing `docs/archive/PRODUCTION_READINESS_ANALYSIS.md`.
 6. **Declare `SupportedTargetPlatforms` explicitly** in both `.uplugin` files (currently implicit via module-level `IncludeListPlatforms`), and state "Windows only" plainly in both listings unless cross-platform support is added first.

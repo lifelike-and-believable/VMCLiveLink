@@ -7,7 +7,7 @@ This repository holds two Unreal Engine plugins, [VMC Live Link](Plugins/VMCLive
 ### Requirements
 
 - Windows 10 or 11 (the plugins are built and tested on Win64 only).
-- Unreal Engine 5.6.
+- Unreal Engine 5.6, 5.7 or 5.8. Change content only with 5.6 (see Code guidelines). The project's `EngineAssociation` stays `5.6`: to work in 5.7 or 5.8, open a copy of the project rather than switching its engine version.
 - Visual Studio 2022 with the *Game development with C++* workload, as the engine requires.
 - [Git LFS](https://git-lfs.github.com/): the `.uasset` files and the other binary types listed in `.gitattributes` are stored with it. (The small VRM fixtures and VMC captures are ordinary files.)
 - Python 3 for the scripts in `scripts/` (standard library only), and gcc or clang on `PATH` for `scripts/check_vrm_fixtures.py` (MSVC's `cl` isn't supported).
@@ -84,7 +84,9 @@ What automated tests can't confirm (behaviour seen in the editor, real VRM files
   ```
   `python scripts/add_copyright_headers.py Plugins/VMCLiveLink` (or `Plugins/VRMInterchange`) adds or fixes it, and `--verify` only checks. The **Auto-fix Copyright Headers** workflow does the same on GitHub.
 - **No dependency between the plugins.** Each ships on its own and may depend only on plugins that ship with Unreal. Share data through documented conventions, such as the humanoid map metadata.
-- **Check engine APIs.** Confirm each UE 5.6 API you use in the engine source or the API reference rather than from memory. Say in the pull request if you couldn't.
+- **Check engine APIs.** Confirm each engine API you use in the engine source or the API reference, in every supported engine (UE 5.6, 5.7 and 5.8), rather than from memory. Say in the pull request if you couldn't.
+- **Engine differences.** Where the engines differ, use `UE_VERSION_NEWER_THAN_OR_EQUAL(5, x, 0)` (`Misc/EngineVersionComparison.h`), with the version the new API appeared in and a comment naming the change, so the guard can be deleted when that engine becomes the oldest supported. Keep the older code in the `#else` unchanged. No source branches per engine.
+- **Engine version in the descriptors.** The `.uplugin` files have no `EngineVersion`: UE 5.7 and later refuse to load a plugin marked for an older engine. The Fab packages set it for their engine.
 - **Logging.** Use the plugin log categories:
   - `LogVRMInterchange` (VRMCore, exported: every VRM module) and `LogVRMSpring` (VRMInterchange, exported: spring parsing and import).
   - `LogVMCLiveLink` (VMCLiveLink only: it is declared in a private header).

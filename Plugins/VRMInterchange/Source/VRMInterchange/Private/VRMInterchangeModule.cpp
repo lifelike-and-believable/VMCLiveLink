@@ -42,7 +42,7 @@ public:
 			VRMPostEngineInitDelegate().Remove(PostEngineInitHandle);
 			PostEngineInitHandle.Reset();
 		}
-		// No UnregisterTranslator in UE 5.6; manager cleans up internally
+		// UE 5.6 to 5.8 have no UnregisterTranslator; the manager cleans up internally
 		VRM::ImportMessages::UnregisterCapture();
 	}
 

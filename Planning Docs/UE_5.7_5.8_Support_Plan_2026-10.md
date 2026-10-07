@@ -141,6 +141,8 @@ This can land before U2, and should: U2's matrix triples its runs.
 
 ### U5. Documentation
 
+**Done in the U5 pull request.** CONTRIBUTING's CI and content rules went in with U2 and U3; this pull request covers the rest. The VRM Interchange README's links to Epic's 5.6 documentation stay: those pages still describe the systems the plugin uses.
+
 - README, User Guide, CONTRIBUTING (requirements, the build commands' engine folder, the CI runner's engines, Fab), ARCHITECTURE, EDITOR_TESTS, both plugin READMEs (and their 5.6 links to Epic's docs), FAB_MARKETPLACE_READINESS: "UE 5.6, 5.7 and 5.8".
 - CONTRIBUTING code guidelines: check engine APIs in every supported engine, not just 5.6; the guard convention; content is saved from the oldest engine (and why, and what the CI check does); open the project with the oldest engine.
 - REVIEW.md and `.claude/agents/code-reviewer.md`: the same three checks in the review checklist.

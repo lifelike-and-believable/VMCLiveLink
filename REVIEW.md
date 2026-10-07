@@ -17,7 +17,8 @@ doesn't need.
     data loss, a thread race, or a broken project rule below.
   - **Optional:** real but minor: a misleading comment, a missing edge-case test, a clearer
     equivalent.
-- An engine API the reviewer can't confirm exists in UE 5.6 with that signature is reported as
+- An engine API the reviewer can't confirm exists, with that signature, in every supported engine
+  (UE 5.6, 5.7 and 5.8, or behind a version guard) is reported as
   **Unverified API**, blocking until the author confirms it (rule 2).
 - Every finding is fixed or answered on the pull request (its description or a comment) before the
   merge.
@@ -44,7 +45,12 @@ with them.
     both declaration and use.
   - Development-only test code needs `WITH_DEV_AUTOMATION_TESTS`.
 - **Engine APIs:** deprecated calls (C4996 is allowed, but prefer the replacement) and calls whose
-  existence or signature in 5.6 is a guess (report as Unverified API).
+  existence or signature in any supported engine (5.6, 5.7, 5.8) is a guess (report as Unverified
+  API). An engine difference goes behind a `UE_VERSION_NEWER_THAN_OR_EQUAL` guard whose threshold is
+  the version the API appeared in, with a comment naming the change; the older branch keeps the
+  older code.
+- **Content:** a `.uasset` or `.umap` saved from 5.7 or 5.8 can't be loaded by 5.6 (CI's content
+  check fails it).
 - **Headers:** every new file starts with the copyright header CI checks.
 
 ### 2. Threads and lifetimes

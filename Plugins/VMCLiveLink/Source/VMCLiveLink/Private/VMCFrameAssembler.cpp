@@ -201,7 +201,7 @@ FLiveLinkStaticDataStruct FVMCFrameAssembler::MakeStaticData(const TMap<FName, F
 	FLiveLinkSkeletonStaticData& Skel = *StaticData.Cast<FLiveLinkSkeletonStaticData>();
 	Skel.SetBoneNames(OutBoneNames);
 	Skel.SetBoneParents(BoneParents);
-	Skel.PropertyNames = MoveTemp(OutCurveNames); // UE 5.6: curve names live on the base static data
+	Skel.PropertyNames = MoveTemp(OutCurveNames); // Curve names live on the base static data
 	return StaticData;
 }
 

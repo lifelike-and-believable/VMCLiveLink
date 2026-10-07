@@ -13,7 +13,7 @@
 #include "InterchangeJointNode.h"
 #endif
 
-// Use Node APIs available in UE 5.6
+// Node APIs of UE 5.6 to 5.8 (the 5.8 difference is in AddJoint)
 #include "InterchangeMeshNode.h"
 #include "InterchangeSkeletalMeshFactoryNode.h"
 #include "InterchangeSkeletalMeshLodDataNode.h"
@@ -421,7 +421,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
     return true;
 }
 
-// ===== Mesh Payload Interface (UE 5.6) =====
+// ===== Mesh Payload Interface (UE 5.6 to 5.8) =====
 
 TOptional<UE::Interchange::FMeshPayloadData> UVRMTranslator::GetMeshPayloadData(
     const FInterchangeMeshPayLoadKey& PayLoadKey,
@@ -671,7 +671,7 @@ namespace VRM
     }
 }
 
-// ===== Texture Payload Interface (UE 5.6) =====
+// ===== Texture Payload Interface (UE 5.6 to 5.8) =====
 TOptional<UE::Interchange::FImportImage> UVRMTranslator::GetTexturePayloadData(const FString& PayloadKey, TOptional<FString>& /*AlternateTexturePath*/) const
 {
     // Keys are "Tex_<image>" (colour), "Tex_<image>_Normal" or "Tex_<image>_Data"; see Translate.
