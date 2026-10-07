@@ -30,7 +30,7 @@ public:
 	UVRMSpringBonesPostImportPipeline() = default;
 
 #if WITH_EDITOR
-	virtual void PostInitProperties() override;
+	virtual void ApplyProjectSettings() override;
 
 	/** The name of the pipeline that will be display in the import dialog. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))
@@ -42,15 +42,15 @@ public:
 
 	/** If <Mesh>_SpringData exists, update it in place from the file (what refers to it keeps working; edits to it are replaced). Otherwise the new one gets a unique name. */
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Update Existing"))
-	bool bOverwriteExisting = false;
+	bool bOverwriteExisting = true;
 
 	/** Creates a post-process AnimBlueprint in <import folder>/<file name>/<Animation Sub Folder> that runs the spring bones on the mesh. */
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Post-Process AnimBlueprint"))
-	bool bGeneratePostProcessAnimBP = false;
+	bool bGeneratePostProcessAnimBP = true;
 
 	/** Set that AnimBlueprint as the skeletal mesh's post-process AnimBlueprint. */
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Assign Post-Process AnimBlueprint"))
-	bool bAssignPostProcessABP = false;
+	bool bAssignPostProcessABP = true;
 
 	/** If the post-process AnimBlueprint exists, reuse it (its spring data is updated, your graph edits kept); otherwise a new one gets a unique name. */
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Spring Bones: Update Existing AnimBlueprint"))

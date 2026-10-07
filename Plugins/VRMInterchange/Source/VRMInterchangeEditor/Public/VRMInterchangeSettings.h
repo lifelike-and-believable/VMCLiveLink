@@ -23,14 +23,14 @@ public:
     UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="Parse and generate spring bone data assets during import."))
     bool bGenerateSpringBoneData = true;
 
-    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="Duplicate and assign a Post-Process AnimBP to drive springs."))
-    bool bGeneratePostProcessAnimBP = false;
+    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="Make a Post-Process AnimBlueprint that runs the springs."))
+    bool bGeneratePostProcessAnimBP = true;
 
-    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="Assign generated Post-Process AnimBP to the imported SkeletalMesh."))
-    bool bAssignPostProcessABP = false;
+    UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="Assign the generated Post-Process AnimBlueprint to the imported skeletal mesh, so the springs run wherever the mesh is used."))
+    bool bAssignPostProcessABP = true;
 
     UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, an existing spring data asset with the same name is updated in place, so what refers to it keeps working. If false, the new one gets a unique name."))
-    bool bOverwriteExistingSpringAssets = false;
+    bool bOverwriteExistingSpringAssets = true;
 
     UPROPERTY(EditAnywhere, config, Category="Spring Bones", meta=(ToolTip="If true, an existing Post-Process AnimBlueprint with the same name is reused and given the new spring data. If false, a new one is created with a unique name."))
     bool bOverwriteExistingPostProcessABP = false;
@@ -60,6 +60,9 @@ public:
      */
     UFUNCTION(CallInEditor, Category="Import Pipelines", meta=(DisplayName="Register VRM Import Pipelines"))
     void RegisterImportPipelines();
+
+    /** Applies an edited setting to the pipeline assets already loaded, so the next import uses it. */
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 
     /** Shown under Plugins in Project Settings. */
     virtual FName GetCategoryName() const override { return TEXT("Plugins"); }

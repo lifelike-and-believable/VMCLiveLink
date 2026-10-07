@@ -23,16 +23,12 @@
 #include "Animation/AnimInstance.h"
 
 #if WITH_EDITOR
-void UVRMLiveLinkPostImportPipeline::PostInitProperties()
+void UVRMLiveLinkPostImportPipeline::ApplyProjectSettings()
 {
-	Super::PostInitProperties();
 	// The project setting is the default for new pipelines; the import dialog decides per import.
-	if (!HasAnyFlags(RF_ClassDefaultObject))
+	if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
 	{
-		if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
-		{
-			bGenerateLiveLinkEnabledActor = Settings->bGenerateLiveLinkEnabledActor;
-		}
+		bGenerateLiveLinkEnabledActor = Settings->bGenerateLiveLinkEnabledActor;
 	}
 }
 #endif
@@ -43,7 +39,7 @@ void UVRMLiveLinkPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContain
 	Super::ExecutePipeline(BaseNodeContainer, SourceDatas, ContentBasePath);
 	// What this pipeline logs belongs to this import's message log page (P6.3).
 	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
-	// Only this instance's flags count (seeded from the project settings in PostInitProperties).
+	// Only this instance's flags count (seeded from the project settings by ApplyProjectSettings).
 	// Either asset is reason enough to run: the retarget actor doesn't need the Live Link actor.
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && (bGenerateLiveLinkEnabledActor || bGenerateLiveLinkRetargetActor))
 	{

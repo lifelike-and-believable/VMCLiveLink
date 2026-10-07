@@ -15,6 +15,39 @@
 #include "VRMImportReport.h"
 #include "VRMInterchangeLog.h"
 #include "VRMPipelineTargets.h"
+#include "UObject/UObjectIterator.h"
+
+void UVRMPipelineBase::PostInitProperties()
+{
+	Super::PostInitProperties();
+	if (!HasAnyFlags(RF_ClassDefaultObject))
+	{
+		ApplyProjectSettings();
+	}
+}
+
+void UVRMPipelineBase::PostLoad()
+{
+	Super::PostLoad();
+	// A pipeline asset (the plugin's DefaultPipelines) follows the project settings, not the values
+	// saved with it: a save in a project with other settings would otherwise bake those in. A
+	// pipeline saved inside an asset's import data (for reimport) isn't an asset, and keeps its values.
+	if (IsAsset())
+	{
+		ApplyProjectSettings();
+	}
+}
+
+void UVRMPipelineBase::ApplyProjectSettingsToLoadedAssets()
+{
+	for (TObjectIterator<UVRMPipelineBase> It; It; ++It)
+	{
+		if (It->IsAsset())
+		{
+			It->ApplyProjectSettings();
+		}
+	}
+}
 
 void UVRMPipelineBase::ExecutePostImportPipeline(const UInterchangeBaseNodeContainer* BaseNodeContainer, const FString& NodeKey, UObject* CreatedAsset, bool bIsAReimport)
 {

@@ -11,16 +11,12 @@
 #include "VRMInterchangeSettings.h"
 
 #if WITH_EDITOR
-void UVRMIKRigPostImportPipeline::PostInitProperties()
+void UVRMIKRigPostImportPipeline::ApplyProjectSettings()
 {
-	Super::PostInitProperties();
 	// The project setting is the default for new pipelines; the import dialog decides per import.
-	if (!HasAnyFlags(RF_ClassDefaultObject))
+	if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
 	{
-		if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
-		{
-			bGenerateIKRig = Settings->bGenerateIKRigAssets;
-		}
+		bGenerateIKRig = Settings->bGenerateIKRigAssets;
 	}
 }
 #endif
@@ -32,7 +28,7 @@ void UVRMIKRigPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeContainer*
 	LastIKRig = nullptr; // only this import's rig counts
 	// What this pipeline logs belongs to this import's message log page (P6.3).
 	const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
-	// Only this instance's flag counts (seeded from the project settings in PostInitProperties).
+	// Only this instance's flag counts (seeded from the project settings by ApplyProjectSettings).
 	if (BeginImport(SourceDatas, ContentBasePath) && BaseNodeContainer && bGenerateIKRig)
 	{
 		// The humanoid map the translator read (P4.1); without one, the template is duplicated.
