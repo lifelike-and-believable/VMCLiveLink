@@ -45,7 +45,20 @@ Headless, as CI runs them:
 "%UE%\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "%CD%\VMCLiveLinkProject.uproject" -ExecCmds="Automation RunTests VRM.+VMC.;Quit" -unattended -nullrhi -nosplash -log -ReportExportPath="%CD%\TestReport"
 ```
 
-`+` separates test filters and `;` ends the command. The report in `TestReport\index.json` lists each test's result. A test that logs a warning passes "with warnings". CI fails only on failed tests, so a warning leaves it green: check the `Tests:` line of the **Run automation tests** step (it must read `0 passed with warnings`) and fix any warning before merging.
+`+` separates test filters and `;` ends the command. The report in `TestReport\index.json` lists each test's result. A test that logs a warning passes "with warnings". CI fails only on failed tests, so a warning leaves it green: check the `Tests:` line of the **Run automation tests** step (it must read `0 passed with warnings`) and fix any warning before merging. The success comment CI posts on the pull request repeats these counts.
+
+### CI and releases
+
+- **PR Build and Tests** (`pr-build.yml`) runs on every pull request from a branch in this repository (whatever its base, so stacked pull requests are built too), and manually via **Actions → PR Build and Tests**. Pull requests from forks aren't built; a maintainer re-opens them from a branch here. It checks the copyright headers, runs the three builds above and the `VRM.+VMC.` tests, and uploads the test report. On success it comments on the pull request with the head commit and the test counts. `main` requires its check (`build-and-test`) before merging, so GitHub refuses a merge while it is failing or pending.
+- **Fab Plugin Builds** (`fab-plugin-build.yml`) runs on a `release/*` tag push (e.g. `release/1.0.0`) or manually via **Actions → Fab Plugin Builds**. It checks the headers, builds both plugins against UE 5.6, and produces Fab-ready zips (a combined package plus one per plugin) as artifacts. A tag push also publishes them to a GitHub Release; a manual run only builds the artifacts.
+- **Auto-fix Copyright Headers** (`header-autofix.yml`), run manually with a plugin folder and holder text, commits missing or outdated headers on a new branch and opens a pull request. Pull requests it opens don't trigger **PR Build and Tests**: run it on the branch (**Actions → PR Build and Tests → Run workflow**), or push a commit to the branch.
+
+### CI runner
+
+The workflows run on a self-hosted Windows runner with UE 5.6 at `C:\Program Files\Epic Games\UE_5.6`. If a build fails without a code cause:
+
+- **`dubious ownership`, or `Not in a Git repository` in the Git LFS step:** the runner service's account changed (it runs as SYSTEM) and its work folder was created by another account. Delete `C:\actions-runner\_work\VMCLiveLink` on the runner so it is recreated, then re-run the job.
+- **Error 4551 (Application Control blocked a DLL):** re-run the job; don't change the code.
 
 ### Editor checks
 
@@ -66,20 +79,21 @@ What automated tests can't confirm (behaviour seen in the editor, real VRM files
   ```cpp
   // Copyright (c) YYYY Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
   ```
-  `python scripts/add_copyright_headers.py Plugins/VMCLiveLink` (or `Plugins/VRMInterchange`) adds or fixes it, and `--verify` only checks. The **Auto-fix Headers** workflow does the same on GitHub.
+  `python scripts/add_copyright_headers.py Plugins/VMCLiveLink` (or `Plugins/VRMInterchange`) adds or fixes it, and `--verify` only checks. The **Auto-fix Copyright Headers** workflow does the same on GitHub.
 - **No dependency between the plugins.** Each ships on its own and may depend only on plugins that ship with Unreal. Share data through documented conventions, such as the humanoid map metadata.
 - **Check engine APIs.** Confirm each UE 5.6 API you use in the engine source or the API reference rather than from memory. Say in the pull request if you couldn't.
-- **Logging.** Use the plugin log categories, from the module that owns them (a module can only use its own or its dependencies'):
-  - `LogVMCLiveLink` (VMCLiveLink) and `LogVMCLiveLinkEditor` (VMCLiveLinkEditor).
-  - `LogVRMInterchange` (VRMCore, used by every VRM module) and `LogVRMSpring` (VRMInterchange: spring parsing and import).
-  - `LogVRMSpringData` and `LogVRMSpringBones` (VRMSpringBonesRuntime: the spring data asset and the anim node).
+- **Logging.** Use the plugin log categories:
+  - `LogVRMInterchange` (VRMCore, exported: every VRM module) and `LogVRMSpring` (VRMInterchange, exported: spring parsing and import).
+  - `LogVMCLiveLink` (VMCLiveLink only: it is declared in a private header).
+  - `LogVMCLiveLinkEditor`, `LogVRMSpringData` and `LogVRMSpringBones` are file-local (`DEFINE_LOG_CATEGORY_STATIC`) in the retarget actor factory, the spring data asset and the anim node. Elsewhere in those modules, use the module's exported category or add one.
 
   Don't add `LogTemp`. Import problems also go on the import report (`VRM::ImportMessages` collects warnings logged during an import).
-- **Threading.** Say in a comment which thread a function or member is used on, when it isn't the game thread. See [Threading](docs/ARCHITECTURE.md#threading) for each plugin's model.
+- **Threading.** Say in a comment which thread a function or member is used on, when it isn't the game thread. See Threading for [VMC Live Link](docs/ARCHITECTURE.md#vmc-threading) and [VRM Interchange](docs/ARCHITECTURE.md#vrm-threading).
 - **Saved data.** A change to a saved struct or class layout, or to what saved data means, adds a custom version entry and a `PostLoad` or `Serialize` upgrade, with a test that loads the old form. See [Asset versioning](docs/ARCHITECTURE.md#asset-versioning).
 - **Binary assets.** Prefer code to `.uasset` edits (the IK Rigs and MToon materials are built in code for this reason). If a `.uasset` must change, describe the change in the pull request, since reviewers can't diff it.
 - **Tests don't depend on project config.** A test that reads settings compares against the loaded values, or sets what it needs and restores it.
-- **Docs travel with code.** A change in behaviour updates the plugin's README and the root `CHANGELOG.md` in the same pull request.
+- **Docs travel with code.** A change in behaviour updates the plugin's README, the [User Guide](docs/USER_GUIDE.md) if it covers it, and the root `CHANGELOG.md` in the same pull request.
+- **Interchange pipelines.** Each pipeline is registered in the project settings as an asset in `Plugins/VRMInterchange/Content/DefaultPipelines`: Interchange instantiates only pipeline assets, not classes. A new pipeline needs one.
 
 ## Submitting changes
 
@@ -87,9 +101,9 @@ What automated tests can't confirm (behaviour seen in the editor, real VRM files
 2. **Build and test** as above: the Editor target without unity, the Game target in Development and Shipping, and the `VRM.+VMC.` tests with no failures or warnings.
 3. **Review your diff** against the checklist in [REVIEW.md](REVIEW.md): threading, lifetimes, saved data, unity-build collisions, Shipping-only breaks, and tests that could pass without testing anything.
 4. **Open the pull request** against `main`. Describe what changed and why, what you verified, and anything you couldn't verify (such as behaviour only visible in the editor).
-5. **Review.** Every pull request is reviewed against `REVIEW.md` before it is merged. In this repository an automated reviewer (`.claude/agents/code-reviewer.md`) posts its findings on the pull request; each finding must be fixed, or answered on the pull request, before merging. A blocking finding whose fix changes code gets a second review.
-6. **CI** (`PR Build and Tests`) must pass on the latest commit: header check, the three builds, and the tests, with `0 passed with warnings` on the `Tests:` line (CI doesn't fail on warnings by itself).
-7. **Merge** by squash, once CI is green and every review finding is resolved.
+5. **Review.** Every pull request is reviewed against `REVIEW.md` before it is merged. In this repository an automated reviewer (`.claude/agents/code-reviewer.md`) reviews each pull request; its findings, and what was done about each, are recorded on the pull request (in its description or a comment). Each finding must be fixed, or answered there, before merging. A blocking finding whose fix changes code gets a second review.
+6. **CI** (`PR Build and Tests`, check `build-and-test`) must pass on the latest commit: header check, the three builds, and the tests. Branch protection on `main` requires that check. It doesn't catch warnings: the `Tests:` line, repeated in CI's success comment on the pull request, must read `0 passed with warnings`.
+7. **Merge** by squash, once CI is green and every review finding is resolved. Branch protection doesn't require the branch to be up to date with `main`, so after merging `main` in, do the check below.
 
 If you merge `main` into your branch, run `git diff origin/main HEAD --stat` before pushing and check that it shows only your change. Git can merge two identical additions into a duplicate without reporting a conflict.
 

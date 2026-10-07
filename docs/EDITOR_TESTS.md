@@ -30,7 +30,13 @@ Throughout, "the output log" is **Window → Output Log**, and "the Live Link pa
 1. Open the project. A notification offers to register the VRM import pipelines.
 2. Click **Register**. Open **Project Settings → Interchange** and find the `.vrm` translator's pipelines.
 
-Pass if the notification appears once, the plugin changed no project setting before you clicked, and afterwards the list has the spring bone, IK Rig, Live Link, material and avatar description pipelines.
+Pass if the notification appears once, the plugin changed no project setting before you clicked, and afterwards the `.vrm` translator's list starts with `DefaultVRMAssetsPipeline` and has the five pipeline assets under `/VRMInterchange/DefaultPipelines/` (`DefaultSpringBonesPipeline`, `DefaultVRMIKRigPipeline`, `DefaultVRMLiveLinkPipeline`, `DefaultVRMMaterialPipeline`, `DefaultVRMAvatarDescriptionPipeline`, in that order), and no `/Script/VRMInterchangeEditor.` entries.
+
+**E-S2. Pipelines registered by 1.0.0.** *(#184, optional)*
+1. In a project registered with 1.0.0 (its `.vrm` list has `/Script/VRMInterchangeEditor.VRMMaterialPostImportPipeline` and `...VRMAvatarDescriptionPipeline`), open the project with this version.
+2. Click **Register** on the notification, or use **Project Settings → Plugins → VRM Interchange → Register VRM Import Pipelines**.
+
+Pass if the notification appears even though the project was registered before, and afterwards the list is as in E-S1 with no `/Script/VRMInterchangeEditor.` entries.
 
 ---
 
@@ -41,7 +47,7 @@ Pass if the notification appears once, the plugin changed no project setting bef
 2. Place both skeletal meshes in the default level, side by side, next to the UE mannequin (`SKM_Manny` from the Third Person template, or any mannequin).
 3. Look at them from the front, then turn on **Show → Advanced → Bones**.
 
-Pass if both characters face the same way as the mannequin (+Y), neither is mirrored (the parting of the hair and any asymmetric accessory are on the same side as in the VRoid preview), the skin deforms nowhere (no stretched vertices at hands, hair or skirt), rigid accessories sit where they belong, and the skeletons have the expected bones. This closes **T-05** (VRM 0.x and 1.0 facing).
+Pass if both characters face the same way as the mannequin (+Y), neither is mirrored (the parting of the hair and any asymmetric accessory are on the same side as in the VRoid preview), the skin deforms nowhere (no stretched vertices at hands, hair or skirt), rigid accessories sit where they belong, and the skeletons have the expected bones, including VRoid's spring tails (`J_Sec_*_end`, #187). Every `MI_VRM_<Name>_*` material instance has a parent material (MToon ones on `M_VRM_MToon` through `MI_VRM_<Name>__MToon`) and shows its textures, and `<Mesh>_Avatar` exists (#184). This closes **T-05** (VRM 0.x and 1.0 facing).
 
 For **T-02** (how many skins VRoid exports have), count them in each file from the repository root, and record the numbers:
 ```
@@ -53,7 +59,7 @@ With more than one skin, the pass condition above is what confirms that every sk
 1. Open `/Game/Test/V1/.../LiveLink/ABP_LL_...` (or any AnimBP with the spring bone node) and preview the mesh; or place the Live Link actor in the level and press **Simulate**.
 2. In the console: `vrm.SpringBones.DrawColliders 1` and `vrm.SpringBones.DrawSprings 1`.
 
-Pass if the collider spheres and capsules sit on the head, chest, arms and legs where the VRoid preview shows them, for both versions, and the spring chains run along the hair and skirt.
+Pass if the collider spheres and capsules sit on the head, chest, arms and legs where the VRoid preview shows them, for both versions, and the spring chains run along the hair and skirt to their tips (the last bone of each chain has a joint, #187).
 
 **E-A3. Plain glTF through the VRM importer.**
 1. Import `Plain.vrm` (the plain `.glb` renamed) into `/Game/Test/Glb`.
@@ -62,8 +68,9 @@ Pass if it imports as a skeletal mesh facing +Y, with no spring data or avatar d
 
 **E-A4. Reimport.** *(P3.3)*
 1. Right-click the VRM 1.0 skeletal mesh → **Reimport**.
+2. *(optional)* Reimport a VRoid file imported with 1.0.0 (an older checkout).
 
-Pass if it reimports without errors and the mesh, textures and materials look the same as after E-A1.
+Pass if it reimports without errors and the mesh, textures and materials look the same as after E-A1. For step 2: the `J_Sec_*_end` bones are added (bone parents may change, see the VRM Interchange README), the AnimBlueprint compiles without "bones not in the skeleton" warnings for the character's own spring data, and the character still animates.
 
 **E-A5. Two characters with similar names.** *(P1.15)*
 1. Copy the VRM 1.0 file to `Alice.vrm` and `Alice2.vrm`. Import both into `/Game/Test/Names`.
@@ -91,7 +98,7 @@ Pass if it opens and shows its springs.
 2. Click **Show in Content Browser** on the notification.
 3. Open **Window → Message Log** and choose **VRM Import**.
 
-Pass if one notification appears saying what was imported, Show in Content Browser selects the new assets, and the VRM Import log has a page for the import listing its assets and warnings (or "No warnings."). Repeat with `Plain.vrm`: its page shows the "not a VRM file" warning. Note in the results whether the listing is called "VRM Import" (CONTRIBUTING and ARCHITECTURE name it so).
+Pass if one notification appears saying what was imported, Show in Content Browser selects the new assets, and the VRM Import log has a page for the import listing its assets and warnings (or "No warnings."). Repeat with `Plain.vrm`: its page shows the "not a VRM file" warning. Note in the results whether the listing is called "VRM Import" (CONTRIBUTING and REVIEW.md name it so).
 
 **E-B2. Two files at once.** *(P6.3)*
 1. Drag the VRM 0.x and VRM 1.0 files into `/Game/Test/Pair` in one drag.
@@ -138,10 +145,10 @@ Pass if the retarget root is the hips, the chains are named like the mannequin's
 Pass if the mesh and AnimBlueprint are set on both and the placed actor shows the character.
 
 **E-C4. Update Existing.** *(P3.4)*
-1. Drag the VRM 1.0 file again into its folder from E-A1 (a second import, not the Reimport action). In the dialog tick **Actors: Update Existing**, **IK Rig: Update Existing**, **Spring Bones: Update Existing** and **Spring Bones: Update Existing AnimBlueprint**.
-2. Import it again the same way with all four unticked.
+1. Drag the VRM 1.0 file again into its folder from E-A1 (a second import, not the Reimport action). In the dialog tick **Actors: Update Existing**, **IK Rig: Update Existing**, **Spring Bones: Update Existing**, **Spring Bones: Update Existing AnimBlueprint** and **Avatar Description: Update Existing**.
+2. Import it again the same way with all five unticked.
 
-Pass if after step 1 the folder has the same Live Link actor, retarget actor, AnimBlueprints, IK Rig and spring data asset as before (no copies with `_1`-style names), and after step 2 each of those has a new copy with a unique name.
+Pass if after step 1 the folder has the same Live Link actor, retarget actor, AnimBlueprints, IK Rig, spring data asset and `<Mesh>_Avatar` as before (no copies with `_1`-style names), and after step 2 each of those has a new copy with a unique name.
 
 ---
 
@@ -189,7 +196,7 @@ Pass if the face follows with no curve map on the remapper, and blinking stops w
 **E-F1. Motion.** *(P2.1, P2.3, P1.12, P1.13)*
 1. Place the VRM 0.x and 1.0 Live Link actors and press **Simulate**; move and turn each actor with the gizmo, or play an animation.
 
-Pass if hair and skirts swing when the character moves or turns (no External Velocity needed; for a file whose springs name a `center`, such as VRoid Studio's `Root`, turn off **Use Spring Centers** on the spring node first), whole hair strands move rather than only their roots (VRM 0.x, P1.12), and on VRM 1.0 the tip joints move more freely where the file gives them lower stiffness (P1.13).
+Pass if hair and skirts swing when the character moves or turns (no External Velocity needed; for a file whose springs name a `center`, such as VRoid Studio's `Root`, turn off **Use Spring Centers** on the spring node first), whole hair strands move rather than only their roots (VRM 0.x, P1.12), the last bone of each VRoid hair and skirt chain swings too (its `_end` tail is a bone, #187), and on VRM 1.0 the tip joints move more freely where the file gives them lower stiffness (P1.13).
 
 **E-F2. Compared with a reference.** *(P2.1)*
 1. Record the same model and motion in UniVRM or three-vrm, and in the editor.
@@ -197,9 +204,9 @@ Pass if hair and skirts swing when the character moves or turns (no External Vel
 Pass if the swing, damping and rest direction look alike. Note which parameter differs most (stiffness has differed most before).
 
 **E-F3. Center bones.** *(P2.1)*
-1. With a model whose springs use a center (VRM 1.0 `center`, often the skirt), move the center bone's parent quickly.
+1. With **Use Spring Centers** on (the default; turn it back on if you turned it off in E-F1) and a model whose springs use a center (VRM 1.0 `center`, often the skirt), move the center bone's parent quickly.
 
-Pass if those springs don't lag behind the center.
+Pass if those springs don't lag behind the center. With **Use Spring Centers** off, the same springs follow the node's Simulation Space instead (they swing when the center's parent moves).
 
 **E-F4. Robustness in Play.** *(P1.14)*
 1. In **Play**, swap the spring data on a running character (for example in the level Blueprint, set the node's Spring Data to the other character's), teleport the character, and change its LOD (`r.ForceLOD 1`, then `r.ForceLOD -1`).
@@ -209,7 +216,7 @@ Pass if there's no crash and no stretched chains.
 **E-F5. Wrong spring data.** *(P2.3)*
 1. In an AnimBP, set the spring node's Spring Data to another character's asset and compile.
 
-Pass if the compiler lists the bones that aren't on the skeleton. Also note whether edits to the node's settings in the AnimBP editor reach the preview (not checked yet).
+Pass if the compiler lists the bones that aren't on the skeleton (with **Use Spring Centers** off, missing center bones aren't listed). Also note whether edits to the node's settings in the AnimBP editor reach the preview (not checked yet).
 
 **E-F6. Old spring data.** *(P1.16, optional)*
 1. Open a spring data asset imported before #115.
@@ -370,6 +377,7 @@ Copy this table into the issue or document where you record the run.
 | ID | Result | Notes |
 |---|---|---|
 | E-S1 | | |
+| E-S2 | | |
 | E-A1 | | T-05: facing; T-02: skins per mesh |
 | E-A2 | | |
 | E-A3 | | |

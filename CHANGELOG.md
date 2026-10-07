@@ -5,11 +5,12 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 ## [Unreleased]
 
 ### Added
+- A [User Guide](docs/USER_GUIDE.md) for both plugins: install, import a VRM avatar, stream VMC to it, expressions, spring bones, retargeting and troubleshooting. The root README now leads with it, and both plugin READMEs were corrected against the code (generated asset names and folders, option names, defaults, the Live Link actor's **Subject**, and several missing settings).
 - **Use Spring Centers** on the spring bone node. Turned off, springs that name a `center` bone are simulated in the node's Simulation Space instead, so moving and turning the character swings them (VRoid Studio gives every spring the `Root` center, which makes the character's own motion add nothing).
 
 ### Fixed
 - Spring nodes that no skin lists weren't made bones: VRoid Studio's `J_Sec_*_end` tails (22 in a typical avatar) and the leaves of a VRM 0.x bone group. In VRM 1.0 a joint whose tail is missing isn't simulated, so the last bone of each of those chains stayed still, and the spring data reported bones not in the skeleton. The skeleton now includes every spring node below a skin joint, with any nodes between it and that joint (also for collider shapes given only in `VRMC_node_collider`, and a `center` written as `{ "node": n }`). Reimport affected VRM files. A node between a spring node and its joint can sit above other joints, so a reimport can change existing bones' parents as well as add bones; skin joints keep their names.
-- VRM imports created their MToon material instances without a parent material (no textures, every slot on the default material) and made no avatar description. The material and avatar description pipelines were registered as class paths, which Interchange can't instantiate; they now ship as pipeline assets in `DefaultPipelines`, and registering the pipelines again replaces the old class-path entries.
+- VRM imports created their MToon material instances without a parent material (no textures, every slot on the default material) and made no avatar description. The material and avatar description pipelines were registered as class paths, which Interchange can't instantiate; they now ship as pipeline assets in `DefaultPipelines`. In a project registered with 1.0.0, run **Project Settings > Plugins > VRM Interchange > Register VRM Import Pipelines** again (it replaces the old class-path entries), then reimport the VRM files.
 
 ## [1.0.0] - 2026-09-29
 
@@ -96,5 +97,5 @@ The first release, after a review and refactor of both plugins (the [plan](Plann
 - Superseded planning documents moved to `docs/archive/`.
 - Both plugins are version 1.0.0.
 
-[Unreleased]: https://github.com/lifelike-and-believable/VMCLiveLink/compare/release/1.0.0...HEAD
+[Unreleased]: https://github.com/lifelike-and-believable/VMCLiveLink/compare/54b69ea...HEAD
 [1.0.0]: https://github.com/lifelike-and-believable/VMCLiveLink/releases

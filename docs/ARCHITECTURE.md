@@ -8,7 +8,7 @@ Both are built and tested on Windows (Win64) with UE 5.6 only.
 
 ## VMC Live Link
 
-### Modules
+### VMC modules
 
 ```mermaid
 graph LR
@@ -29,7 +29,7 @@ graph LR
 | **VMCLiveLink** | Runtime | The Live Link source (`FVMCLiveLinkSource`) and its factory and settings; the UDP receiver (`FVMCUdpReceiver`) and OSC parser (`VMCOscParser`); VMC message parsing (`VMCProtocol`); frame assembly (`FVMCFrameAssembler`); the humanoid skeleton table (`VMCHumanoid`); the sender filter; diagnostics (`VMCSourceDiagnostics`, `VMC.Stats`); the remapper (`UVMCLiveLinkRemapper` and its worker) and the mapping asset (`UVMCLiveLinkMappingAsset`); project settings (`UVMCLiveLinkSettings`). |
 | **VMCLiveLinkEditor** | Editor | The remapper's details panel (`FVMCLiveLinkRemapperCustomization`) with the live mapping table (`SVMCMappingTable`); the mapping asset's asset definition and factory; the retarget actor factory; reading editor metadata for the remapper (`UVMCLiveLinkRemapper::ReadAssetMetadata`). |
 
-### Data flow
+### VMC data flow
 
 ```mermaid
 graph LR
@@ -49,7 +49,7 @@ graph LR
 5. **Remap.** Live Link runs each subject's remapper. The source publishes VMC's names; `UVMCLiveLinkRemapper` builds an immutable `FVMCLiveLinkRemapperWorker` from its settings, which renames bones and curves, gives rotation-only bones the reference skeleton's rest translations, and adds normalizer curves. Its per-name work is resolved once in `RemapStaticData`; `RemapFrameData` copies by index.
 6. **Animate.** A Live Link Pose node in an Animation Blueprint reads the remapped subject.
 
-### Threading
+### VMC threading
 
 `FVMCLiveLinkSource` builds frames on one thread at a time: the receive thread by default, or the game thread when **Receive Thread** is off (decision D-1).
 
@@ -66,7 +66,7 @@ A skeletal mesh may carry editor metadata `VRM.Humanoid.<UnityBoneName>` = its b
 
 ## VRM Interchange
 
-### Modules
+### VRM modules
 
 ```mermaid
 graph TD
@@ -91,11 +91,11 @@ graph TD
 |---|---|---|
 | **VRMCore** | Runtime | `FVRMDocument`: a `.vrm`/`.glb`/`.gltf` file read and parsed once (JSON, nodes, version, and geometry through cgltf). `VRM::BuildParsedModel`: skeleton, meshes, morph targets, images and materials in UE space. The avatar data (humanoid map, expressions, look-at, meta) and its parser, the `UVRMAvatarDescription` asset, the MToon and material parameter parser, the coordinate conversion, and the VRM Expressions anim node. The only module that uses cgltf. |
 | **VRMInterchange** | Runtime | `UVRMTranslator`, the Interchange translator for `.vrm`: builds the Interchange node graph from the parsed model and serves mesh and texture payloads. The spring bone parser and validation. `VRM::ImportMessages`, which collects an import's warnings for the editor's report. |
-| **VRMInterchangeEditor** | Editor | The post-import pipelines: spring bones, IK Rig, Live Link scaffold and avatar description on `UVRMPipelineBase`, and the material pipeline, which derives from `UInterchangePipelineBase` directly; the IK Rig builder; the MToon master materials, built in C++; the import report (notification and message log); pipeline registration and project settings; the spring data details panel. |
+| **VRMInterchangeEditor** | Editor | The post-import pipelines: spring bones, IK Rig, Live Link scaffold and avatar description on `UVRMPipelineBase`, and the material pipeline, which derives from `UInterchangePipelineBase` directly; the IK Rig builder; the MToon master materials, built in C++; the import report (notification and message log); pipeline registration (each pipeline is registered as an asset in `Content/DefaultPipelines`, since Interchange instantiates only pipeline assets; a new pipeline needs one) and project settings; the spring data details panel. |
 | **VRMSpringBonesRuntime** | Runtime | `UVRMSpringBoneData` (the spring configuration asset and its custom version), `FVRMSpringSolver`, and the `FAnimNode_VRMSpringBones` anim node. |
 | **VRMSpringBonesEditor** | UncookedOnly | The AnimGraph nodes for spring bones and VRM Expressions. |
 
-### Data flow
+### VRM data flow
 
 ```mermaid
 graph LR
@@ -116,7 +116,7 @@ graph LR
 
 At runtime, `FAnimNode_VRMSpringBones` simulates the spring data on the animated pose, and `FAnimNode_VRMExpressions` turns expression curves into the avatar's morph target curves.
 
-### Threading
+### VRM threading
 
 - **Translation** runs where Interchange runs it, and **payloads** run on Interchange's worker threads, in parallel. They share the translator's `FVRMParsedModel`, which is read-only after `Translate`; the one mutable shared member is the cached base mesh payload, under `BasePayloadLock`.
 - **Pipelines:** `ExecutePipeline` may run on any thread (`UVRMPipelineBase::CanExecuteOnAnyThread`); post-import runs on the game thread, since it creates assets. The material pipeline runs entirely on the game thread, since it builds materials.
@@ -148,13 +148,13 @@ Both conversions put the character's forward (Unity +Z, VRM 1.0 +Z) on UE +Y, so
 | `M_VRM_MToon`, `M_VRM_MToonOutline` | Built by the plugin in C++, with the graph version stored as an internal scalar parameter. A newer plugin whose graph changed rebuilds them in place, keeping references. |
 | `UVMCLiveLinkMappingAsset` | `SignatureVersion`. Signatures saved by an older version of `ComputeSignature` are recomputed from the example meshes the first time the asset is matched (`MatchesMesh`) or edited, not in `PostLoad` (loading other assets there isn't safe). Until then the asset's registry tag doesn't list them. |
 | Live Link connection string | `FVMCConnectionSettings::FromString` reads every earlier format; unknown keys are ignored. |
-| Generated assets (IK Rig, AnimBP, actor) | Not versioned. By default a reimport creates new copies under unique names. With the pipelines' **Update Existing** option, the IK Rig is rebuilt in place, and the actor and AnimBP are reused (pointed at the new mesh, user edits kept); they don't pick up changes to the plugin's templates. |
+| Generated assets (IK Rig, AnimBP, actor) | Not versioned. By default a reimport creates new copies under unique names. With the pipelines' **Update Existing** option, the IK Rig is rebuilt in place, and the actor and AnimBP are reused (pointed at the new mesh, user edits kept); they don't pick up changes to the plugin's templates. The avatar description is updated in place by default, and the shipped spring bone and IK Rig pipeline assets turn **Update Existing** on. |
 
 A change to a saved `USTRUCT`/`UCLASS` layout, or to what saved data means, must add a version and an upgrade path, with a test that loads the old form (rule 5 of the plan's B.0 rules).
 
 ## Test strategy
 
-Every test is an Unreal automation test, run headless by CI on every pull request (`Automation RunTests VRM.+VMC.`). A pull request is mergeable only with every test passing and no test reporting a warning. CI fails on a failed test; the warning count is checked by hand, on the `Tests:` line of the test step.
+Every test is an Unreal automation test, run headless by CI on every pull request (`Automation RunTests VRM.+VMC.`). Branch protection on `main` requires the CI check (`build-and-test`), so a pull request with a failed test can't merge. No test may report a warning either, but CI doesn't fail on one: the warning count is checked by hand, on the `Tests:` line of the test step (also in CI's success comment).
 
 | Area | Tests | What they cover |
 |---|---|---|
@@ -170,4 +170,4 @@ Every test is an Unreal automation test, run headless by CI on every pull reques
 
 **Fixtures.** The VRM fixtures in `Plugins/VRMInterchange/Tests/Fixtures` are small synthetic files made by `scripts/make_vrm_fixtures.py`, each with an `.expected.json` of the values an importer should produce. `scripts/check_vrm_fixtures.py` validates them with cgltf. Only synthetic fixtures and captures of our own are committed (decision D-8). The VMC captures are recorded or generated with `scripts/vmc_sender.py`.
 
-**What tests don't cover:** the editor UI (panels, notifications, buttons) and real senders and avatars. Those are checked by hand in the editor; the plan lists the checks for each phase.
+**What tests don't cover:** the editor UI (panels, notifications, buttons) and real senders and avatars. Those are checked by hand in the editor, with the steps in [EDITOR_TESTS.md](EDITOR_TESTS.md).

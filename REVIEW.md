@@ -19,7 +19,8 @@ doesn't need.
     equivalent.
 - An engine API the reviewer can't confirm exists in UE 5.6 with that signature is reported as
   **Unverified API**, blocking until the author confirms it (rule 2).
-- Every finding is fixed or answered on its thread before the merge.
+- Every finding is fixed or answered on the pull request (its description or a comment) before the
+  merge.
 
 ## What to check
 
@@ -35,6 +36,8 @@ with them.
 - **Module dependencies:** every new include or symbol needs its module in `Build.cs`. Examples:
   `EKeys` needs InputCore, `FMessageLogModule` needs MessageLog, details views need
   PropertyEditor. Editor-only modules in a runtime module belong under `Target.bBuildEditor`.
+- **Interchange pipelines:** a pipeline registered in the project settings must be a pipeline asset
+  (`/VRMInterchange/DefaultPipelines/...`); Interchange can't instantiate a class path (#184).
 - **Shipping and game builds:**
   - Log category objects don't exist without logging (`FNoLoggingCategory`).
   - Editor-only members and functions need `WITH_EDITOR` or `WITH_EDITORONLY_DATA` guards on
@@ -70,7 +73,8 @@ radians), axis conversions and index bases.
 ### 5. Tests
 
 - Does the test fail if the change is reverted? Watch for tests that pass trivially.
-- **Warnings:** a warning logged during a test counts against CI's 0-warning rule. An expected one
+- **Warnings:** a warning logged during a test breaks the 0-warning rule (checked by hand on CI's
+  `Tests:` line; CI itself stays green). An expected one
   (`AddExpectedError`) reaches other output devices demoted to Verbose.
 - **Shared runner:** don't assert on timing, on free ports without a fallback, or on project
   `Config/*.ini` values (rule 11).
@@ -85,4 +89,5 @@ radians), axis conversions and index bases.
   never save packages; they mark them dirty.
 - **Logging:** use the plugin log categories (no new `LogTemp`), and send import problems to the
   VRM Import message log.
-- **Docs:** if behaviour changes, the README and the plan's task status say so (rule 9).
+- **Docs:** if behaviour changes, the plugin's README (and the User Guide, if it covers it) and
+  `CHANGELOG.md` say so in the same PR (rule 9).

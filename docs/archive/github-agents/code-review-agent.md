@@ -1,3 +1,5 @@
+> **Archived (2026-10-06).** Superseded by [CONTRIBUTING.md](../../../CONTRIBUTING.md), [REVIEW.md](../../../REVIEW.md) and [`.claude/agents/code-reviewer.md`](../../../.claude/agents/code-reviewer.md). Not maintained.
+
 ---
 name: Code Review Agent
 description: Performs thorough code reviews ensuring quality, security, and alignment with VMCLiveLink standards and Unreal Engine 5.6+ best practices.
