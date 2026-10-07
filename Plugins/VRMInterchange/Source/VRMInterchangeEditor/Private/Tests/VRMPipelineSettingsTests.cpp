@@ -4,7 +4,6 @@
 
 #include "Misc/AutomationTest.h"
 #include "InterchangeManager.h"
-#include "PackageTools.h"
 #include "UObject/Package.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMSpringBonesPostImportPipeline.h"
@@ -34,19 +33,44 @@ namespace VRMPipelineSettingsTestsPrivate
 			S.bOverwriteExistingPostProcessABP, S.bReusePostProcessABPOnReimport);
 	}
 
-	/** Every settings-backed flag, flipped, and back. */
-	void FlipSettings(UVRMInterchangeSettings& S)
+	/** Sets every settings-backed spring flag of a pipeline to the opposite of the project setting. */
+	void SetSpringFlagsAgainstSettings(UVRMSpringBonesPostImportPipeline& P, const UVRMInterchangeSettings& S)
 	{
-		S.bGenerateSpringBoneData = !S.bGenerateSpringBoneData;
-		S.bOverwriteExistingSpringAssets = !S.bOverwriteExistingSpringAssets;
-		S.bGeneratePostProcessAnimBP = !S.bGeneratePostProcessAnimBP;
-		S.bAssignPostProcessABP = !S.bAssignPostProcessABP;
-		S.bOverwriteExistingPostProcessABP = !S.bOverwriteExistingPostProcessABP;
-		S.bReusePostProcessABPOnReimport = !S.bReusePostProcessABPOnReimport;
-		S.bGenerateIKRigAssets = !S.bGenerateIKRigAssets;
-		S.bGenerateLiveLinkEnabledActor = !S.bGenerateLiveLinkEnabledActor;
-		S.bGenerateAvatarDescription = !S.bGenerateAvatarDescription;
+		P.bGenerateSpringBoneData = !S.bGenerateSpringBoneData;
+		P.bOverwriteExisting = !S.bOverwriteExistingSpringAssets;
+		P.bGeneratePostProcessAnimBP = !S.bGeneratePostProcessAnimBP;
+		P.bAssignPostProcessABP = !S.bAssignPostProcessABP;
+		P.bOverwriteExistingPostProcessABP = !S.bOverwriteExistingPostProcessABP;
+		P.bReusePostProcessABPOnReimport = !S.bReusePostProcessABPOnReimport;
 	}
+
+	/** The project settings this file changes, restored when the scope ends. */
+	struct FScopedSettings
+	{
+		UVRMInterchangeSettings* Settings = GetMutableDefault<UVRMInterchangeSettings>();
+		const bool bSpring = Settings->bGenerateSpringBoneData;
+		const bool bSpringUpdate = Settings->bOverwriteExistingSpringAssets;
+		const bool bPostProcess = Settings->bGeneratePostProcessAnimBP;
+		const bool bAssign = Settings->bAssignPostProcessABP;
+		const bool bUpdateABP = Settings->bOverwriteExistingPostProcessABP;
+		const bool bReuseABP = Settings->bReusePostProcessABPOnReimport;
+		const bool bIKRig = Settings->bGenerateIKRigAssets;
+		const bool bLiveLink = Settings->bGenerateLiveLinkEnabledActor;
+		const bool bAvatar = Settings->bGenerateAvatarDescription;
+		~FScopedSettings()
+		{
+			Settings->bGenerateSpringBoneData = bSpring;
+			Settings->bOverwriteExistingSpringAssets = bSpringUpdate;
+			Settings->bGeneratePostProcessAnimBP = bPostProcess;
+			Settings->bAssignPostProcessABP = bAssign;
+			Settings->bOverwriteExistingPostProcessABP = bUpdateABP;
+			Settings->bReusePostProcessABPOnReimport = bReuseABP;
+			Settings->bGenerateIKRigAssets = bIKRig;
+			Settings->bGenerateLiveLinkEnabledActor = bLiveLink;
+			Settings->bGenerateAvatarDescription = bAvatar;
+			UVRMPipelineBase::ApplyProjectSettingsToLoadedAssets();
+		}
+	};
 }
 
 // The plugin's pipeline assets follow the project settings, not values saved in them: the spring
@@ -57,16 +81,18 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelineAssetsFollowSettingsTest, "VRM.Pipe
 bool FVRMPipelineAssetsFollowSettingsTest::RunTest(const FString& Parameters)
 {
 	using namespace VRMPipelineSettingsTestsPrivate;
-	UVRMInterchangeSettings* Settings = GetMutableDefault<UVRMInterchangeSettings>();
+	FScopedSettings Scoped;
+	UVRMInterchangeSettings* Settings = Scoped.Settings;
 	UVRMSpringBonesPostImportPipeline* Spring = LoadObject<UVRMSpringBonesPostImportPipeline>(nullptr, SpringAsset);
 	UVRMIKRigPostImportPipeline* IKRig = LoadObject<UVRMIKRigPostImportPipeline>(nullptr, IKRigAsset);
 	UVRMLiveLinkPostImportPipeline* LiveLink = LoadObject<UVRMLiveLinkPostImportPipeline>(nullptr, LiveLinkAsset);
 	UVRMAvatarDescriptionPipeline* Avatar = LoadObject<UVRMAvatarDescriptionPipeline>(nullptr, AvatarAsset);
-	if (!TestNotNull(TEXT("Settings"), Settings) || !TestNotNull(TEXT("Spring pipeline asset"), Spring) || !TestNotNull(TEXT("IK Rig pipeline asset"), IKRig)
+	if (!TestNotNull(TEXT("Spring pipeline asset"), Spring) || !TestNotNull(TEXT("IK Rig pipeline asset"), IKRig)
 		|| !TestNotNull(TEXT("Live Link pipeline asset"), LiveLink) || !TestNotNull(TEXT("Avatar pipeline asset"), Avatar))
 	{
 		return false;
 	}
+	TestTrue(TEXT("The plugin's pipeline assets follow the project settings"), Spring->FollowsProjectSettings());
 
 	// As loaded, with the project's settings (whatever they are).
 	TestEqual(TEXT("Spring asset as loaded"), SpringFlags(*Spring), SettingsSpringFlags(*Settings));
@@ -74,8 +100,19 @@ bool FVRMPipelineAssetsFollowSettingsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Live Link asset as loaded"), LiveLink->bGenerateLiveLinkEnabledActor, Settings->bGenerateLiveLinkEnabledActor);
 	TestEqual(TEXT("Avatar asset as loaded"), Avatar->bGenerateAvatarDescription, Settings->bGenerateAvatarDescription);
 
+	// Loading: values in the asset (as if saved there) give way to the settings. This runs the asset's
+	// own load step again on the loaded object, as loading the package does.
+	SetSpringFlagsAgainstSettings(*Spring, *Settings);
+	Spring->SetFlags(RF_NeedPostLoad);
+	Spring->ConditionalPostLoad();
+	TestEqual(TEXT("Spring asset after loading with other saved values"), SpringFlags(*Spring), SettingsSpringFlags(*Settings));
+
 	// An edited setting reaches the loaded assets, and the copy Interchange makes for an import.
-	FlipSettings(*Settings);
+	Settings->bGeneratePostProcessAnimBP = !Settings->bGeneratePostProcessAnimBP;
+	Settings->bOverwriteExistingSpringAssets = !Settings->bOverwriteExistingSpringAssets;
+	Settings->bGenerateIKRigAssets = !Settings->bGenerateIKRigAssets;
+	Settings->bGenerateLiveLinkEnabledActor = !Settings->bGenerateLiveLinkEnabledActor;
+	Settings->bGenerateAvatarDescription = !Settings->bGenerateAvatarDescription;
 	UVRMPipelineBase::ApplyProjectSettingsToLoadedAssets();
 	TestEqual(TEXT("Spring asset after a settings edit"), SpringFlags(*Spring), SettingsSpringFlags(*Settings));
 	TestEqual(TEXT("IK Rig asset after a settings edit"), IKRig->bGenerateIKRig, Settings->bGenerateIKRigAssets);
@@ -89,27 +126,53 @@ bool FVRMPipelineAssetsFollowSettingsTest::RunTest(const FString& Parameters)
 	{
 		AddError(TEXT("Interchange made no spring pipeline instance from the asset"));
 	}
+	return true;
+}
 
-	// Loading the assets with settings that differ from the values saved in them: the settings win.
-	// (The spring asset is saved with its post-process and Update Existing flags on.)
-	TArray<UPackage*> Packages = { Spring->GetPackage(), IKRig->GetPackage(), LiveLink->GetPackage(), Avatar->GetPackage() };
-	FText ReloadError;
-	UPackageTools::ReloadPackages(Packages, ReloadError, EReloadPackagesInteractionMode::AssumePositive);
-	Spring = LoadObject<UVRMSpringBonesPostImportPipeline>(nullptr, SpringAsset);
-	IKRig = LoadObject<UVRMIKRigPostImportPipeline>(nullptr, IKRigAsset);
-	LiveLink = LoadObject<UVRMLiveLinkPostImportPipeline>(nullptr, LiveLinkAsset);
-	Avatar = LoadObject<UVRMAvatarDescriptionPipeline>(nullptr, AvatarAsset);
-	if (TestNotNull(TEXT("Spring asset reloaded"), Spring) && TestNotNull(TEXT("IK Rig asset reloaded"), IKRig)
-		&& TestNotNull(TEXT("Live Link asset reloaded"), LiveLink) && TestNotNull(TEXT("Avatar asset reloaded"), Avatar))
+// The import dialog restores the values used last time, then calls PreDialogCleanup: the project
+// settings win for a new import.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelineDialogTakesSettingsTest, "VRM.Pipeline.Settings.DialogTakesProjectSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMPipelineDialogTakesSettingsTest::RunTest(const FString& Parameters)
+{
+	using namespace VRMPipelineSettingsTestsPrivate;
+	FScopedSettings Scoped;
+	UVRMSpringBonesPostImportPipeline* Instance = Cast<UVRMSpringBonesPostImportPipeline>(UE::Interchange::GeneratePipelineInstance(FSoftObjectPath(SpringAsset)));
+	if (!TestNotNull(TEXT("Spring pipeline instance"), Instance))
 	{
-		TestEqual(TEXT("Spring asset loaded with other settings"), SpringFlags(*Spring), SettingsSpringFlags(*Settings));
-		TestEqual(TEXT("IK Rig asset loaded with other settings"), IKRig->bGenerateIKRig, Settings->bGenerateIKRigAssets);
-		TestEqual(TEXT("Live Link asset loaded with other settings"), LiveLink->bGenerateLiveLinkEnabledActor, Settings->bGenerateLiveLinkEnabledActor);
-		TestEqual(TEXT("Avatar asset loaded with other settings"), Avatar->bGenerateAvatarDescription, Settings->bGenerateAvatarDescription);
+		return false;
 	}
+	TestFalse(TEXT("An import's copy isn't a pipeline asset"), Instance->FollowsProjectSettings());
+	SetSpringFlagsAgainstSettings(*Instance, *Scoped.Settings); // as the dialog's saved values might
+	Instance->PreDialogCleanup(NAME_None);
+	TestEqual(TEXT("Spring options when the dialog opens"), SpringFlags(*Instance), SettingsSpringFlags(*Scoped.Settings));
+	return true;
+}
 
-	FlipSettings(*Settings);
-	UVRMPipelineBase::ApplyProjectSettingsToLoadedAssets();
+// A copy of a pipeline keeps its values, as Interchange copies them for reimport and "Import All",
+// even where a value equals the class default and the project setting differs.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelineCopyKeepsChoicesTest, "VRM.Pipeline.Settings.CopyKeepsChoices",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVRMPipelineCopyKeepsChoicesTest::RunTest(const FString& Parameters)
+{
+	using namespace VRMPipelineSettingsTestsPrivate;
+	FScopedSettings Scoped;
+	const UVRMSpringBonesPostImportPipeline* Defaults = GetDefault<UVRMSpringBonesPostImportPipeline>();
+	// Every setting opposite to the class default, every choice equal to it.
+	Scoped.Settings->bGenerateSpringBoneData = !Defaults->bGenerateSpringBoneData;
+	Scoped.Settings->bOverwriteExistingSpringAssets = !Defaults->bOverwriteExisting;
+	Scoped.Settings->bGeneratePostProcessAnimBP = !Defaults->bGeneratePostProcessAnimBP;
+	Scoped.Settings->bAssignPostProcessABP = !Defaults->bAssignPostProcessABP;
+	Scoped.Settings->bOverwriteExistingPostProcessABP = !Defaults->bOverwriteExistingPostProcessABP;
+	Scoped.Settings->bReusePostProcessABPOnReimport = !Defaults->bReusePostProcessABPOnReimport;
+
+	UVRMSpringBonesPostImportPipeline* Chosen = NewObject<UVRMSpringBonesPostImportPipeline>(GetTransientPackage());
+	const FString ChosenFlags = SpringFlags(*Chosen);
+	TestEqual(TEXT("The choices equal the class defaults"), ChosenFlags, SpringFlags(*Defaults));
+	const UVRMSpringBonesPostImportPipeline* Copy = DuplicateObject(Chosen, GetTransientPackage());
+	TestEqual(TEXT("A copy keeps the choices"), SpringFlags(*Copy), ChosenFlags);
 	return true;
 }
 

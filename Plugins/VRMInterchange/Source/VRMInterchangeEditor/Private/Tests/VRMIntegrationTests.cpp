@@ -236,8 +236,10 @@ bool FVRMIntegrationTestPipelineSettings::RunTest(const FString& Parameters)
     if (Settings)
     {
         // The settings are config (DefaultGame.ini), so their values belong to the project and are
-        // not asserted here. What must hold is that new import pipelines pick them up.
-        const UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+        // not asserted here. What must hold is that import pipelines pick them up (the dialog and the
+        // plugin's pipeline assets apply them; ApplyProjectSettings is what both call).
+        UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+        Pipeline->ApplyProjectSettings();
         TestEqual(TEXT("Pipeline follows bGenerateSpringBoneData"), Pipeline->bGenerateSpringBoneData, Settings->bGenerateSpringBoneData);
         TestEqual(TEXT("Pipeline follows bGeneratePostProcessAnimBP"), Pipeline->bGeneratePostProcessAnimBP, Settings->bGeneratePostProcessAnimBP);
         TestEqual(TEXT("Pipeline follows bAssignPostProcessABP"), Pipeline->bAssignPostProcessABP, Settings->bAssignPostProcessABP);

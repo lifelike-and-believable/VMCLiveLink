@@ -34,17 +34,21 @@ public:
 
 	/**
 	 * Copies the project settings (UVRMInterchangeSettings) that are this pipeline's defaults onto it.
-	 * Runs when a pipeline is created and when a pipeline asset loads, so the plugin's pipeline
-	 * assets (DefaultPipelines) follow the project settings rather than the values saved in them.
-	 * The import dialog then changes the copy Interchange makes, for one import.
+	 * Runs when one of the plugin's pipeline assets loads (so they follow the settings rather than
+	 * the values saved in them), when a setting is edited, and when the import dialog opens for a
+	 * new import (after it restored the values used last time). The dialog's choices then apply to
+	 * that import; a reimport keeps the choices stored with the asset.
 	 */
 	virtual void ApplyProjectSettings() {}
 
-	/** Applies the project settings again to every loaded pipeline asset, after they change. */
+	/** True for the plugin's own pipeline assets, which follow the project settings. */
+	bool FollowsProjectSettings() const;
+
+	/** Applies the project settings again to the plugin's loaded pipeline assets, after they change. */
 	static void ApplyProjectSettingsToLoadedAssets();
 
-	virtual void PostInitProperties() override;
 	virtual void PostLoad() override;
+	virtual void PreDialogCleanup(const FName PipelineStackName) override;
 
 protected:
 	virtual void ExecutePostImportPipeline(const UInterchangeBaseNodeContainer* BaseNodeContainer, const FString& NodeKey, UObject* CreatedAsset, bool bIsAReimport) override;

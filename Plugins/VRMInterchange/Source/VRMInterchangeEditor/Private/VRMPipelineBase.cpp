@@ -17,32 +17,40 @@
 #include "VRMPipelineTargets.h"
 #include "UObject/UObjectIterator.h"
 
-void UVRMPipelineBase::PostInitProperties()
+// Where the project settings apply. Not at construction: Interchange copies pipelines (from the
+// pipeline assets for an import, from the import data for a reimport, from the first file's for
+// "Import All") with DuplicateObject, which writes only what differs from the class defaults, so a
+// copy seeded at construction would take the project setting wherever the choice equals the default.
+bool UVRMPipelineBase::FollowsProjectSettings() const
 {
-	Super::PostInitProperties();
-	if (!HasAnyFlags(RF_ClassDefaultObject))
-	{
-		ApplyProjectSettings();
-	}
+	// The plugin's own pipeline assets (DefaultPipelines). A studio's copy elsewhere keeps its values,
+	// and so does a pipeline stored in an asset's import data (not an asset).
+	return IsAsset() && GetPackage()->GetName().StartsWith(TEXT("/VRMInterchange/"));
 }
 
 void UVRMPipelineBase::PostLoad()
 {
 	Super::PostLoad();
-	// A pipeline asset (the plugin's DefaultPipelines) follows the project settings, not the values
-	// saved with it: a save in a project with other settings would otherwise bake those in. A
-	// pipeline saved inside an asset's import data (for reimport) isn't an asset, and keeps its values.
-	if (IsAsset())
+	// Not the values saved in the asset: a save in a project with other settings would bake those in.
+	if (FollowsProjectSettings())
 	{
 		ApplyProjectSettings();
 	}
+}
+
+void UVRMPipelineBase::PreDialogCleanup(const FName PipelineStackName)
+{
+	Super::PreDialogCleanup(PipelineStackName);
+	// The import dialog has just restored the values used last time (LoadSettings); the project
+	// settings are the defaults instead. Interchange doesn't call this for a reimport.
+	ApplyProjectSettings();
 }
 
 void UVRMPipelineBase::ApplyProjectSettingsToLoadedAssets()
 {
 	for (TObjectIterator<UVRMPipelineBase> It; It; ++It)
 	{
-		if (It->IsAsset())
+		if (It->FollowsProjectSettings())
 		{
 			It->ApplyProjectSettings();
 		}
