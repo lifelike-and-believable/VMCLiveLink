@@ -196,6 +196,8 @@ bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 	}
 	Sender->SendTo(UnknownPacket.GetData(), UnknownPacket.Num(), Sent, *To);
 
+	// Wait for every count, the packets too: a report reads the packet count before the message
+	// counts, so while packets are still arriving it can list a packet's messages but not the packet.
 	FString Report;
 	const double Deadline = FPlatformTime::Seconds() + 3.0;
 	while (FPlatformTime::Seconds() < Deadline)
@@ -203,7 +205,7 @@ bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 		if (Source->GetSourceMachineName().ToString() == TEXT("127.0.0.1"))
 		{
 			Report = Source->GetStatsReport();
-			if (Report.Contains(TEXT("/VMC/Ext/Set/Period")) && Report.Contains(TEXT("(total 5)")))
+			if (Report.Contains(TEXT("/VMC/Ext/Set/Period")) && Report.Contains(TEXT("(total 5)")) && Report.Contains(TEXT("(total 6)")))
 			{
 				break;
 			}
