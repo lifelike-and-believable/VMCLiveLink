@@ -51,16 +51,17 @@ Headless, as CI runs them:
 
 ### CI and releases
 
-- **PR Build and Tests** (`pr-build.yml`) runs on every pull request from a branch in this repository (whatever its base, so stacked pull requests are built too), and manually via **Actions → PR Build and Tests**. Pull requests from forks aren't built; a maintainer re-opens them from a branch here. It checks the copyright headers, runs the three builds above and the `VRM.+VMC.` tests, and uploads the test report. On success it comments on the pull request with the head commit and the test counts. `main` requires its check (`build-and-test`) before merging, so GitHub refuses a merge while it is failing or pending.
+- **PR Build and Tests** (`pr-build.yml`) runs on every pull request from a branch in this repository when it is opened, reopened or pushed to (whatever its base, so stacked pull requests are built too), and manually via **Actions → PR Build and Tests**. Editing a pull request doesn't run it, and a retargeted pull request keeps its commit's result: push a commit or use Run workflow to rebuild. Pull requests from forks aren't built and fail the check; a maintainer re-opens them from a branch here. (A fork's pull request runs its own copy of the workflow, so this holds only while that copy is unmodified: the repository's approval rule for fork workflows is what keeps fork code off the self-hosted runner.) For each supported engine (UE 5.6, 5.7 and 5.8), a job `build (<engine>)` runs the three builds above and the `VRM.+VMC.` tests, and uploads that engine's test report; the 5.6 job also checks the copyright headers and the content's package versions (below). Then `build-and-test` (on a GitHub-hosted runner) fails unless every engine's job passed, and on success comments on the pull request with the head commit and each engine's test counts (not for a manual run). `main` requires `build-and-test` before merging, so GitHub refuses a merge while any engine is failing or pending (admins can bypass it).
 - **Fab Plugin Builds** (`fab-plugin-build.yml`) runs on a `release/*` tag push (e.g. `release/1.0.0`) or manually via **Actions → Fab Plugin Builds**. It checks the headers, builds both plugins against UE 5.6, and produces Fab-ready zips (a combined package plus one per plugin) as artifacts. A tag push also publishes them to a GitHub Release; a manual run only builds the artifacts.
 - **Auto-fix Copyright Headers** (`header-autofix.yml`), run manually with a plugin folder and holder text, commits missing or outdated headers on a new branch and opens a pull request. Pull requests it opens don't trigger **PR Build and Tests**: run it on the branch (**Actions → PR Build and Tests → Run workflow**), or push a commit to the branch.
 
 ### CI runner
 
-The workflows run on a self-hosted Windows runner with UE 5.6 at `C:\Program Files\Epic Games\UE_5.6`. If a build fails without a code cause:
+The builds run on a self-hosted Windows runner with UE 5.6, 5.7 and 5.8 at `C:\Program Files\Epic Games\UE_<version>`. The engine jobs run one after another on it, so a pull request takes about three times as long as one engine's build. If a build fails without a code cause:
 
 - **`dubious ownership`, or `Not in a Git repository` in the Git LFS step:** the runner service's account changed (it runs as SYSTEM) and its work folder was created by another account. Delete `C:\actions-runner\_work\VMCLiveLink` on the runner so it is recreated, then re-run the job.
 - **Error 4551 (Application Control blocked a DLL):** re-run the job; don't change the code.
+- **The job was not started because it repeatedly failed to be acquired:** the runner didn't pick up the job (it was offline or busy). Re-run the job.
 
 ### Editor checks
 
@@ -92,6 +93,7 @@ What automated tests can't confirm (behaviour seen in the editor, real VRM files
   Don't add `LogTemp`. Import problems also go on the import report (`VRM::ImportMessages` collects warnings logged during an import).
 - **Threading.** Say in a comment which thread a function or member is used on, when it isn't the game thread. See Threading for [VMC Live Link](docs/ARCHITECTURE.md#vmc-threading) and [VRM Interchange](docs/ARCHITECTURE.md#vrm-threading).
 - **Saved data.** A change to a saved struct or class layout, or to what saved data means, adds a custom version entry and a `PostLoad` or `Serialize` upgrade, with a test that loads the old form. See [Asset versioning](docs/ARCHITECTURE.md#asset-versioning).
+- **Content is saved from the oldest supported engine (UE 5.6).** An engine can't load a package a newer engine saved, so open the project with 5.6 when changing content, and don't save it from 5.7 or 5.8 (an editor that re-saves on load counts). CI's 5.6 job runs `scripts/check_content_versions.ps1`, which fails on any tracked `.uasset` or `.umap` newer than 5.6 writes; run it yourself after `git lfs pull`.
 - **Binary assets.** Prefer code to `.uasset` edits (the IK Rigs and MToon materials are built in code for this reason). If a `.uasset` must change, describe the change in the pull request, since reviewers can't diff it.
 - **Tests don't depend on project config.** A test that reads settings compares against the loaded values, or sets what it needs and restores it.
 - **Docs travel with code.** A change in behaviour updates the plugin's README, the [User Guide](docs/USER_GUIDE.md) if it covers it, and the root `CHANGELOG.md` in the same pull request.
@@ -100,11 +102,11 @@ What automated tests can't confirm (behaviour seen in the editor, real VRM files
 ## Submitting changes
 
 1. **One task per branch and pull request.** Keep the diff to what the change needs.
-2. **Build and test** as above: the Editor target without unity, the Game target in Development and Shipping, and the `VRM.+VMC.` tests with no failures or warnings.
+2. **Build and test** as above: the Editor target without unity, the Game target in Development and Shipping, and the `VRM.+VMC.` tests with no failures or warnings. CI does this on every supported engine; locally, at least on the engine your change concerns.
 3. **Review your diff** against the checklist in [REVIEW.md](REVIEW.md): threading, lifetimes, saved data, unity-build collisions, Shipping-only breaks, and tests that could pass without testing anything.
 4. **Open the pull request** against `main`. Describe what changed and why, what you verified, and anything you couldn't verify (such as behaviour only visible in the editor).
 5. **Review.** Every pull request is reviewed against `REVIEW.md` before it is merged. In this repository an automated reviewer (`.claude/agents/code-reviewer.md`) reviews each pull request; its findings, and what was done about each, are recorded on the pull request (in its description or a comment). Each finding must be fixed, or answered there, before merging. A blocking finding whose fix changes code gets a second review.
-6. **CI** (`PR Build and Tests`, check `build-and-test`) must pass on the latest commit: header check, the three builds, and the tests. Branch protection on `main` requires that check. It doesn't catch warnings: the `Tests:` line, repeated in CI's success comment on the pull request, must read `0 passed with warnings`.
+6. **CI** (`PR Build and Tests`, check `build-and-test`) must pass on the latest commit: header and content checks, the three builds and the tests, on every engine. Branch protection on `main` requires that check. It doesn't catch warnings: each engine's `Tests:` line, repeated in CI's success comment on the pull request, must read `0 passed with warnings`.
 7. **Merge** by squash, once CI is green and every review finding is resolved. Branch protection doesn't require the branch to be up to date with `main`, so after merging `main` in, do the check below.
 
 If you merge `main` into your branch, run `git diff origin/main HEAD --stat` before pushing and check that it shows only your change. Git can merge two identical additions into a duplicate without reporting a conflict.

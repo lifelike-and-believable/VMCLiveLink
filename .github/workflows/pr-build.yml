@@ -1,43 +1,54 @@
 name: PR Build and Tests
 
 # Compiles both plugins (Editor and Game targets) and runs the plugin automation tests on every
-# pull request, so regressions are caught before merge. Release packaging stays in
-# fab-plugin-build.yml.
+# pull request, on each supported engine, so regressions are caught before merge. Release
+# packaging stays in fab-plugin-build.yml.
+#
+# One job per engine ("build (5.6)" and so on), then "build-and-test", the check main requires: it
+# fails unless every engine's job succeeded, and posts the success comment.
 
 on:
-  # Every same-repo pull request, whatever its base, so stacked PRs are built too. "edited"
-  # is included so that retargeting a PR (for example to main after its base merges) builds it;
-  # the job skips other edits such as title or description changes.
+  # Every same-repo pull request, whatever its base, so stacked PRs are built too. Not on "edited":
+  # a title edit would start a run whose required check is skipped, and a skipped required check
+  # counts as passing, even over a failed build of the same commit. The check belongs to the head
+  # commit, so a retargeted PR keeps its result; push a commit or use Run workflow to rebuild it.
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    # The runner is self-hosted: never run code from forks on it. For "edited" events, only a
-    # base-branch change needs a new build.
+  build:
+    name: build (${{ matrix.engine }})
+    # The runner is self-hosted: never run code from forks on it (build-and-test fails them instead).
+    # A fork's pull request runs its own copy of this file, so this guards only an unmodified copy;
+    # what keeps fork code off the runner is the repository's approval rule for fork workflows.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
-       (github.event.action != 'edited' || github.event.changes.base != null))
-    # Job-level so that a skipped run (a title edit) doesn't cancel a build in progress.
+      github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      # Every engine reports, so one failure doesn't hide another.
+      fail-fast: false
+      matrix:
+        # The supported engines, oldest first. The oldest also checks the copyright headers and the
+        # content's package versions. The runner has each at C:\Program Files\Epic Games\UE_<version>.
+        engine: ['5.6', '5.7', '5.8']
+    # A newer push cancels this pull request's build on the same engine. Per engine, so that the
+    # engines' jobs don't cancel each other.
     concurrency:
-      group: pr-build-${{ github.event.pull_request.number || github.ref }}
+      group: pr-build-${{ github.event.pull_request.number || github.ref }}-${{ matrix.engine }}
       cancel-in-progress: true
     runs-on: [self-hosted, Windows, X64]
-    # pull-requests: write only for the success comment (the last step).
     permissions:
       contents: read
-      pull-requests: write
     timeout-minutes: 120
     defaults:
       run:
         shell: powershell
     env:
-      ENGINE_ROOT: 'C:\Program Files\Epic Games\UE_5.6'
+      ENGINE_ROOT: 'C:\Program Files\Epic Games\UE_${{ matrix.engine }}'
       PROJECT_FILE: 'VMCLiveLinkProject.uproject'
       HEADER_HOLDER: 'Lifelike & Believable Animation Design, Inc. | Athomas Goldberg'
       # Test path prefixes, separated by '+' (RunTests syntax). ';' would end the RunTests command.
@@ -57,6 +68,7 @@ jobs:
           git lfs pull
 
       - name: Verify copyright headers (both plugins)
+        if: matrix.engine == '5.6'
         run: |
           $failed = $false
           foreach ($pd in @('Plugins/VMCLiveLink', 'Plugins/VRMInterchange')) {
@@ -65,6 +77,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $failed = $true }
           }
           if ($failed) { exit 1 }
+
+      # Content saved by a newer engine can't be loaded by the oldest (see CONTRIBUTING).
+      - name: Check content package versions
+        if: matrix.engine == '5.6'
+        run: ./scripts/check_content_versions.ps1 -MaxFileVersionUE5 1017
 
       - name: "Build Editor target (Win64 Development, non-unity: every file must include what it uses)"
         run: |
@@ -103,7 +120,6 @@ jobs:
           $Report = Get-Content $Index -Raw -Encoding UTF8 | ConvertFrom-Json
           $Ran = $Report.succeeded + $Report.succeededWithWarnings + $Report.failed
           Write-Host "Tests: $($Report.succeeded) passed, $($Report.succeededWithWarnings) passed with warnings, $($Report.failed) failed, $($Report.notRun) not run"
-          "TEST_SUMMARY=$($Report.succeeded) passed, $($Report.succeededWithWarnings) passed with warnings, $($Report.failed) failed" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
           foreach ($t in $Report.tests) {
             if ($t.state -eq 'Fail') {
@@ -129,12 +145,66 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: automation-report
+          # Per engine: the names must differ within a run, or the second upload conflicts.
+          name: automation-report-${{ matrix.engine }}
           path: TestReport
           if-no-files-found: ignore
+          # A re-run of a failed job replaces its earlier report, so the counts are the latest.
+          overwrite: true
+
+  # The check main requires. It never skips, since a skipped required check counts as passing: it
+  # runs always() (needs alone would add an implicit success() and skip it when an engine fails, or
+  # when the run is cancelled), and fails unless every engine's job succeeded. A fork's pull request
+  # isn't built, so it fails here. It checks out nothing, so it runs on a GitHub-hosted runner, where
+  # no pull request code runs.
+  build-and-test:
+    needs: build
+    if: always()
+    concurrency:
+      group: pr-build-${{ github.event.pull_request.number || github.ref }}-summary
+      cancel-in-progress: true
+    runs-on: windows-latest
+    # pull-requests: write only for the success comment (the last step).
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Every engine passed
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          if ($env:IS_FORK -eq 'true') { Write-Error "Pull requests from forks aren't built (the runner is self-hosted). A maintainer re-opens them from a branch in this repository."; exit 1 }
+          Write-Host "Engine jobs: $env:BUILD_RESULT"
+          if ($env:BUILD_RESULT -ne 'success') { Write-Error "An engine's build or tests didn't pass ($env:BUILD_RESULT): see the build (<engine>) jobs."; exit 1 }
+
+      - name: Download test reports
+        uses: actions/download-artifact@v5
+        with:
+          pattern: automation-report-*
+          path: reports
+
+      - name: Test counts
+        run: |
+          $Lines = @()
+          foreach ($Dir in Get-ChildItem reports -Directory | Sort-Object Name) {
+            $Engine = $Dir.Name -replace '^automation-report-', ''
+            $Report = Get-Content (Join-Path $Dir.FullName 'index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+            $Lines += "UE ${Engine}: $($Report.succeeded) passed, $($Report.succeededWithWarnings) passed with warnings, $($Report.failed) failed"
+          }
+          # One report per engine in the build job's matrix.
+          if ($Lines.Count -ne 3) { Write-Error "Expected 3 test reports, found $($Lines.Count)"; exit 1 }
+          $Summary = $Lines -join '; '
+          Write-Host $Summary
+          "TEST_SUMMARY=$Summary" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       # A comment on success, so whoever watches the PR (the Claude desktop app's PR monitor relays
-      # comments) hears that it is green; a passing check alone sends no notification.
+      # comments) hears that it is green; a passing check alone sends no notification. One comment
+      # for all the engines.
       - name: Comment on success
         if: success() && github.event_name == 'pull_request'
         # A failed notification (API error, rate limit) mustn't turn a green build red.
