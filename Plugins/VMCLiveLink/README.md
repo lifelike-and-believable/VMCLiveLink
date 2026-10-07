@@ -26,7 +26,7 @@ It works on its own. [VRM Interchange](https://github.com/lifelike-and-believabl
 
 ## Requirements
 
-- **Unreal Engine** 5.6 (the version it is built and tested on).
+- **Unreal Engine** 5.6, 5.7 or 5.8 (the versions it is built and tested on).
 - **Windows (Win64)** only for now: that is the only platform the plugin is built and tested on.
 - The **Live Link** and **OSC** plugins, which ship with the engine. VMC Live Link enables them.
 

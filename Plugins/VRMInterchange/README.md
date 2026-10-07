@@ -2,7 +2,7 @@
 
 **Import VRM avatars into Unreal Engine with full support for Spring Bones, IK Rigs, and Live Link.**
 
-The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Engine 5.6+ that leverages the modern Interchange framework. It imports VRM avatars with complete support for skeletal meshes, textures, blend shapes (morph targets), and advanced features like physics-based spring bones, IK rigs, and Live Link integration.
+The VRM Interchange plugin is a comprehensive VRM (.vrm) importer for Unreal Engine 5.6, 5.7 and 5.8 that leverages the modern Interchange framework. It imports VRM avatars with complete support for skeletal meshes, textures, blend shapes (morph targets), and advanced features like physics-based spring bones, IK rigs, and Live Link integration.
 
 The [User Guide](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/docs/USER_GUIDE.md) walks through importing an avatar and driving it live with [VMC Live Link](https://github.com/lifelike-and-believable/VMCLiveLink/blob/main/Plugins/VMCLiveLink/README.md), step by step; this README is the reference.
 
@@ -51,7 +51,7 @@ The [User Guide](https://github.com/lifelike-and-believable/VMCLiveLink/blob/mai
 
 ### Requirements
 
-- **Unreal Engine**: 5.6 (the version it is built and tested with; later versions are untested)
+- **Unreal Engine**: 5.6, 5.7 or 5.8 (the versions it is built and tested with)
 - **Platform**: Windows (Win64) only, for now: that is the only platform the plugin is built and tested on (the CI runner is Windows). The editor modules are allowlisted for Win64 in the `.uplugin`; the runtime modules have no platform list. Nothing in the code is known to be Windows-specific; Mac and Linux can be added once they are built and tested.
 - **Dependencies**: 
   - Interchange (built-in)

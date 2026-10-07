@@ -29,7 +29,7 @@ struct FPropertyChangedEvent;
 namespace VMCProtocol { struct FArg; enum class EAddress : uint8; }
 
 /**
- * VMC → Live Link source (UE 5.6).
+ * VMC → Live Link source (UE 5.6 to 5.8).
  *
  * Threading (D-1). Frames are built on one thread at a time:
  *  - Receive Thread on (default): FVMCUdpReceiver reads the socket on its own thread; packets are

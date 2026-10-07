@@ -329,7 +329,7 @@ void FVMCLiveLinkRemapperWorker::RemapStaticData(FLiveLinkStaticDataStruct& InOu
 	}
 	Skel.SetBoneNames(Remapped);
 
-	// Curves live on base static data in 5.6
+	// Curves live on base static data (since UE 5.6)
 	FLiveLinkBaseStaticData& Base = static_cast<FLiveLinkBaseStaticData&>(Skel);
 	for (FName& C : Base.PropertyNames)
 	{

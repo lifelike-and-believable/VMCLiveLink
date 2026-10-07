@@ -24,7 +24,7 @@ The [User Guide](docs/USER_GUIDE.md) walks through each step, then facial expres
 
 ## Requirements
 
-- Unreal Engine 5.6.
+- Unreal Engine 5.6, 5.7 or 5.8.
 - Windows (Win64). It is the only platform the plugins are built and tested on; Mac and Linux can be added once they are built and tested there.
 
 ## Documentation

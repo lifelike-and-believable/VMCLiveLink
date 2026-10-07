@@ -24,14 +24,14 @@ Each plugin works on its own: VMC Live Link can drive any skeletal mesh, and VRM
 
 ## 1. What you need
 
-- **Unreal Engine 5.6** on **Windows** (Win64). The plugins are built and tested only there.
+- **Unreal Engine 5.6, 5.7 or 5.8** on **Windows** (Win64). The plugins are built and tested on each of those engines, on Windows only.
 - **To build the plugins from this repository:** Visual Studio 2022 with the *Game development with C++* workload, and a clone made with Git LFS (see [Getting the source](../README.md#getting-the-source)). A GitHub *Download ZIP* doesn't contain the assets. A packaged release that includes `Binaries` needs neither.
 - A **VRM avatar** (`.vrm`, VRM 0.x or 1.0), for example one exported from VRoid Studio.
 - A **VMC sender**: an app that tracks you and sends VMC, such as VSeeFace or VirtualMotionCapture, on this computer or another one on the same network. To try things without one, the repository's `scripts/vmc_sender.py` sends a test stream (see [Testing Without a Sender](../Plugins/VMCLiveLink/README.md#testing-without-a-sender)).
 
 ## 2. Install the plugins
 
-1. Put the `VMCLiveLink` and `VRMInterchange` folders in your project's `Plugins` folder (`YourProject/Plugins/`). Create the folder if it doesn't exist.
+1. Put the `VMCLiveLink` and `VRMInterchange` folders in your project's `Plugins` folder (`YourProject/Plugins/`). Create the folder if it doesn't exist. A packaged release comes in one version per engine (for example `VMCLiveLink-UE5.7-…zip`): use the one for your engine.
 2. Open the project. Built from the repository, Unreal says the plugin modules are missing and offers to rebuild them: click **Yes**. This needs Visual Studio (section 1).
 3. Both plugins are enabled by default. To check, open **Edit → Plugins** and search for *VMC Live Link* and *VRM Interchange*. They turn on what they need (Interchange, Live Link, OSC, IK Rig).
 

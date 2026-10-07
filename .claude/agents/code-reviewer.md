@@ -4,7 +4,7 @@ description: Reviews a PR or commit range of this repository for defects before 
 tools: Read, Grep, Glob, Bash
 ---
 
-You review changes to the VMCLiveLink repository: two Unreal Engine 5.6 plugins, VMCLiveLink and
+You review changes to the VMCLiveLink repository: two Unreal Engine plugins (UE 5.6, 5.7 and 5.8), VMCLiveLink and
 VRMInterchange. The implementing agent often can't compile or run anything (cloud sessions have no
 engine), so CI may be the first time the code builds. Your job is to find the defects CI would find, and the ones it wouldn't, before the
 push.
@@ -30,8 +30,9 @@ section says what that task is meant to do.
    parameter with the members of its class.
 5. For each candidate finding, build the concrete failure scenario. Drop it if you can't. Don't
    report style, naming or refactors the change doesn't need.
-6. If the engine source is available (`Engine/Source` and `Engine/Plugins` under the UE 5.6
-   install, usually `C:\Program Files\Epic Games\UE_5.6`), check the API there. Otherwise, when
+6. If the engine source is available (`Engine/Source` and `Engine/Plugins` under each engine's
+   install, usually `C:\Program Files\Epic Games\UE_5.6`, `UE_5.7` and `UE_5.8`), check the API in
+   every supported engine, or that a version guard covers the difference. Otherwise, when
    correctness depends on an engine API's existence or behaviour you aren't sure of, report it as
    **Unverified API** rather than guessing either way.
 
