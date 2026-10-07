@@ -1,6 +1,6 @@
 # User Guide
 
-This guide takes you from installing the two plugins to a VRM avatar in Unreal Engine that moves, makes faces and swings its hair live, driven by a VMC sender such as VSeeFace or VirtualMotionCapture. It is for artists and technical artists working in the editor; no C++ is needed.
+This guide takes you from installing the two plugins to a VRM avatar in Unreal Engine that moves, makes faces and swings its hair live, driven by a VMC sender such as VSeeFace or VirtualMotionCapture. It is for artists and technical artists working in the editor; you don't write any C++.
 
 - **VRM Interchange** imports `.vrm` avatars: the skeletal mesh, materials, expressions, spring bones (hair and clothes physics), an IK Rig for retargeting, and a ready-made Live Link character.
 - **VMC Live Link** receives the VMC protocol (motion capture over the network) and publishes it to Unreal's Live Link, so the avatar can follow a performer.
@@ -25,13 +25,14 @@ Each plugin works on its own: VMC Live Link can drive any skeletal mesh, and VRM
 ## 1. What you need
 
 - **Unreal Engine 5.6** on **Windows** (Win64). The plugins are built and tested only there.
+- **To build the plugins from this repository:** Visual Studio 2022 with the *Game development with C++* workload, and a clone made with Git LFS (see [Getting the source](../README.md#getting-the-source)). A GitHub *Download ZIP* doesn't contain the assets. A packaged release that includes `Binaries` needs neither.
 - A **VRM avatar** (`.vrm`, VRM 0.x or 1.0), for example one exported from VRoid Studio.
 - A **VMC sender**: an app that tracks you and sends VMC, such as VSeeFace or VirtualMotionCapture, on this computer or another one on the same network. To try things without one, the repository's `scripts/vmc_sender.py` sends a test stream (see [Testing Without a Sender](../Plugins/VMCLiveLink/README.md#testing-without-a-sender)).
 
 ## 2. Install the plugins
 
 1. Put the `VMCLiveLink` and `VRMInterchange` folders in your project's `Plugins` folder (`YourProject/Plugins/`). Create the folder if it doesn't exist.
-2. Open the project. If Unreal offers to rebuild the plugin modules, accept.
+2. Open the project. Built from the repository, Unreal says the plugin modules are missing and offers to rebuild them: click **Yes**. This needs Visual Studio (section 1).
 3. Both plugins are enabled by default. To check, open **Edit → Plugins** and search for *VMC Live Link* and *VRM Interchange*. They turn on what they need (Interchange, Live Link, OSC, IK Rig).
 
 ## 3. Register the VRM import pipelines
@@ -46,7 +47,7 @@ The notification comes back at every start while the pipelines aren't registered
 ## 4. Import a VRM avatar
 
 1. Make a folder in the Content Browser, for example `Characters`, and drag your `.vrm` file into it.
-2. The import dialog opens. Its VRM options are in the **VRM Import** category of each VRM pipeline: **Spring Bones**, **IK Rig**, **Live Link Actor**, **Retarget Actor**, **Avatar Description** and the **Materials** options. The defaults suit a first import; hover an option for what it creates.
+2. The import dialog opens. Its VRM options are in the **VRM Import** category of each VRM pipeline: **Spring Bones**, **IK Rig**, **Live Link Actor**, **Retarget Actor**, **Avatar Description** and the **Materials** options. The defaults suit a first import; hover an option for what it creates. Check that **Spring Bones: Post-Process AnimBlueprint** and **Spring Bones: Assign Post-Process AnimBlueprint** are ticked (they are by default); without them the springs don't run (section 8).
 3. Click **Import**.
 
 When it finishes, a notification lists what was created and the avatar's licence and usage permissions. **Show in Content Browser** selects the new assets; **Show N problems** opens the **VRM Import** message log with any warnings from the import.
@@ -66,7 +67,7 @@ For `Alice.vrm` imported into `Characters`, you get a folder `Characters/Alice` 
 | `IKRigDefinition/IK_Rig_VRM_Alice` | An IK Rig for retargeting (section 9). |
 | `LiveLink/BP_LL_VRM_Alice` | The Live Link character: drop it in a level and point it at a subject (section 6). |
 | `LiveLink/Animation/ABP_LL_VRM_Alice` | Its Animation Blueprint. |
-| `LiveLink/BP_LL_VRM_To_UE5_Alice` | A retarget actor that puts the character's live pose on the UE5 mannequin. |
+| `LiveLink/BP_LL_VRM_To_UE5_Alice` | A retarget actor that puts the character's live pose on a UE5 mannequin you supply (section 9). |
 
 The toon (MToon) master materials are shared by every VRM you import and are created once, in `/Game/VRMInterchange/Materials`. **Save them** along with the avatar (**File → Save All**). Don't edit them; edit the material instances instead.
 
@@ -75,7 +76,7 @@ The [VRM Interchange README](../Plugins/VRMInterchange/README.md#what-gets-creat
 ## 5. Connect a VMC sender
 
 1. Open **Window → Virtual Production → Live Link**.
-2. Click **+ Source → VMC Live Link Source**. The defaults suit most senders: port **39539**, every network interface, subject **`VMC_Subject`**. Click **Create**.
+2. Click **+ Add Source → VMC Live Link Source**. The defaults suit most senders: port **39539**, every network interface, subject **`VMC_Subject`**. Click **Create**.
 3. The source's status reads *Listening on :39539, waiting for data*.
 4. In your sender, turn on VMC sending and point it at this computer: `127.0.0.1` if it runs on the same computer, otherwise this computer's IP address, and port 39539.
    - **VSeeFace:** **Settings → General settings → OSC/VMC protocol**, enable the **VMC protocol sender**.
@@ -89,10 +90,10 @@ If the sender is on another computer and nothing arrives, allow *Unreal Editor* 
 
 The stream uses the Unity humanoid bone names every VMC sender uses (`Hips`, `LeftUpperArm`, ...). The subject's **remapper** renames them to your avatar's bones.
 
-1. In the Live Link panel, select `VMC_Subject`. In its details, find the **Remapper**.
+1. With the sender running (the subject appears only once data arrives), select `VMC_Subject` in the Live Link panel. In its details, find the **Remapper**.
 2. Set **Target → Reference Skeleton** to your avatar's skeletal mesh (`SkeletalMeshes/Alice`).
 3. Click **Map Bones From Humanoid Metadata**. VRM Interchange stored the avatar's humanoid map on the mesh, so every bone maps exactly.
-4. Open **Live Mapping**: every bone and curve received is listed, with a note on any that don't reach the mesh. Tick **Only names that don't reach the mesh**; the bones should all be gone from the list.
+4. Open **Live Mapping**: every bone and curve received is listed, with a note on any that don't reach the mesh. Tick **Only names that don't reach the mesh**. The body bones should be gone. What is left is humanoid bones your avatar doesn't have (VRoid avatars have no `Jaw`), which drive nothing, and the expression curves, which section 7 connects.
 5. Drag `LiveLink/BP_LL_VRM_Alice` into the level. Select it and, in the Details panel, set **Subject** to `VMC_Subject`. (It starts empty.)
 6. Press **Simulate** (or **Play**). The avatar follows the performer.
 
@@ -108,7 +109,7 @@ VMC senders send expressions by name: VRM 0.x names such as `Joy`, `A` and `Blin
 2. In the AnimGraph, add a **VRM Expressions** node after the **Live Link Pose** node and connect it to the output.
 3. Set the node's **Avatar Description** to `Alice_Avatar`. Compile and save.
 
-Leave the expression names unmapped in the remapper (its **Curve Name Map** empty, **Preset** on *None*): the node expects the senders' own names. The generated AnimBP doesn't include this node yet, so add it by hand for each avatar.
+Leave the expression names unmapped in the remapper (its **Curve Name Map** empty, **Preset** on *None / Manual*): the node expects the senders' own names. The generated AnimBP doesn't include this node yet, so add it by hand for each avatar.
 
 For a MetaHuman or another ARKit face instead of a VRM avatar, map the expressions with a remapper preset and turn on its **Normalizer**; see [The Remapper](../Plugins/VMCLiveLink/README.md#the-remapper).
 
@@ -138,7 +139,7 @@ Open `Alice_SpringData` to tune the springs; changes reach a running preview or 
 
 ## 9. Other characters and retargeting
 
-**Retarget the avatar's live pose to another character.** `LiveLink/BP_LL_VRM_To_UE5_Alice` shows the VMC-driven pose on the UE5 mannequin. Set its **Subject** to `VMC_Subject` the same way. Use it as a starting point for other characters.
+**Retarget the avatar's live pose to another character.** `LiveLink/BP_LL_VRM_To_UE5_Alice` shows the VMC-driven pose on a UE5 mannequin. The plugin doesn't ship the mannequin: add it to your project (for example `SKM_Manny` from the Third Person template). Place the actor, then in its Details set **UE5 Character** to the mannequin mesh and **Subject** to `VMC_Subject`. Its retargeter assumes VRoid bone names (`J_Bip_*`); for other avatars, make an IK Retargeter from `IK_Rig_VRM_Alice` (next paragraph).
 
 **Retarget animations to or from the avatar.** `IKRigDefinition/IK_Rig_VRM_Alice` has retarget chains named like the UE5 mannequin's IK Rig (`Spine`, `LeftArm`, `LeftIndex`, ...). Create an **IK Retargeter** between it and the mannequin's IK Rig, and the chains map automatically. See [Using IK Rigs](../Plugins/VRMInterchange/README.md#using-ik-rigs).
 
@@ -151,11 +152,13 @@ The Live Link source and the remapper's settings live in the editor session. To 
 1. In the Live Link panel, click **Presets → Save As Preset**.
 2. To load it at every start, set it in **Project Settings → Plugins → Live Link → Default Live Link Preset**.
 
-A subject restored from a preset with its **Reference Skeleton** set maps itself when it is created: from the mesh's humanoid map for a VRM avatar, or from a saved **mapping asset** for other rigs. Humanoid maps are read only in the editor; a packaged game uses the maps saved in the preset.
+A subject restored from a preset keeps the maps saved in it. With empty maps and a **Reference Skeleton** set, it maps itself when it is created: from the mesh's humanoid map for a VRM avatar, or from a saved **mapping asset** for other rigs. Humanoid maps are read only in the editor; a packaged game uses the maps saved in the preset.
 
 ## 11. Reimporting and updating
 
 **Reimport** (right-click the skeletal mesh → **Reimport**) after you change the `.vrm` file. In the import dialog, each VRM option's **Update Existing** decides what happens to the assets made last time: on, they are updated in place, and the actors and Animation Blueprints keep your edits; off, new copies with `_1`-style names are made. The spring data and avatar description are replaced from the file, so edits to them are lost.
+
+**Actors: Update Existing** is off by default: tick it before reimporting, or you get `_1` copies of the actors and Animation Blueprints, without the **VRM Expressions** node you added in section 7. Spring Bones, IK Rig and Avatar Description update in place by default.
 
 **After updating the plugins:**
 - If the editor offers to register the VRM import pipelines again, click **Register**.

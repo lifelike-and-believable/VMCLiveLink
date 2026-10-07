@@ -95,7 +95,7 @@ After importing `<FileName>.vrm`, you'll find:
     │   └── IK_Rig_VRM_<Mesh> (IK Rig asset)
     └── LiveLink/
         ├── BP_LL_VRM_<Mesh> (Live Link character actor)
-        ├── BP_LL_VRM_To_UE5_<Mesh> (Retarget actor: the character's Live Link pose on the UE5 mannequin)
+        ├── BP_LL_VRM_To_UE5_<Mesh> (Retarget actor: the character's Live Link pose on a UE5 mannequin you supply)
         └── Animation/
             └── ABP_LL_VRM_<Mesh> (Live Link AnimBP)
 
@@ -119,7 +119,7 @@ These are the defaults the import dialog's VRM options start from.
 - **Overwrite Existing Spring Assets**: On re-import, update the existing spring data asset in place, so AnimBlueprints that use it keep working (default: disabled, but see the note below; otherwise a new asset with a unique name is created)
 - **Overwrite Existing Post Process ABP** / **Reuse Post Process ABP On Reimport**: If `PP_ABP_VRMSpringBones_<Mesh>` already exists, reuse it and give it the new spring data; your graph edits are kept. Either one turns this on. With both off, a new AnimBP with a unique name is made (defaults: disabled / enabled, so the existing AnimBP is reused)
 
-**Note:** the plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing** whatever these settings say, so imports create and assign the post-process AnimBP and update the spring data in place. The IK Rig pipeline asset likewise turns on its **Update Existing**. Change these per import in the import dialog. See [Known Limitations](#known-limitations).
+**Note:** the plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing** whatever these settings say, so imports create and assign the post-process AnimBP and update the spring data in place. The IK Rig pipeline asset likewise turns on its **Update Existing**. Change these per import in the import dialog (**Spring Bones: Post-Process AnimBlueprint**, **Spring Bones: Assign Post-Process AnimBlueprint**, **Spring Bones: Update Existing**, **IK Rig: Update Existing**). See [Known Limitations](#known-limitations).
 
 #### IK Rig Settings
 - **Generate IK Rig Assets**: Create an IK Rig for each imported character, built from its humanoid map (default: enabled)
@@ -155,7 +155,7 @@ When the import finishes, one notification lists:
 
 ### Automatic Setup (Recommended)
 
-1. Keep **Spring Bones** on in the import dialog, with **Generate Post Process AnimBP** and **Assign Post Process ABP** (both on by default; see the note under [Spring Bones Settings](#spring-bones-settings))
+1. Keep **Spring Bones**, **Spring Bones: Post-Process AnimBlueprint** and **Spring Bones: Assign Post-Process AnimBlueprint** ticked in the import dialog (all on by default; see the note under [Spring Bones Settings](#spring-bones-settings))
 2. Import your VRM file
 3. The mesh's post-process AnimBP (`PP_ABP_VRMSpringBones_<Mesh>`) then runs the springs wherever the mesh is used, including under the Live Link AnimBP
 
@@ -214,7 +214,7 @@ When **Generate Live Link Actor Scaffold** is enabled, the plugin creates:
 - **Character Actor BP** (`BP_LL_VRM_<Mesh>`): the character with its skeletal mesh, driven by Live Link
 - **Animation BP** (`ABP_LL_VRM_<Mesh>`): a Live Link Pose AnimBlueprint
 
-The **Retarget Actor** option (on by default, import dialog only) also creates `BP_LL_VRM_To_UE5_<Mesh>`, which retargets the character's Live Link pose to the UE5 mannequin.
+The **Retarget Actor** option (on by default, import dialog only) also creates `BP_LL_VRM_To_UE5_<Mesh>`, which retargets the character's Live Link pose to a UE5 mannequin. The plugin doesn't ship the mannequin: place the actor, then set its **UE5 Character** to a mannequin mesh in your project (such as `SKM_Manny`) and its **Subject** as below. Its retargeter assumes VRoid bone names (`J_Bip_*`); for other avatars, retarget with the generated IK Rig instead.
 
 ### Setting Up VMC Protocol
 
@@ -282,7 +282,7 @@ The per-material instances are parented to the character instance of their maste
 
 ### Re-importing VRM Files
 
-When re-importing, each generated asset is updated in place only if its **Update Existing** option is on in the import dialog (Spring Bones, IK Rig, Actors, Avatar Description). Otherwise a new copy with a unique name (`_1`, `_2`, ...) is made and the old one is left alone. Updated in place:
+When re-importing, each generated asset is updated in place only if its **Update Existing** option is on in the import dialog (Spring Bones, IK Rig, Actors, Avatar Description). **Actors: Update Existing** is off by default; the others are on. Otherwise a new copy with a unique name (`_1`, `_2`, ...) is made and the old one is left alone. Updated in place:
 1. Spring data and the avatar description are replaced from the file (edits to them are lost).
 2. The IK Rig is rebuilt.
 3. The actors and AnimBlueprints are pointed at the new mesh, and your graph edits are kept.
@@ -422,7 +422,7 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 
 ## Known Limitations
 
-- **Import settings**: The plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing**, and the IK Rig pipeline asset its **Update Existing**, whatever the project settings say. Change them per import in the import dialog.
+- **Import settings**: The plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing**, and the IK Rig pipeline asset its **Update Existing**, whatever the project settings say. Change them per import in the import dialog (**Spring Bones: Post-Process AnimBlueprint**, **Spring Bones: Assign Post-Process AnimBlueprint**, **Spring Bones: Update Existing**, **IK Rig: Update Existing**).
 - **Materials**: MToon is basic (see [Materials](#materials)): no received shadows, only the atmosphere sun light lights it, one outline per mesh, and no UV animation, render queue offsets or transparent z-write. glTF PBR factors (base colour, emissive, metallic, roughness), alpha mode and double-sided are not applied to PBR materials. `COLOR_0` vertex colours are not imported (MToon ignores them).
 - **Morph Targets**: Morph targets are imported by name. Targets with the same name are one morph target: a mesh's primitives share them, and two meshes that use the same name are merged, with a warning, because an expression bound to either would move both. An unnamed target is named `<MeshName>_morph_<index>` and kept to its own mesh. A target's NORMAL deltas, when the file has them, turn its normals; a target without them keeps the base normals, so it changes shape but not shading.
 - **Texture Formats**: Embedded textures must be PNG or JPEG

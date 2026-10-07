@@ -33,7 +33,7 @@ It works on its own. [VRM Interchange](https://github.com/lifelike-and-believabl
 ## Quick Start
 
 1. **Enable the plugin.** Open **Edit → Plugins**, search for *VMC Live Link*, tick it and restart the editor. (It is enabled by default when installed in a project's `Plugins` folder.)
-2. **Add the source.** Open **Window → Virtual Production → Live Link**. Click **+ Source → VMC Live Link Source**, check the settings (the defaults suit most senders: port 39539, every network interface, subject `VMC_Subject`) and click **Create**. The source's status reads *Listening on :39539, waiting for data*.
+2. **Add the source.** Open **Window → Virtual Production → Live Link**. Click **+ Add Source → VMC Live Link Source**, check the settings (the defaults suit most senders: port 39539, every network interface, subject `VMC_Subject`) and click **Create**. The source's status reads *Listening on :39539, waiting for data*.
 3. **Start the sender.** Point your VMC sender at this computer's IP address and port 39539 (see [Sender Setup](#sender-setup)). Use `127.0.0.1` if the sender runs on the same computer. The status changes to *Receiving 60.0 fps from …*, and the subject `VMC_Subject` appears with a green dot.
 4. **Map the names to your mesh.** Select the subject in the Live Link panel. Its **Remapper** (a VMC Live Link Remapper, added automatically) is in the details:
    - Set **Target → Reference Skeleton** to the skeletal mesh you want to drive.

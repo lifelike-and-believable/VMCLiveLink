@@ -13,11 +13,11 @@ Together they take a VRoid or other VRM avatar from file to a live, performer-dr
 
 ## Quick start
 
-1. Copy `Plugins/VMCLiveLink` and `Plugins/VRMInterchange` into your project's `Plugins` folder and open the project.
+1. Copy `Plugins/VMCLiveLink` and `Plugins/VRMInterchange` (from a Git LFS clone, see [Getting the source](#getting-the-source)) into your project's `Plugins` folder and open the project. Let Unreal rebuild the plugin modules; that needs Visual Studio 2022 with the C++ workload.
 2. When the editor offers to register the VRM import pipelines, click **Register**.
 3. Drag a `.vrm` file into the Content Browser and import it.
-4. Open **Window → Virtual Production → Live Link** and add a **VMC Live Link Source**. Point your VMC sender at this computer, port 39539.
-5. Select the `VMC_Subject` subject, set its remapper's **Reference Skeleton** to the imported mesh and click **Map Bones From Humanoid Metadata**.
+4. Open **Window → Virtual Production → Live Link** and add a **VMC Live Link Source**. Point your VMC sender at this computer, port 39539, and start it.
+5. Once data arrives, select the `VMC_Subject` subject, set its remapper's **Reference Skeleton** to the imported mesh and click **Map Bones From Humanoid Metadata**.
 6. Place the imported `BP_LL_VRM_<name>` actor, set its **Subject** to `VMC_Subject`, and press **Simulate**.
 
 The [User Guide](docs/USER_GUIDE.md) walks through each step, then facial expressions, spring bones, retargeting and troubleshooting.
@@ -41,7 +41,7 @@ The [User Guide](docs/USER_GUIDE.md) walks through each step, then facial expres
 
 ## Getting the source
 
-The repository uses [Git LFS](https://git-lfs.github.com/) for its binary assets:
+The repository uses [Git LFS](https://git-lfs.github.com/) for its binary assets, so a GitHub *Download ZIP* doesn't contain them. Clone it instead:
 
 ```bash
 git clone https://github.com/lifelike-and-believable/VMCLiveLink.git
