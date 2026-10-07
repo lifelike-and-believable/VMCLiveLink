@@ -217,6 +217,15 @@ function Set-EngineVersionInUPlugin($jsonPath, $engineVersion) {
   Set-Content -Value $txt -Path $jsonPath -Encoding UTF8
 }
 
+# Keep UnrealBuildTool off IncrediBuild (XGE), which on the build machine intermittently refuses
+# with "Maximum number of concurrent builds reached". BuildPlugin passes no -NoXGE or -ubtargs to
+# UnrealBuildTool, but UnrealBuildTool reads UnrealBuildTool_<Category>__<Field> environment
+# variables as BuildConfiguration.xml settings (XmlConfig.cs, UE 5.6 to 5.8).
+# Restored at the end, so a developer's shell isn't left building without XGE.
+$PreviousAllowXGE = $env:UnrealBuildTool_BuildConfiguration__bAllowXGE
+$env:UnrealBuildTool_BuildConfiguration__bAllowXGE = 'false'
+
+try {
 for ($i = 0; $i -lt $EngineRoots.Count; $i++) {
   $root = (Resolve-Path -Path $EngineRoots[$i] -ErrorAction Stop).Path
   $ver = $EngineVersions[$i]
@@ -248,6 +257,11 @@ for ($i = 0; $i -lt $EngineRoots.Count; $i++) {
   [System.IO.Compression.ZipFile]::CreateFromDirectory($packageDir, $zipPath)
 
   Write-Host "Packaged: $zipPath"
+}
+
+} finally {
+  if ($null -eq $PreviousAllowXGE) { Remove-Item Env:\UnrealBuildTool_BuildConfiguration__bAllowXGE -ErrorAction SilentlyContinue }
+  else { $env:UnrealBuildTool_BuildConfiguration__bAllowXGE = $PreviousAllowXGE }
 }
 
 Write-Host "Done."
