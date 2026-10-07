@@ -7,6 +7,7 @@
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
 #include "MaterialShared.h"
+#include "Misc/EngineVersionComparison.h"
 #include "RHI.h"
 #include "UObject/Package.h"
 #include "VRMMToonMaterial.h"
@@ -38,7 +39,12 @@ namespace VRMMToonMaterialTests
 	// and reports the errors.
 	void TestCompiles(FAutomationTestBase& Test, UMaterial& Material)
 	{
+		// UE 5.7 looks material resources up by shader platform, not feature level.
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)
+		FMaterialResource* Resource = Material.GetMaterialResource(GMaxRHIShaderPlatform);
+#else
 		FMaterialResource* Resource = Material.GetMaterialResource(GMaxRHIFeatureLevel);
+#endif
 		if (!Resource)
 		{
 			return;
@@ -77,8 +83,8 @@ bool FVRMMToonMaterialGraph::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Surface is unlit"), Surface->GetShadingModels().HasOnlyShadingModel(MSM_Unlit));
 	TestTrue(TEXT("Surface is opaque (instances override)"), Surface->BlendMode == BLEND_Opaque);
-	TestTrue(TEXT("Surface is used with skeletal meshes"), Surface->bUsedWithSkeletalMesh != 0);
-	TestTrue(TEXT("Surface is used with morph targets"), Surface->bUsedWithMorphTargets != 0);
+	TestTrue(TEXT("Surface is used with skeletal meshes"), Surface->GetUsageByFlag(MATUSAGE_SkeletalMesh));
+	TestTrue(TEXT("Surface is used with morph targets"), Surface->GetUsageByFlag(MATUSAGE_MorphTargets));
 	TestEqual(TEXT("Surface graph version"), VRM::MToon::GetGraphVersion(Surface), VRM::MToon::GraphVersion);
 
 	TestHas(*this, TEXT("Surface texture"), ParameterNames(*Surface, EMaterialParameterType::Texture), {

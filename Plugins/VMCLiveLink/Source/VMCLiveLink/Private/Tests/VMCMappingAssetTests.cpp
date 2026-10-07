@@ -7,6 +7,7 @@
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
 #include "ReferenceSkeleton.h"
+#include "UObject/Package.h"
 
 namespace VMCMappingAssetTests
 {

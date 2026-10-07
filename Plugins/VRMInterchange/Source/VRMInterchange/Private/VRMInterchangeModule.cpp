@@ -3,9 +3,23 @@
 #include "Modules/ModuleManager.h"
 #include "InterchangeManager.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Engine/Engine.h"
 #include "VRMTranslator.h"
 #include "VRMImportMessages.h"
+
+namespace
+{
+	// UE 5.8 replaced the OnPostEngineInit member with an accessor.
+	FSimpleMulticastDelegate& VRMPostEngineInitDelegate()
+	{
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+		return FCoreDelegates::GetOnPostEngineInit();
+#else
+		return FCoreDelegates::OnPostEngineInit;
+#endif
+	}
+}
 
 class FVRMInterchangeModule : public IModuleInterface
 {
@@ -14,7 +28,7 @@ public:
 	{
 		VRM::ImportMessages::RegisterCapture();
 		// Register after engine init; call immediately if GEngine is already valid
-		PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(this, &FVRMInterchangeModule::OnPostEngineInit);
+		PostEngineInitHandle = VRMPostEngineInitDelegate().AddRaw(this, &FVRMInterchangeModule::OnPostEngineInit);
 		if (GEngine)
 		{
 			OnPostEngineInit();
@@ -25,7 +39,7 @@ public:
 	{
 		if (PostEngineInitHandle.IsValid())
 		{
-			FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitHandle);
+			VRMPostEngineInitDelegate().Remove(PostEngineInitHandle);
 			PostEngineInitHandle.Reset();
 		}
 		// No UnregisterTranslator in UE 5.6; manager cleans up internally

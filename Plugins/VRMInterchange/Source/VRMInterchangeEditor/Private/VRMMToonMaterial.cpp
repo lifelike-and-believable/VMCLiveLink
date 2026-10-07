@@ -5,6 +5,7 @@
 #include "Engine/Texture2D.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionCameraPositionWS.h"
 #include "Materials/MaterialExpressionCameraVectorWS.h"
@@ -275,8 +276,14 @@ namespace VRMMToonMaterialPrivate
 	{
 		Material.MaterialDomain = MD_Surface;
 		Material.SetShadingModel(MSM_Unlit);
+		// UE 5.8 deprecated the usage flag members for SetUsageByFlag (not exported before 5.8).
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+		Material.SetUsageByFlag(MATUSAGE_SkeletalMesh, true);
+		Material.SetUsageByFlag(MATUSAGE_MorphTargets, true);
+#else
 		Material.bUsedWithSkeletalMesh = true;
 		Material.bUsedWithMorphTargets = true;
+#endif
 	}
 }
 
