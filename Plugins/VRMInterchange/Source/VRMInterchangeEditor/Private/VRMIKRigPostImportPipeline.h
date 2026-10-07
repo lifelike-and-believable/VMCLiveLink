@@ -41,7 +41,7 @@ public:
 
 	/** If the IK Rig exists, rebuild it in place (what refers to it keeps working; edits to it are replaced). Otherwise the new one gets a unique name. */
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig: Update Existing"))
-	bool bOverwriteExisting = true;
+	bool bOverwriteExisting = false;
 
 	/** Build the chains from the VRM's humanoid map. Off: duplicate the template IK Rig, which only suits VRoid bone names. */
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "IK Rig: Build From Humanoid Map"))

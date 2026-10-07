@@ -176,19 +176,23 @@ bool FVRMPipelineCopyKeepsChoicesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// The defaults make the springs run out of the box, as the shipped pipeline asset did before.
+// The IK Rig's Update Existing has no project setting: the plugin's pipeline asset holds it, on.
+// (The pipeline classes keep their old defaults, off, so pipeline assets a studio saved with them
+// load unchanged; the spring flags' new defaults are the project settings'.)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVRMPipelineSettingsDefaultsTest, "VRM.Pipeline.Settings.Defaults",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FVRMPipelineSettingsDefaultsTest::RunTest(const FString& Parameters)
 {
-	// The pipelines' class defaults (their default objects don't take the project settings), which
-	// the settings' own defaults match; a project's config can't change these.
+	using namespace VRMPipelineSettingsTestsPrivate;
+	const UVRMIKRigPostImportPipeline* IKRig = LoadObject<UVRMIKRigPostImportPipeline>(nullptr, IKRigAsset);
+	if (TestNotNull(TEXT("IK Rig pipeline asset"), IKRig))
+	{
+		TestTrue(TEXT("IK Rig updated in place by default"), IKRig->bOverwriteExisting);
+	}
+	TestFalse(TEXT("Pipeline class default unchanged (studio assets saved with it load as saved)"), GetDefault<UVRMIKRigPostImportPipeline>()->bOverwriteExisting);
 	const UVRMSpringBonesPostImportPipeline* Spring = GetDefault<UVRMSpringBonesPostImportPipeline>();
-	TestTrue(TEXT("Post-process AnimBlueprint made by default"), Spring->bGeneratePostProcessAnimBP);
-	TestTrue(TEXT("and assigned by default"), Spring->bAssignPostProcessABP);
-	TestTrue(TEXT("Spring data updated in place by default"), Spring->bOverwriteExisting);
-	TestTrue(TEXT("IK Rig updated in place by default"), GetDefault<UVRMIKRigPostImportPipeline>()->bOverwriteExisting);
+	TestFalse(TEXT("Spring class defaults unchanged"), Spring->bGeneratePostProcessAnimBP || Spring->bAssignPostProcessABP || Spring->bOverwriteExisting);
 	return true;
 }
 
