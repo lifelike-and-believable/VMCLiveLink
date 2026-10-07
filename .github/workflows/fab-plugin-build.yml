@@ -181,5 +181,5 @@ jobs:
             Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/zip' -InFile $Zip.FullName -TimeoutSec 1800 | Out-Null
             Write-Host "Uploaded $($Zip.Name)"
           }
-          $Published = Invoke-RestMethod -Method Patch -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($Release.id)" -Headers $Headers -ContentType 'application/json' -Body (@{ draft = $false } | ConvertTo-Json)
+          $Published = Invoke-RestMethod -Method Patch -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($Release.id)" -Headers $Headers -ContentType 'application/json' -Body (@{ draft = $false; tag_name = $env:TAG; target_commitish = $env:COMMIT } | ConvertTo-Json)
           Write-Host "Published $($Published.html_url)"
