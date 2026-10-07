@@ -231,6 +231,7 @@ bool FVRMPipelineToggles::RunTest(const FString& Parameters)
 	Settings->bGeneratePostProcessAnimBP = false;
 	{
 		UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+		Pipeline->ApplyProjectSettings(); // as the import dialog does
 		TestTrue(TEXT("Spring: new pipeline takes the project setting"), Pipeline->bGenerateSpringBoneData);
 		Pipeline->bGenerateSpringBoneData = false;
 		Execute(Pipeline);
@@ -246,6 +247,7 @@ bool FVRMPipelineToggles::RunTest(const FString& Parameters)
 	Settings->bGenerateIKRigAssets = false;
 	{
 		UVRMIKRigPostImportPipeline* Pipeline = NewObject<UVRMIKRigPostImportPipeline>();
+		Pipeline->ApplyProjectSettings(); // as the import dialog does
 		TestFalse(TEXT("IK Rig: new pipeline takes the project setting"), Pipeline->bGenerateIKRig);
 		Pipeline->bGenerateIKRig = true;
 		Execute(Pipeline);
@@ -263,6 +265,7 @@ bool FVRMPipelineToggles::RunTest(const FString& Parameters)
 	Settings->bGenerateLiveLinkEnabledActor = false;
 	{
 		UVRMLiveLinkPostImportPipeline* Pipeline = NewObject<UVRMLiveLinkPostImportPipeline>();
+		Pipeline->ApplyProjectSettings(); // as the import dialog does
 		TestFalse(TEXT("Live Link: new pipeline takes the project setting"), Pipeline->bGenerateLiveLinkEnabledActor);
 		Pipeline->bGenerateLiveLinkRetargetActor = false;
 		Execute(Pipeline);

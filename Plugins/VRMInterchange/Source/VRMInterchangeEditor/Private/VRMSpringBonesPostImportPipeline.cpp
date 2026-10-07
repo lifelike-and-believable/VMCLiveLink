@@ -33,21 +33,16 @@
 #include "Kismet2/KismetEditorUtilities.h"
 
 #if WITH_EDITOR
-void UVRMSpringBonesPostImportPipeline::PostInitProperties()
+void UVRMSpringBonesPostImportPipeline::ApplyProjectSettings()
 {
-    Super::PostInitProperties();
-    if (!HasAnyFlags(RF_ClassDefaultObject))
+    if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
     {
-        const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>();
-        if (Settings)
-        {
-            bGenerateSpringBoneData     = Settings->bGenerateSpringBoneData;
-            bOverwriteExisting          = Settings->bOverwriteExistingSpringAssets;
-            bGeneratePostProcessAnimBP  = Settings->bGeneratePostProcessAnimBP;
-            bAssignPostProcessABP       = Settings->bAssignPostProcessABP;
-            bOverwriteExistingPostProcessABP = Settings->bOverwriteExistingPostProcessABP;
-            bReusePostProcessABPOnReimport  = Settings->bReusePostProcessABPOnReimport;
-        }
+        bGenerateSpringBoneData     = Settings->bGenerateSpringBoneData;
+        bOverwriteExisting          = Settings->bOverwriteExistingSpringAssets;
+        bGeneratePostProcessAnimBP  = Settings->bGeneratePostProcessAnimBP;
+        bAssignPostProcessABP       = Settings->bAssignPostProcessABP;
+        bOverwriteExistingPostProcessABP = Settings->bOverwriteExistingPostProcessABP;
+        bReusePostProcessABPOnReimport  = Settings->bReusePostProcessABPOnReimport;
     }
 }
 #endif
@@ -62,7 +57,7 @@ void UVRMSpringBonesPostImportPipeline::ExecutePipeline(UInterchangeBaseNodeCont
 
     // What this pipeline logs belongs to this import's message log page (P6.3).
     const VRM::ImportMessages::FScope MessageScope(GetFirstSourceFile(SourceDatas));
-    // Only this instance's flags count. The project settings seeded them (PostInitProperties), and the
+    // Only this instance's flags count. The project settings seeded them (ApplyProjectSettings), and the
     // import dialog may have changed them since; OR-ing the settings back in would ignore an unticked box.
     if (!BeginImport(SourceDatas, ContentBasePath) || !BaseNodeContainer)
     {

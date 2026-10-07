@@ -37,7 +37,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "VRM Import", meta = (DisplayName = "Avatar Description: Show Licence"))
 	bool bShowLicenseNotification = true;
 
-	virtual void PostInitProperties() override;
+	virtual void ApplyProjectSettings() override;
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
 
 	/** The description this pipeline made or updated in the last import (tests use it). */

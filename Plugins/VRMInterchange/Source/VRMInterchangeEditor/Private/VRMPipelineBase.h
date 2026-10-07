@@ -32,6 +32,24 @@ public:
 	/** What ExecutePostImportPipeline does with each created asset. Public so tests can drive it. */
 	void HandleImportedAsset(UObject* CreatedAsset, bool bIsAReimport);
 
+	/**
+	 * Copies the project settings (UVRMInterchangeSettings) that are this pipeline's defaults onto it.
+	 * Runs when one of the plugin's pipeline assets loads (so they follow the settings rather than
+	 * the values saved in them), when a setting is edited, and when the import dialog opens for a
+	 * new import (after it restored the values used last time). The dialog's choices then apply to
+	 * that import; a reimport keeps the choices stored with the asset.
+	 */
+	virtual void ApplyProjectSettings() {}
+
+	/** True for the plugin's own pipeline assets, which follow the project settings. */
+	bool FollowsProjectSettings() const;
+
+	/** Applies the project settings again to the plugin's loaded pipeline assets, after they change. */
+	static void ApplyProjectSettingsToLoadedAssets();
+
+	virtual void PostLoad() override;
+	virtual void PreDialogCleanup(const FName PipelineStackName) override;
+
 protected:
 	virtual void ExecutePostImportPipeline(const UInterchangeBaseNodeContainer* BaseNodeContainer, const FString& NodeKey, UObject* CreatedAsset, bool bIsAReimport) override;
 

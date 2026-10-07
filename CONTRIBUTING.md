@@ -33,6 +33,8 @@ set UE=C:\Program Files\Epic Games\UE_5.6
 "%UE%\Engine\Build\BatchFiles\Build.bat" VMCLiveLinkProject Win64 Shipping -Project="%CD%\VMCLiveLinkProject.uproject" -WaitMutex
 ```
 
+If IncrediBuild (XGE) is installed but not licensed, a build can fail at once with `Result: Failed (OtherCompilationError)` and no compiler error; add `-NoXGE` to build locally. A build that fails at once with `IOException: ... being used by another process` is waiting on another Unreal build on the same machine (they share the engine's build rules and UnrealBuildTool's log); retry once it finishes.
+
 The Editor build runs without unity builds (`-DisableUnity`), so every file must include what it uses. The Shipping build has no log category objects and no development tests; code that uses either must compile there too.
 
 ### Run the tests

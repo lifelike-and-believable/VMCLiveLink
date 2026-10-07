@@ -114,15 +114,15 @@ These are the defaults the import dialog's VRM options start from.
 
 #### Spring Bones Settings
 - **Generate Spring Bone Data**: Parse and create spring bone data assets during import (default: enabled)
-- **Generate Post Process AnimBP**: Create a post-process AnimBP (`PP_ABP_VRMSpringBones_<Mesh>`) that runs the springs (default: disabled, but see the note below)
-- **Assign Post Process ABP**: Set that AnimBP as the skeletal mesh's post-process AnimBP, so the springs run wherever the mesh is used (default: disabled, but see the note below)
-- **Overwrite Existing Spring Assets**: On re-import, update the existing spring data asset in place, so AnimBlueprints that use it keep working (default: disabled, but see the note below; otherwise a new asset with a unique name is created)
+- **Generate Post Process AnimBP**: Create a post-process AnimBP (`PP_ABP_VRMSpringBones_<Mesh>`) that runs the springs (default: enabled)
+- **Assign Post Process ABP**: Set that AnimBP as the skeletal mesh's post-process AnimBP, so the springs run wherever the mesh is used (default: enabled)
+- **Overwrite Existing Spring Assets**: On re-import, update the existing spring data asset in place, so AnimBlueprints that use it keep working (default: enabled; off, a new asset with a unique name is created)
 - **Overwrite Existing Post Process ABP** / **Reuse Post Process ABP On Reimport**: If `PP_ABP_VRMSpringBones_<Mesh>` already exists, reuse it and give it the new spring data; your graph edits are kept. Either one turns this on. With both off, a new AnimBP with a unique name is made (defaults: disabled / enabled, so the existing AnimBP is reused)
 
-**Note:** the plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing** whatever these settings say, so imports create and assign the post-process AnimBP and update the spring data in place. The IK Rig pipeline asset likewise turns on its **Update Existing**. Change these per import in the import dialog (**Spring Bones: Post-Process AnimBlueprint**, **Spring Bones: Assign Post-Process AnimBlueprint**, **Spring Bones: Update Existing**, **IK Rig: Update Existing**). See [Known Limitations](#known-limitations).
+A changed setting applies to the next import, without restarting the editor. The import dialog starts from these settings for each new import, not from the choices made last time (switching the dialog to another pipeline stack and back also resets them); a reimport keeps the choices made when the asset was imported. The dialog does this for every VRM pipeline in the stack, a studio's own pipeline assets and subclasses included. Outside the dialog (scripted or automated imports), pipelines created in code or as Blueprint subclasses start from their class defaults, and a studio's pipeline assets keep their saved values: call `ApplyProjectSettings` on them, or use the plugin's pipeline assets, to follow the project settings. In the import dialog these appear as **Spring Bones**, **Spring Bones: Post-Process AnimBlueprint**, **Spring Bones: Assign Post-Process AnimBlueprint**, **Spring Bones: Update Existing**, **Spring Bones: Update Existing AnimBlueprint** and **Spring Bones: Reuse AnimBlueprint On Reimport**.
 
 #### IK Rig Settings
-- **Generate IK Rig Assets**: Create an IK Rig for each imported character, built from its humanoid map (default: enabled)
+- **Generate IK Rig Assets**: Create an IK Rig for each imported character, built from its humanoid map (default: enabled). Its **IK Rig: Update Existing** option, import dialog only, is on by default.
 
 #### Live Link Settings
 - **Generate Live Link Actor Scaffold**: Create the Live Link actor and AnimBP (default: enabled)
@@ -155,7 +155,7 @@ When the import finishes, one notification lists:
 
 ### Automatic Setup (Recommended)
 
-1. Keep **Spring Bones**, **Spring Bones: Post-Process AnimBlueprint** and **Spring Bones: Assign Post-Process AnimBlueprint** ticked in the import dialog (all on by default; see the note under [Spring Bones Settings](#spring-bones-settings))
+1. Keep **Spring Bones**, **Spring Bones: Post-Process AnimBlueprint** and **Spring Bones: Assign Post-Process AnimBlueprint** ticked in the import dialog (all on by default; see [Spring Bones Settings](#spring-bones-settings))
 2. Import your VRM file
 3. The mesh's post-process AnimBP (`PP_ABP_VRMSpringBones_<Mesh>`) then runs the springs wherever the mesh is used, including under the Live Link AnimBP
 
@@ -422,7 +422,6 @@ This swaps Y and Z, which also converts handedness. VRM 1.0 models face +Z in gl
 
 ## Known Limitations
 
-- **Import settings**: The plugin's spring bone pipeline asset turns on **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Update Existing**, and the IK Rig pipeline asset its **Update Existing**, whatever the project settings say. Change them per import in the import dialog (**Spring Bones: Post-Process AnimBlueprint**, **Spring Bones: Assign Post-Process AnimBlueprint**, **Spring Bones: Update Existing**, **IK Rig: Update Existing**).
 - **Materials**: MToon is basic (see [Materials](#materials)): no received shadows, only the atmosphere sun light lights it, one outline per mesh, and no UV animation, render queue offsets or transparent z-write. glTF PBR factors (base colour, emissive, metallic, roughness), alpha mode and double-sided are not applied to PBR materials. `COLOR_0` vertex colours are not imported (MToon ignores them).
 - **Morph Targets**: Morph targets are imported by name. Targets with the same name are one morph target: a mesh's primitives share them, and two meshes that use the same name are merged, with a warning, because an expression bound to either would move both. An unnamed target is named `<MeshName>_morph_<index>` and kept to its own mesh. A target's NORMAL deltas, when the file has them, turn its normals; a target without them keeps the base normals, so it changes shape but not shading.
 - **Texture Formats**: Embedded textures must be PNG or JPEG

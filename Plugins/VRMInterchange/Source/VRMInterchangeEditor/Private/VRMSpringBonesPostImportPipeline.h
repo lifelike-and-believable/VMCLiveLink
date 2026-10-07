@@ -30,7 +30,7 @@ public:
 	UVRMSpringBonesPostImportPipeline() = default;
 
 #if WITH_EDITOR
-	virtual void PostInitProperties() override;
+	virtual void ApplyProjectSettings() override;
 
 	/** The name of the pipeline that will be display in the import dialog. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Common", meta = (StandAlonePipelineProperty = "True", PipelineInternalEditionData = "True"))

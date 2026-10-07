@@ -20,12 +20,16 @@ bool FVRMPipelineValidation::RunTest(const FString& Parameters)
 {
     // Test pipeline setup and basic functionality
     UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
+    if (Pipeline)
+    {
+        Pipeline->ApplyProjectSettings(); // as the import dialog and the plugin's pipeline asset do
+    }
     
     TestTrue(TEXT("Pipeline object created"), Pipeline != nullptr);
     
     if (Pipeline)
     {
-        // The pipeline copies the project's VRM Interchange settings when it is created, so its
+        // The pipeline takes the project's VRM Interchange settings (ApplyProjectSettings), so its
         // values depend on the project config (this project's DefaultGame.ini enables them).
         // Check that it follows the settings rather than asserting fixed values.
         const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>();

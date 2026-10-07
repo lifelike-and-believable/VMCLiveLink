@@ -67,16 +67,12 @@ namespace
 	}
 }
 
-void UVRMAvatarDescriptionPipeline::PostInitProperties()
+void UVRMAvatarDescriptionPipeline::ApplyProjectSettings()
 {
-	Super::PostInitProperties();
 	// The project setting is the default for new pipelines; the import dialog decides per import.
-	if (!HasAnyFlags(RF_ClassDefaultObject))
+	if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
 	{
-		if (const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>())
-		{
-			bGenerateAvatarDescription = Settings->bGenerateAvatarDescription;
-		}
+		bGenerateAvatarDescription = Settings->bGenerateAvatarDescription;
 	}
 }
 

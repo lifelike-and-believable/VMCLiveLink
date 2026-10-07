@@ -60,7 +60,7 @@ public:
 	virtual void ExecutePipeline(UInterchangeBaseNodeContainer* BaseNodeContainer, const TArray<UInterchangeSourceData*>& SourceDatas, const FString& ContentBasePath) override;
 
 #if WITH_EDITOR
-	virtual void PostInitProperties() override;
+	virtual void ApplyProjectSettings() override;
 #endif
 
 	/** The IK Rig made by the last import (for tests). */

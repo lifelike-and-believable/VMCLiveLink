@@ -61,8 +61,9 @@ bool FVRMSpringBonesPipelineDefaultValues::RunTest(const FString& Parameters)
 {
     // Test default values are correct
     UVRMSpringBonesPostImportPipeline* Pipeline = NewObject<UVRMSpringBonesPostImportPipeline>();
-    
-    // The toggles come from the project's VRM Interchange settings (see PostInitProperties).
+    Pipeline->ApplyProjectSettings(); // as the import dialog and the plugin's pipeline asset do
+
+    // The toggles come from the project's VRM Interchange settings (ApplyProjectSettings).
     const UVRMInterchangeSettings* Settings = GetDefault<UVRMInterchangeSettings>();
     if (TestNotNull(TEXT("Settings object exists"), Settings))
     {
