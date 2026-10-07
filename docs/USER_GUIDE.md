@@ -31,7 +31,7 @@ Each plugin works on its own: VMC Live Link can drive any skeletal mesh, and VRM
 
 ## 2. Install the plugins
 
-1. Put the `VMCLiveLink` and `VRMInterchange` folders in your project's `Plugins` folder (`YourProject/Plugins/`). Create the folder if it doesn't exist. A packaged release comes in one version per engine (for example `VMCLiveLink-UE5.7-…zip`): use the one for your engine.
+1. Put the `VMCLiveLink` and `VRMInterchange` folders in your project's `Plugins` folder (`YourProject/Plugins/`). Create the folder if it doesn't exist. A packaged release comes in one version per engine: use the one for your engine. `VRMCombined-UE5.7-…zip` has both plugins (`VMCLiveLink-…` and `VRMInterchange-…` have one each); inside, the plugin folders are under `UE5.7/Plugins/`, so copy those folders, not the zip's top folder.
 2. Open the project. Built from the repository, Unreal says the plugin modules are missing and offers to rebuild them: click **Yes**. This needs Visual Studio (section 1).
 3. Both plugins are enabled by default. To check, open **Edit → Plugins** and search for *VMC Live Link* and *VRM Interchange*. They turn on what they need (Interchange, Live Link, OSC, IK Rig).
 

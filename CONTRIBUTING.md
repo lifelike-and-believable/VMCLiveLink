@@ -7,7 +7,7 @@ This repository holds two Unreal Engine plugins, [VMC Live Link](Plugins/VMCLive
 ### Requirements
 
 - Windows 10 or 11 (the plugins are built and tested on Win64 only).
-- Unreal Engine 5.6, 5.7 or 5.8. Change content only with 5.6 (see Code guidelines).
+- Unreal Engine 5.6, 5.7 or 5.8. Change content only with 5.6 (see Code guidelines). The project's `EngineAssociation` stays `5.6`: to work in 5.7 or 5.8, open a copy of the project rather than switching its engine version.
 - Visual Studio 2022 with the *Game development with C++* workload, as the engine requires.
 - [Git LFS](https://git-lfs.github.com/): the `.uasset` files and the other binary types listed in `.gitattributes` are stored with it. (The small VRM fixtures and VMC captures are ordinary files.)
 - Python 3 for the scripts in `scripts/` (standard library only), and gcc or clang on `PATH` for `scripts/check_vrm_fixtures.py` (MSVC's `cl` isn't supported).

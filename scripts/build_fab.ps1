@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Uses Unreal AutomationTool (RunUAT.bat BuildPlugin) to compile the plugin for each engine version,
-  strips build artifacts, and produces Fab-ready zips with EngineVersion updated in the .uplugin.
+  and produces zips (one per engine) with EngineVersion set in the .uplugin. BuildPlugin's package
+  includes Binaries and Intermediate, and they aren't removed.
 
 .PARAMETER PluginDir
   Path to the plugin root folder (contains *.uplugin).
@@ -243,7 +244,7 @@ for ($i = 0; $i -lt $EngineRoots.Count; $i++) {
   if (-not $stageUPlugin) { Fail "Stage .uplugin missing in $stagePluginDir" }
   Set-EngineVersionInUPlugin -jsonPath $stageUPlugin.FullName -engineVersion $ver
 
-  # BuildPlugin with UAT (outputs to a packaged folder without Intermediate/Binaries by default)
+  # BuildPlugin with UAT (the packaged folder includes Binaries and Intermediate)
   $packageDir = Join-Path $OutputDir "$pluginName-UE$($ver.Replace('.','_'))-Packaged"
   if (Test-Path -Path $packageDir) { Remove-Item -Recurse -Force -Path $packageDir }
   & $uat BuildPlugin -Plugin="$($stageUPlugin.FullName)" -Package="$packageDir" -Rocket -VeryVerbose

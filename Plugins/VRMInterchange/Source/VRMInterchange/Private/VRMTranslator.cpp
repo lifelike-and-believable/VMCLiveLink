@@ -13,7 +13,7 @@
 #include "InterchangeJointNode.h"
 #endif
 
-// Node APIs available from UE 5.6 (5.8 differences: AddJoint)
+// Node APIs of UE 5.6 to 5.8 (the 5.8 difference is in AddJoint)
 #include "InterchangeMeshNode.h"
 #include "InterchangeSkeletalMeshFactoryNode.h"
 #include "InterchangeSkeletalMeshLodDataNode.h"
