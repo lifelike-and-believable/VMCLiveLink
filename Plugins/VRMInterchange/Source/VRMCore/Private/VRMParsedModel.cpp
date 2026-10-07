@@ -11,7 +11,9 @@
 #include "Dom/JsonObject.h"
 #include "Templates/Function.h"
 
+THIRD_PARTY_INCLUDES_START
 #include "cgltf.h"
+THIRD_PARTY_INCLUDES_END
 
 // ---- Helper forward declarations (must appear before usage)
 static const cgltf_attribute* FindAttribute(const cgltf_primitive* Prim, cgltf_attribute_type Type);

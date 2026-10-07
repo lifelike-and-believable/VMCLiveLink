@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "AnimNode_VRMSpringBones.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "HAL/IConsoleManager.h"
 
 /* ============================================================================
  *  VRM Spring Bones anim node: maps SpringData onto the pose and runs FVRMSpringSolver.

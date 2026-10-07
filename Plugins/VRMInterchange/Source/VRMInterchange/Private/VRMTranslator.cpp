@@ -8,6 +8,10 @@
 #include "InterchangeSourceData.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "InterchangeSceneNode.h"
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+#include "InterchangeJointNode.h"
+#endif
 
 // Use Node APIs available in UE 5.6
 #include "InterchangeMeshNode.h"
@@ -35,6 +39,28 @@
 #include "StaticMeshAttributes.h"
 #include "SkeletalMeshAttributes.h"
 #include "BoneWeights.h"
+
+namespace
+{
+    // Adds a skeleton joint whose local and bind pose transforms are both LocalBind. UE 5.8 made
+    // joints a node class of their own and reads bind poses only from it; before 5.8 a joint is a
+    // scene node tagged as one.
+    void AddJoint(UInterchangeBaseNodeContainer& NodeContainer, const FString& Uid, const FString& Name, const FString& ParentUid, const FTransform& LocalBind)
+    {
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+        UInterchangeJointNode* Joint = NewObject<UInterchangeJointNode>(&NodeContainer);
+        NodeContainer.SetupNode(Joint, Uid, Name, EInterchangeNodeContainerType::TranslatedScene, ParentUid);
+        Joint->SetCustomLocalTransform(&NodeContainer, LocalBind);
+        Joint->SetBindPoseLocalTransform(&NodeContainer, LocalBind);
+#else
+        UInterchangeSceneNode* Joint = NewObject<UInterchangeSceneNode>(&NodeContainer);
+        NodeContainer.SetupNode(Joint, Uid, Name, EInterchangeNodeContainerType::TranslatedScene, ParentUid);
+        Joint->SetCustomLocalTransform(&NodeContainer, LocalBind);
+        Joint->SetCustomBindPoseLocalTransform(&NodeContainer, LocalBind);
+        Joint->AddSpecializedType(UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
+#endif
+    }
+}
 
 TArray<FString> UVRMTranslator::GetSupportedFormats() const
 {
@@ -112,11 +138,7 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
 
     // Create skeleton root joint in the scene
     const FString RootJointUid = MakeNodeUid(TEXT("Joint_Root"));
-    UInterchangeSceneNode* RootJointNode = NewObject<UInterchangeSceneNode>(&NodeContainer);
-    NodeContainer.SetupNode(RootJointNode, RootJointUid, TEXT("VRM_Root"), EInterchangeNodeContainerType::TranslatedScene, SceneNodeUid);
-    RootJointNode->SetCustomLocalTransform(&NodeContainer, FTransform::Identity);
-    RootJointNode->SetCustomBindPoseLocalTransform(&NodeContainer, FTransform::Identity);
-    RootJointNode->AddSpecializedType(UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
+    AddJoint(NodeContainer, RootJointUid, TEXT("VRM_Root"), SceneNodeUid, FTransform::Identity);
 
     // Build joint hierarchy from parsed bones (if any)
     TArray<FString> BoneUids;
@@ -126,12 +148,8 @@ bool UVRMTranslator::Translate(UInterchangeBaseNodeContainer& NodeContainer) con
         const FVRMParsedBone& B = Parsed.Bones[bi];
         const FString BoneUid = MakeNodeUid(*FString::Printf(TEXT("Joint_%d"), bi));
         BoneUids[bi] = BoneUid;
-        UInterchangeSceneNode* BoneNode = NewObject<UInterchangeSceneNode>(&NodeContainer);
         const FString ParentUid = (B.Parent == INDEX_NONE) ? RootJointUid : BoneUids[B.Parent];
-        NodeContainer.SetupNode(BoneNode, BoneUid, *B.Name, EInterchangeNodeContainerType::TranslatedScene, ParentUid);
-        BoneNode->SetCustomLocalTransform(&NodeContainer, B.LocalBind);
-        BoneNode->SetCustomBindPoseLocalTransform(&NodeContainer, B.LocalBind);
-        BoneNode->AddSpecializedType(UE::Interchange::FSceneNodeStaticData::GetJointSpecializeTypeString());
+        AddJoint(NodeContainer, BoneUid, B.Name, ParentUid, B.LocalBind);
     }
 
     // Textures: one node (and texture asset) per image and use. Colour space and compression depend

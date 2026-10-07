@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Misc/EngineVersionComparison.h"
 #include "VRMInterchangeLog.h"
 
 namespace VRMPipeline
@@ -114,6 +115,15 @@ namespace VRMPipeline
 		Template->Modify();
 		MeshProperty->SetObjectPropertyValue(MeshProperty->ContainerPtrToValuePtr<void>(Template), Mesh);
 		SkinnedProperty->SetObjectPropertyValue(SkinnedProperty->ContainerPtrToValuePtr<void>(Template), Mesh);
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+		// UE 5.8 checks that the skinned asset isn't changed behind the component's back, and ensures
+		// when the Blueprint compiles. The notification that records the change is protected;
+		// PostEditChangeProperty on the skinned asset property runs it (and none of the anim handling).
+		{
+			FPropertyChangedEvent Changed(SkinnedProperty, EPropertyChangeType::ValueSet);
+			Template->PostEditChangeProperty(Changed);
+		}
+#endif
 		bool bAnimSet = true;
 		if (AnimClass)
 		{

@@ -76,13 +76,15 @@ So the content must stay saved from 5.6, the oldest supported engine. Opening th
 
 ## 2. Decisions for the owner
 
+All five were decided on 2026-10-07, as recommended.
+
 | ID | Decision | Recommendation |
 |---|---|---|
-| D-9 | Amend D-2 ("Engine versions stay 5.6"): support 5.6, 5.7 and 5.8. | Yes. The cost measured above is small, and 5.6 can be dropped later without code changes beyond deleting guards. Proposed rule: support the three newest engine releases; when a new one is added, drop the oldest (and re-save content from the new oldest). |
-| D-10 | Project target settings: `Latest`, or pinned per engine. | `Latest`. It keeps 5.6 identical and needs no edit per engine. A future engine that breaks the build shows up in CI, which is where it would be fixed anyway. |
-| D-11 | Fab: one listing per plugin with a package per engine (three uploads each), or support only 5.7 and later on Fab. | A package per engine. Fab takes one package per engine version on the same listing, and `build_fab.ps1` already makes one per engine. |
-| D-12 | CI cost: all three engines on every PR (about three times today's 6 minutes, the runner runs jobs one at a time), or the oldest engine fully and the others plugin-only. | All three on every PR, at first. The test failures above only showed up by running the tests on each engine. Reconsider if the runner queue becomes a problem. |
-| D-13 | Required checks on `main`. | Keep `build-and-test` as the only required check, made an aggregator of the engine jobs (U2), so the branch protection rule doesn't change. |
+| D-9 | Amend D-2 ("Engine versions stay 5.6"): support 5.6, 5.7 and 5.8. | **Decided 2026-10-07: as recommended.** Yes. The cost measured above is small, and 5.6 can be dropped later without code changes beyond deleting guards. Proposed rule: support the three newest engine releases; when a new one is added, drop the oldest (and re-save content from the new oldest). |
+| D-10 | Project target settings: `Latest`, or pinned per engine. | **Decided 2026-10-07: as recommended.** `Latest`. It keeps 5.6 identical and needs no edit per engine. A future engine that breaks the build shows up in CI, which is where it would be fixed anyway. |
+| D-11 | Fab: one listing per plugin with a package per engine (three uploads each), or support only 5.7 and later on Fab. | **Decided 2026-10-07: as recommended.** A package per engine. Fab takes one package per engine version on the same listing, and `build_fab.ps1` already makes one per engine. |
+| D-12 | CI cost: all three engines on every PR (about three times today's 6 minutes, the runner runs jobs one at a time), or the oldest engine fully and the others plugin-only. | **Decided 2026-10-07: as recommended.** All three on every PR, at first. The test failures above only showed up by running the tests on each engine. Reconsider if the runner queue becomes a problem. |
+| D-13 | Required checks on `main`. | **Decided 2026-10-07: as recommended.** Keep `build-and-test` as the only required check, made an aggregator of the engine jobs (U2), so the branch protection rule doesn't change. |
 
 ## 3. Work
 

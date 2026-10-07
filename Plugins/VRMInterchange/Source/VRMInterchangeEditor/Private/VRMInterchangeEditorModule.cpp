@@ -4,6 +4,7 @@
 #include "Modules/ModuleManager.h"
 #include "Misc/App.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
@@ -21,6 +22,19 @@
 #include "VRMSpringBoneDataCustomization.h"
 
 #define LOCTEXT_NAMESPACE "VRMInterchangeEditor"
+
+namespace
+{
+	// UE 5.8 replaced the OnPostEngineInit member with an accessor.
+	FSimpleMulticastDelegate& VRMEditorPostEngineInitDelegate()
+	{
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+		return FCoreDelegates::GetOnPostEngineInit();
+#else
+		return FCoreDelegates::OnPostEngineInit;
+#endif
+	}
+}
 
 IMPLEMENT_MODULE(FVRMInterchangeEditorModule, VRMInterchangeEditor)
 
@@ -52,7 +66,7 @@ void FVRMInterchangeEditorModule::StartupModule()
 	}
 	else
 	{
-		PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(this, &FVRMInterchangeEditorModule::OnPostEngineInit);
+		PostEngineInitHandle = VRMEditorPostEngineInitDelegate().AddRaw(this, &FVRMInterchangeEditorModule::OnPostEngineInit);
 	}
 }
 
@@ -70,7 +84,7 @@ void FVRMInterchangeEditorModule::ShutdownModule()
 	}
 	if (PostEngineInitHandle.IsValid())
 	{
-		FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitHandle);
+		VRMEditorPostEngineInitDelegate().Remove(PostEngineInitHandle);
 		PostEngineInitHandle.Reset();
 	}
 }

@@ -5,10 +5,12 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 ## [Unreleased]
 
 ### Added
+- Both plugins build and pass their tests on UE 5.7 and 5.8 as well as 5.6. On 5.8, VRM imports create their bones as Interchange joint nodes, so the bones keep their bind poses and the import no longer reports an error, and importing into an actor Blueprint no longer trips an engine check. CI and the Fab packages for the new engines follow ([plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md)).
 - A [User Guide](docs/USER_GUIDE.md) for both plugins: install, import a VRM avatar, stream VMC to it, expressions, spring bones, retargeting and troubleshooting. The root README now leads with it, and both plugin READMEs were corrected against the code (generated asset names and folders, option names, defaults, the Live Link actor's **Subject**, and several missing settings).
 - **Use Spring Centers** on the spring bone node. Turned off, springs that name a `center` bone are simulated in the node's Simulation Space instead, so moving and turning the character swings them (VRoid Studio gives every spring the `Root` center, which makes the character's own motion add nothing).
 
 ### Changed
+- The `.uplugin` files in the repository no longer set `EngineVersion`; each Fab package sets it for its engine. With `5.6.0` there, UE 5.7 and later refused to load the plugins from source.
 - The VRM Interchange project settings **Generate Post Process AnimBP**, **Assign Post Process ABP** and **Overwrite Existing Spring Assets** default to on. That is what imports already did (see Fixed), so new imports behave as before, but these settings now take effect when changed. A project that turned them off in its config now gets them off. The pipeline classes' own defaults are unchanged, so pipeline assets a studio saved from them load as saved; in the import dialog, though, every VRM pipeline (a studio's own included) starts from the project settings for these options.
 - VRM import pipelines created in code (or as Blueprint subclasses) no longer take the project settings when they are created; they start from the class defaults. Call `ApplyProjectSettings` on them, or use the plugin's pipeline assets, to follow the project settings.
 - The VRM import dialog starts each new import from the project settings, not from the choices made in the dialog last time. A reimport still uses the choices made when the asset was imported.

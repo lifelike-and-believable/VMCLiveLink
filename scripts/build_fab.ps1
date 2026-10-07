@@ -204,8 +204,14 @@ function Set-EngineVersionInUPlugin($jsonPath, $engineVersion) {
       $txt = [System.Text.RegularExpressions.Regex]::Replace($txt, $pattern2, $evaluator2, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     }
   } else {
-    # Insert EngineVersion and SupportedTargetPlatforms after the opening brace if EngineVersion isn't present
-    $txt = $txt -replace '^\s*\{', "{`n  `"EngineVersion`": `"$engineVersion`",`n  `"SupportedTargetPlatforms`": [ `"Win64`" ],"
+    # The source descriptors have no EngineVersion (a 5.6.0 there makes newer editors refuse to load
+    # the plugin from source), so this is the usual path: insert it after the opening brace, with
+    # SupportedTargetPlatforms unless the descriptor already lists them.
+    $insert = "{`n  `"EngineVersion`": `"$engineVersion`","
+    if ($txt -notmatch '"SupportedTargetPlatforms"\s*:') {
+      $insert += "`n  `"SupportedTargetPlatforms`": [ `"Win64`" ],"
+    }
+    $txt = $txt -replace '^\s*\{', $insert
   }
   # Write out the patched file
   Set-Content -Value $txt -Path $jsonPath -Encoding UTF8

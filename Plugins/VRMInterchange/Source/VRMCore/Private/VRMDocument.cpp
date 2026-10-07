@@ -9,8 +9,11 @@
 
 // The plugin's only cgltf implementation (P3.3). Other modules never include cgltf. Undefined
 // again so that a unity build that puts another VRMCore file after this one doesn't compile it twice.
+// Third-party code: compiled without the engine's warnings (from UE 5.7, its CRT calls warn).
+THIRD_PARTY_INCLUDES_START
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
+THIRD_PARTY_INCLUDES_END
 #undef CGLTF_IMPLEMENTATION
 
 namespace

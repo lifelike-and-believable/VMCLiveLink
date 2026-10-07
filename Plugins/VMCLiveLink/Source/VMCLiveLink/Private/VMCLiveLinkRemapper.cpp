@@ -9,6 +9,7 @@
 #include "Serialization/JsonSerializer.h"
 #include <Remapper/LiveLinkSkeletonRemapper.h>
 
+#include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
