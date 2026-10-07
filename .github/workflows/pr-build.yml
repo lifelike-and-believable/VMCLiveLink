@@ -23,6 +23,8 @@ jobs:
   build:
     name: build (${{ matrix.engine }})
     # The runner is self-hosted: never run code from forks on it (build-and-test fails them instead).
+    # A fork's pull request runs its own copy of this file, so this guards only an unmodified copy;
+    # what keeps fork code off the runner is the repository's approval rule for fork workflows.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -33,8 +35,8 @@ jobs:
         # The supported engines, oldest first. The oldest also checks the copyright headers and the
         # content's package versions. The runner has each at C:\Program Files\Epic Games\UE_<version>.
         engine: ['5.6', '5.7', '5.8']
-    # Job-level so that a skipped run (a title edit) doesn't cancel a build in progress, and per
-    # engine so that the engines' jobs don't cancel each other.
+    # A newer push cancels this pull request's build on the same engine. Per engine, so that the
+    # engines' jobs don't cancel each other.
     concurrency:
       group: pr-build-${{ github.event.pull_request.number || github.ref }}-${{ matrix.engine }}
       cancel-in-progress: true
@@ -147,6 +149,8 @@ jobs:
           name: automation-report-${{ matrix.engine }}
           path: TestReport
           if-no-files-found: ignore
+          # A re-run of a failed job replaces its earlier report, so the counts are the latest.
+          overwrite: true
 
   # The check main requires. It never skips, since a skipped required check counts as passing: it
   # runs always() (needs alone would add an implicit success() and skip it when an engine fails, or
