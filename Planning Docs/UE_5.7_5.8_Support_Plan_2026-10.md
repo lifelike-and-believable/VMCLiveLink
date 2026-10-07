@@ -18,12 +18,13 @@ Each plugin was built with `RunUAT BuildPlugin`, which is what Fab and `scripts/
 | Project targets as they are | fail (1.4) | fail (1.4) |
 | `VRM.+VMC.` tests | 113 passed, 1 failed (flaky, 1.3) | 112 passed, 2 failed (1.3) |
 | Editor target without unity (CI's build) | builds, with the fixes | builds, with the fixes |
+| Plugins load with the committed `.uplugin` (`EngineVersion` 5.6.0) | not tried; same code as 5.8 | no: skipped (1.4) |
 
-VMC Live Link needs no engine-specific code: three missing includes. VRM Interchange needs those kinds of fixes too, plus three changes that differ by engine (5.7's material resource lookup, and 5.8's Interchange joint nodes and skinned-mesh check).
+VMC Live Link needs no engine-specific code: three missing includes. VRM Interchange needs those kinds of fixes too, plus three changes that differ by engine (5.7's material resource lookup, and 5.8's Interchange joint nodes and skinned-mesh check). And both plugins' descriptors name engine 5.6.0, which makes 5.7 and 5.8 refuse to load them from source (1.4).
 
 ### 1.1 Compile errors
 
-The newer engines include fewer headers transitively, and 5.7 treats an export macro in the wrong place as an error.
+The newer engines include fewer headers transitively, and 5.8 treats an export macro in the wrong place as an error.
 
 | File | Error | Fix | 5.6 |
 |---|---|---|---|
@@ -43,23 +44,24 @@ None of these are errors yet. Each warning says the code will stop compiling in 
 | Where | Deprecated | Replacement | Available from |
 |---|---|---|---|
 | `VRMInterchangeModule.cpp:17,28`, `VRMInterchangeEditorModule.cpp:55,73` | `FCoreDelegates::OnPostEngineInit` | `FCoreDelegates::GetOnPostEngineInit()` | 5.8: guard |
-| `VRMMToonMaterial.cpp:278-279`, `VRMMToonMaterialTests.cpp:80-81` | `UMaterial::bUsedWithSkeletalMesh`, `bUsedWithMorphTargets` | `GetUsageByFlag` to read. To write, `SetUsageByFlag` (exported only in 5.8; in 5.7 the plugin can't link to it). | 5.8: guard, keep the flags below it |
+| `VRMMToonMaterial.cpp:278-279`, `VRMMToonMaterialTests.cpp:80-81` | `UMaterial::bUsedWithSkeletalMesh`, `bUsedWithMorphTargets` | `GetUsageByFlag` to read (exported in all three engines, so the test needs no guard). To write, `SetUsageByFlag` (exported only in 5.8; in 5.7 the plugin can't link to it). | reads: same code; writes: guard at 5.8, keeping the flags below it |
 | `VRMTranslator.cpp:118-119,133-134` | `UInterchangeSceneNode::SetCustomBindPoseLocalTransform`, `FSceneNodeStaticData::GetJointSpecializeTypeString` | Create joints as `UInterchangeJointNode` and call `SetBindPoseLocalTransform` | 5.8: guard (1.3) |
 
 Writing the material usage flags: `SetMaterialUsage(bool&, EMaterialUsage)` exists in all three engines, but in 5.6 it is meant for a material in use and can queue a recompile, and in 5.8 it is a compatibility wrapper. The generated master materials are built in code before they are compiled, so keep writing the flags directly below 5.8 and use `SetUsageByFlag` from 5.8.
 
-The `cgltf.h` warnings (`fopen`, `strcpy`, `strncpy`) appear from 5.7 and come from the third-party header. Silence them where cgltf is compiled (`VRMCore` only) with `_CRT_SECURE_NO_WARNINGS` defined around its implementation include. Don't edit the header.
+The `cgltf.h` warnings (`fopen`, `strcpy`, `strncpy`) appear from 5.7 and come from the third-party header. `cgltf.h` already defines `_CRT_SECURE_NO_WARNINGS`, too late: the CRT headers came in earlier through the PCH. Wrap the implementation include (in `VRMCore` only) in `THIRD_PARTY_INCLUDES_START` / `THIRD_PARTY_INCLUDES_END`, which disables C4996 in all three engines. Don't edit the header.
 
 ### 1.3 Test failures
 
-**5.8, `VRM.Materials.Translate`: affects every VRM import.** On 5.8 the deprecated `SetCustomBindPoseLocalTransform` logs an error at runtime as well as warning at compile time. Every VRM import on 5.8 would report an error in the message log and the import notification. The test caught it because it fails on logged errors. The fix is the joint-node change in 1.2: from 5.8, `VRMTranslator` creates the root joint and each bone as `UInterchangeJointNode` and sets their bind pose with `SetBindPoseLocalTransform`. The probe didn't check how 5.8's skeleton factory treats the old and new joint forms, so this is the change most likely to alter what a 5.8 import produces. Tests and an editor check confirm the skeleton, bind pose and spring bones still import the same (U1, U6).
+**5.8, `VRM.Materials.Translate`: affects every VRM import.** On 5.8 the deprecated `SetCustomBindPoseLocalTransform` is a stub: it logs an error and stores nothing (`InterchangeSceneNode.cpp:527-531`), and 5.8's skeleton and mesh code reads bind poses only from `UInterchangeJointNode`. So on 5.8 every VRM import reports an error in the message log and the import notification, and its skeleton is built without the bind poses the file gives. The test caught the error because it fails on logged errors; no test caught the missing bind pose, so the current tests don't check it. The fix is the joint-node change in 1.2: from 5.8, `VRMTranslator` creates the root joint and each bone as `UInterchangeJointNode` and sets their bind pose with `SetBindPoseLocalTransform`. This is the change most likely to alter what a 5.8 import produces. A test of the bind pose (U1) and an editor check (U6) confirm the skeleton, bind pose and spring bones import as on 5.6.
 
-**5.8, `VRM.Pipeline.ActorWiring.ConstructionScript`: affects imports that make an actor Blueprint.** `VRMPipeline::SetActorBlueprintMesh` (`VRMActorBlueprintWiring.cpp:113-114`) writes `SkeletalMeshAsset` and `SkinnedAsset` straight to the component template, on purpose (a template isn't registered, so the setters' runtime work doesn't apply). 5.8 added a check that the skinned asset isn't changed behind the component's back, and it fires an ensure: `KnownSkinnedAsset == CurrentSkinnedAsset`. The fix is to call `Template->NotifyIfSkinnedAssetChanged()` after the writes. It is new in 5.8, so it needs a guard.
+**5.8, `VRM.Pipeline.ActorWiring.ConstructionScript`: affects imports that make an actor Blueprint.** `VRMPipeline::SetActorBlueprintMesh` (`VRMActorBlueprintWiring.cpp:115-116`) writes `SkeletalMeshAsset` and `SkinnedAsset` straight to the component template, on purpose (a template isn't registered, so the setters' runtime work doesn't apply). 5.8 added a check that the skinned asset isn't changed behind the component's back, and it fires an ensure: `KnownSkinnedAsset == CurrentSkinnedAsset`. `NotifyIfSkinnedAssetChanged()`, which would record the change, is new in 5.8 and `protected`, so the plugin can't call it, and `USkeletalMeshComponent::RefreshSkeletalMeshAsset()` (which calls it) isn't exported. A candidate, guarded at 5.8: after the writes, call the template's `PostEditChangeProperty` with the `SkinnedAsset` property, which is public and calls the notify first (`SkinnedMeshComponent.cpp:1636-1638`); the module is editor-only. U1 must check it does nothing harmful on an unregistered template, or find another route.
 
-**5.7, `VMC.Diagnostics.Source` ("VMC.Stats counts packets"): intermittent.** It failed once in the full run and passed in two runs on its own, and passed on 5.8. On 5.6 it passed 10 runs out of 10 on its own; failing only in the full run points to timing under load. The test sends UDP packets and checks the counter; it likely reads the counter before the receive thread has counted them. Three engines means three times as many runs, so a flaky test turns CI red three times as often: it gets its own fix (U4) before the CI matrix is required.
+**5.7, `VMC.Diagnostics.Source` ("VMC.Stats counts packets"): intermittent.** It failed once in the full run and passed in two runs on its own, and passed on 5.8. On 5.6 it passed 10 runs out of 10 on its own (one editor launch per run; each run's report overwrote the last, so only the console output of that loop records all ten). Failing only in the full run points to timing under load. The test sends UDP packets and checks the counter; it likely reads the counter before the receive thread has counted them. Three engines means three times as many runs, so a flaky test turns CI red three times as often: it gets its own fix (U4) before the CI matrix is required.
 
 ### 1.4 Build configuration
 
+- **The plugins' `EngineVersion` must go from the source descriptors.** Both `.uplugin` files say `"EngineVersion": "5.6.0"`. 5.7 and 5.8 treat that as an incompatible plugin: the editor asks whether to load it, and under `-unattended` the answer is No, so both plugins are skipped and the tests find nothing to run (tried on 5.8: "Skipping load of 'VRMInterchange'", "No automation tests matched"). A user who copies the source into a 5.7 project gets the same prompt. The probe missed it at first because its copies set `EngineVersion` per engine. Remove the field from the source descriptors; `build_fab.ps1` already writes it into each package. The project's `EngineAssociation` of 5.6 doesn't matter here: 5.8 ran the tests on the project with it unchanged.
 - **The project targets fail on 5.7 and 5.8.** `Source/VMCLiveLinkProject*.Target.cs` pin `DefaultBuildSettings = BuildSettingsVersion.V5` and `IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_6`. On 5.7, with an installed engine, UBT refuses V5 because it changes `UndefinedIdentifierWarningLevel` for a target that shares build products with `UnrealEditor`. Two ways to fix it ([D-10](#2-decisions-for-the-owner)):
   - `BuildSettingsVersion.Latest` and `EngineIncludeOrderVersion.Latest`. These are V5 and `Unreal5_6` in 5.6, so the 5.6 build is unchanged. This is what the probe used.
   - Pin per engine with the defines UBT gives rules files (`#if UE_5_7_OR_LATER`). A future engine then can't change the settings without a code change.
@@ -91,31 +93,35 @@ Each item is one pull request, in this order. Each follows CONTRIBUTING (review,
 All of 1.1, 1.2 and 1.3 except the flaky test, and the target change from 1.4.
 
 - The includes and the export macro move.
-- Engine guards with `UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)` / `(5, 8, 0)` from `Misc/EngineVersionComparison.h`, for: the test's `GetMaterialResource`, `OnPostEngineInit`, the material usage flags, the joint nodes in `VRMTranslator`, and `NotifyIfSkinnedAssetChanged`. Each guard has a comment naming the engine change, so it can be deleted when that engine becomes the oldest.
-- `_CRT_SECURE_NO_WARNINGS` around the cgltf implementation in `VRMCore`.
+- `EngineVersion` removed from both source `.uplugin` files (1.4).
+- Engine guards with `UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)` / `(5, 8, 0)` from `Misc/EngineVersionComparison.h`, for: the test's `GetMaterialResource`, `OnPostEngineInit`, writing the material usage flags, the joint nodes in `VRMTranslator`, and the skinned-asset notification in the actor wiring (1.3). Each guard has a comment naming the engine change, so it can be deleted when that engine becomes the oldest.
+- `THIRD_PARTY_INCLUDES_START` / `_END` around the cgltf implementation in `VRMCore`.
 - `Target.cs` as decided in D-10.
-- A test that the 5.8 joint path imports the same skeleton as the fixtures expect (bone count, names, parents, bind pose). The existing skeleton tests may already cover this; check they run the translator rather than the parser alone.
+- A test that a fixture's import gives the expected skeleton, including each bone's bind pose (the current tests passed on 5.8 without bind poses, so they don't check it). It must run the translator and the skeleton creation, not the parser alone.
 
 Acceptance:
 - CI (5.6) green, with `0 passed with warnings`.
 - Built locally on 5.7 and 5.8, the CI way (Editor without unity, Game Development and Shipping) and with BuildPlugin. `VRM.+VMC.` pass on both with no warnings, and the 5.8 build has no C4996 from plugin code. Recorded in the PR, since CI doesn't build them yet.
-- The plugins' `EngineVersion` stays `5.6.0` and `EngineAssociation` stays `5.6`: the packages set the engine version (U3), and the project is opened with the oldest engine.
+- The source `.uplugin` files have no `EngineVersion` (the packages set it, U3), and `EngineAssociation` stays `5.6`: the project is opened with the oldest engine.
+- The 5.7 and 5.8 test runs used the descriptors as committed, with no edits to the copies.
 
 ### U2. CI on three engines
 
 `pr-build.yml`:
-- A matrix job per engine (`5.6`, `5.7`, `5.8`), each building and testing as today. Each engine gets its own checkout folder (`actions/checkout` with `path: ue-5.7` and so on), so its `Intermediate` and `Binaries` survive between runs and builds stay incremental. Sharing one folder would rebuild everything each time the engine changes.
+- A matrix job per engine (`5.6`, `5.7`, `5.8`), each building and testing as today. Each engine gets its own checkout folder (`actions/checkout` with `path: ue-5.7` and so on, and `clean: false`, since the default `git clean -ffdx` deletes `Intermediate` and `Binaries`; the steps use that folder as `working-directory`), so builds stay incremental. Sharing one folder would rebuild everything each time the engine changes.
+- Each engine job keeps today's job-level `if:` (the fork guard and the title-edit skip), so no fork code runs on the runner and a title edit doesn't start three builds. Its concurrency group includes the engine (`pr-build-<PR>-${{ matrix.engine }}`), or the three legs would cancel each other. Its test report artifact is named per engine (`automation-report-5.7`), or the second upload fails with a name conflict.
 - A BuildPlugin step per engine for each plugin, so the latest include order is built (1.4). Build into a short path.
-- A content version check: a small script reads the package file version from the header of every tracked `.uasset` and `.umap` and fails on anything newer than 5.6 writes (UE5 version 1017), naming the files. Runs once, not per engine. Also usable locally.
-- `build-and-test` becomes an aggregator: it `needs` the engine jobs, carries the same `if:` as today's job (so it is skipped exactly when today's job is), and fails if any engine job didn't succeed. It posts the one success comment, with each engine's test counts. One comment, not three, so the Auto-fix monitor wakes once. The required check keeps its name, so branch protection doesn't change.
+- A content version check: a small script reads the package file version from the header of every tracked `.uasset` and `.umap` and fails on anything newer than 5.6 writes (UE5 version 1017), naming the files. Runs once, not per engine, as its own job with the same `if:`. Also usable locally.
+- `build-and-test` becomes an aggregator: it `needs` the engine jobs and the content check, with `if: ${{ !cancelled() && (<today's condition>) }}`. Without `!cancelled()` the implicit `success()` would skip it when an engine fails, and a skipped required check counts as passing, so a red PR could merge. Its first step fails unless every `needs.<job>.result` is `success`. Its concurrency group is its own. It posts the one success comment, with each engine's test counts read from the downloaded per-engine report artifacts (job outputs and `GITHUB_ENV` don't carry three matrix legs' values). One comment, not three, so the Auto-fix monitor wakes once. The required check keeps its name, so branch protection doesn't change.
 - The engine roots in one place (a matrix list), and CONTRIBUTING's CI runner section lists the three engine folders.
 
-Acceptance: a PR shows three engine jobs and `build-and-test`; deliberately breaking 5.8 only (a temporary guarded `#error`, reverted before merge) makes `build-and-test` fail; a docs-only edit to the PR title still skips as today; the content check fails on a 5.7-saved asset (tried locally on a copy).
+Acceptance: a PR shows three engine jobs, the content check and `build-and-test`; deliberately breaking 5.8 only (a temporary guarded `#error`, reverted before merge) makes `build-and-test` fail, not skip, and GitHub refuses the merge; a second push cancels only the superseded legs; the success comment lists three engines' counts; a docs-only edit to the PR title still skips as today; the content check fails on a 5.7-saved asset (tried locally on a copy).
 
 ### U3. Fab packages for three engines
 
 - `fab-plugin-build.yml`: `ENGINE_ROOTS` and `ENGINE_VERSIONS` list the three engines (`5.6.0,5.7.0,5.8.0`). `build_fab.ps1` already builds and zips one package per engine with its `EngineVersion` set.
 - The "Prepare zip files" step assumes one engine: it names the combined folder from the first version only and extracts every engine's zip of a plugin into the same folder, so the last one wins. Group by engine: one combined zip and one zip per plugin for each engine, named with the engine (`VMCLiveLink_UE5_7_Fab.zip` already is).
+- The steps after it hard-code three timestamped zip names: the artifact upload (with `if-no-files-found: error`) and the three release-asset steps. They take the per-engine set.
 - Check the deepest packaged path stays under 260 characters (1.4).
 - Run the workflow manually and install each package into a clean project on its engine (an editor check, U6).
 
@@ -155,6 +161,8 @@ Add these as engine columns to the relevant rows of `docs/EDITOR_TESTS.md` and r
 ## 5. Not verified yet
 
 - The fixes in 1.1 and the `Target.cs` change haven't been built on 5.6. U1 does that, in CI.
+- The actor wiring fix (1.3) and the bind-pose test are proposals; neither has been compiled.
+- The CI runner: the runner folder at `C:\actions-runner` on this machine is registered to an older repository location, so confirm the machine that runs this repository's jobs has UE 5.7 and 5.8 at `C:\Program Files\Epic Games\UE_5.7` and `UE_5.8` before U2.
 - The 5.7 and 5.8 builds were the plugins' BuildPlugin builds and the project's Editor target (with and without unity). The Game targets were built only through BuildPlugin.
 - Whether Fab still requires anything per engine beyond `EngineVersion` (for example, an engine-specific listing field) wasn't checked.
 - Nothing ran in an interactive editor: U6.
