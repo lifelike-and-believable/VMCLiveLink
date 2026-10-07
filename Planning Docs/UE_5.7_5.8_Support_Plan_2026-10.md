@@ -109,6 +109,8 @@ Acceptance:
 
 ### U2. CI on three engines
 
+**Done in the U2 pull request, with three changes from the list below.** (1) No per-engine checkout folders: CI already rebuilds the plugins from a clean checkout in about 6 minutes per engine, and keeping folders between runs (`clean: false`) would let files deleted on a branch linger and be compiled. (2) No BuildPlugin step: its purpose was to build with each engine's latest include order, which the project targets now do (`Latest`, D-10), and on the runner BuildPlugin inherits IncrediBuild's intermittent refusals (U1). (3) The content check is a step of the oldest engine's job, not a job of its own, so it needs no checkout of its own.
+
 `pr-build.yml`:
 - A matrix job per engine (`5.6`, `5.7`, `5.8`), each building and testing as today. Each engine gets its own checkout folder (`actions/checkout` with `path: ue-5.7` and so on, and `clean: false`, since the default `git clean -ffdx` deletes `Intermediate` and `Binaries`; the steps use that folder as `working-directory`), so builds stay incremental. Sharing one folder would rebuild everything each time the engine changes.
 - Each engine job keeps today's job-level `if:` (the fork guard and the title-edit skip), so no fork code runs on the runner and a title edit doesn't start three builds. Its concurrency group includes the engine (`pr-build-<PR>-${{ matrix.engine }}`), or the three legs would cancel each other. Its test report artifact is named per engine (`automation-report-5.7`), or the second upload fails with a name conflict.
