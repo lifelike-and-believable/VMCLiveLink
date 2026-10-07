@@ -18,7 +18,9 @@ param(
   [int]$MaxFileVersionUE5 = 1017
 )
 
-$Files = @(git ls-files -- '*.uasset' '*.umap')
+# Paths as UTF-8, unquoted (VRM imports can give assets Japanese names).
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$Files = @(git -c core.quotepath=off ls-files -- '*.uasset' '*.umap')
 if ($LASTEXITCODE -ne 0) { Write-Error "git ls-files failed"; exit 1 }
 
 $Bad = @()
@@ -39,6 +41,11 @@ foreach ($File in $Files) {
   # FPackageFileSummary: Tag, LegacyFileVersion, LegacyUE3Version (unless -4), FileVersionUE4,
   # FileVersionUE5 (when LegacyFileVersion <= -8).
   $Legacy = [BitConverter]::ToInt32($Header, 4)
+  if ($Legacy -lt -9) {
+    # A newer header layout than UE 5.6 to 5.8 write (-9); 5.6 refuses to load it anyway.
+    $Bad += "$File`: unknown package header layout ($Legacy)"
+    continue
+  }
   $Offset = if ($Legacy -ne -4) { 12 } else { 8 }
   $UE5 = if ($Legacy -le -8) { [BitConverter]::ToInt32($Header, $Offset + 4) } else { 0 }
   if ($UE5 -gt $MaxFileVersionUE5) {
