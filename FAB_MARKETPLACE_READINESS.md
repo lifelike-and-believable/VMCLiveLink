@@ -34,7 +34,7 @@ Both plugins are in reasonable technical shape for an eventual Fab submission �
 | `FriendlyName` / `Description` | Set, accurate | Set, accurate | Required | ✅ |
 | `Category` | `"Live Link"` | `"Importers"` | Should match a real Fab/Marketplace category | ✅ (verify current Fab category taxonomy — categories were reorganized when Marketplace → Fab migrated) |
 | `CreatedBy` / `CreatedByURL` | Set | Set | Required for listing attribution | ✅ |
-| `EngineVersion` | `"5.6.0"` | `"5.6.0"` | Single-version plugins are accepted, but Fab strongly favors broad engine-version support ("Develop Low, Upgrade High") | ⚠️ Single-version only — see §4 |
+| `EngineVersion` | Not set in the source; each package sets it | Not set in the source; each package sets it | Fab takes one package per engine version. A `"5.6.0"` in the source descriptor makes UE 5.7 and later refuse to load the plugin, so `build_fab.ps1` sets it per package instead | ✅ 5.6, 5.7 and 5.8 planned ([plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md)) |
 | `SupportedTargetPlatforms` | Not set (module-level `IncludeListPlatforms: ["Win64"]` only) | Not set (Win64-only on Editor/Spring-Bones-Editor modules) | Fab wants explicit, accurate platform support declared | ⚠️ Should be declared explicitly; also both plugins are Windows-only today (see §4) |
 | `DocsURL` / `SupportURL` | Empty | Empty | Not strictly required, but expected for a paid/listed plugin and improves review odds | ⚠️ Empty |
 | `MarketplaceURL` | Empty | Empty | Populated by Epic after first listing, not a submission blocker | ➖ N/A pre-submission |
