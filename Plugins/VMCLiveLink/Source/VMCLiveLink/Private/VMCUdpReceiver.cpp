@@ -1,5 +1,9 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VMCUdpReceiver.h"
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+#error TEMPORARY: checks that a 5.8-only failure fails build-and-test (U2 acceptance); reverted before merge
+#endif
 #include "Common/UdpSocketBuilder.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/RunnableThread.h"
