@@ -131,9 +131,8 @@ jobs:
               } finally {
                 $Archive.Dispose()
               }
-              if ($Descriptor -notmatch '"EngineVersion"\s*:\s*"([^"]*)"' -or $matches[1] -ne $Ver) {
-                Write-Error "$($Zip.Name): EngineVersion is '$($matches[1])', expected '$Ver'"; exit 1
-              }
+              if ($Descriptor -notmatch '"EngineVersion"\s*:\s*"([^"]*)"') { Write-Error "$($Zip.Name): no EngineVersion, expected '$Ver'"; exit 1 }
+              if ($matches[1] -ne $Ver) { Write-Error "$($Zip.Name): EngineVersion is '$($matches[1])', expected '$Ver'"; exit 1 }
               $Packages[$Plugin] = $Zip
             }
             Write-Host "UE $Ver"
@@ -154,12 +153,14 @@ jobs:
           if-no-files-found: error
 
       # A release tag publishes every zip to a GitHub Release (REST API; the create-release and
-      # upload-release-asset actions are archived).
+      # upload-release-asset actions are archived). The release is a draft until every zip is up, so
+      # a failed upload leaves a draft, not a public release with some of the zips; a re-run of the
+      # job makes a new one (the tag includes the attempt).
       - name: Create GitHub Release with the zips
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
         env:
           TIMESTAMP: ${{ steps.date.outputs.timestamp }}
-          TAG: ${{ github.ref_name }}-run${{ github.run_number }}
+          TAG: ${{ github.ref_name }}-run${{ github.run_number }}-${{ github.run_attempt }}
           RELEASE_NAME: ${{ github.ref_name }}-${{ steps.date.outputs.timestamp }}
           COMMIT: ${{ github.sha }}
         run: |
@@ -169,13 +170,16 @@ jobs:
             target_commitish = $env:COMMIT
             name = $env:RELEASE_NAME
             body = "Automated release created by CI for $env:GITHUB_REF_NAME. The run number is included in the release tag for traceability. For each engine ($env:ENGINE_VERSIONS): a combined package (VMCLiveLink + VRMInterchange) and a package per plugin, for Fab submission."
-            draft = $false
+            draft = $true
             prerelease = $false
           } | ConvertTo-Json
           $Release = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases" -Headers $Headers -ContentType 'application/json' -Body $Body
           Write-Host "Created release $($Release.html_url)"
           foreach ($Zip in Get-ChildItem -Path FabBuilds -Filter "*-UE*-$env:TIMESTAMP.zip" -File) {
             $Uri = "https://uploads.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($Release.id)/assets?name=$([Uri]::EscapeDataString($Zip.Name))"
-            Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/zip' -InFile $Zip.FullName | Out-Null
+            # The zips are about 140 MB: a long timeout, whatever the default under PowerShell 5.1.
+            Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/zip' -InFile $Zip.FullName -TimeoutSec 1800 | Out-Null
             Write-Host "Uploaded $($Zip.Name)"
           }
+          $Published = Invoke-RestMethod -Method Patch -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($Release.id)" -Headers $Headers -ContentType 'application/json' -Body (@{ draft = $false } | ConvertTo-Json)
+          Write-Host "Published $($Published.html_url)"
