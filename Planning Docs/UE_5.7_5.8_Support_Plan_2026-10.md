@@ -123,6 +123,8 @@ Acceptance: a PR shows three engine jobs, the content check and `build-and-test`
 
 ### U3. Fab packages for three engines
 
+**Done in the U3 pull request.** The release assets are uploaded through the REST API (the `create-release` and `upload-release-asset` actions are archived), the zip step checks each package's `EngineVersion`, and `build_fab.ps1` passes `-ubtargs=-NoXGE` to BuildPlugin (IncrediBuild on the build machine refuses intermittently). Path lengths: the runner's work folder is about 50 characters, against the probe's 150 that overflowed, and the manual run below built every engine.
+
 - `fab-plugin-build.yml`: `ENGINE_ROOTS` and `ENGINE_VERSIONS` list the three engines (`5.6.0,5.7.0,5.8.0`). `build_fab.ps1` already builds and zips one package per engine with its `EngineVersion` set.
 - The "Prepare zip files" step assumes one engine: it names the combined folder from the first version only and extracts every engine's zip of a plugin into the same folder, so the last one wins. Group by engine: one combined zip and one zip per plugin for each engine, named with the engine (`VMCLiveLink_UE5_7_Fab.zip` already is).
 - The steps after it hard-code three timestamped zip names: the artifact upload (with `if-no-files-found: error`) and the three release-asset steps. They take the per-engine set.

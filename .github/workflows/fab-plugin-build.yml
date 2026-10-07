@@ -19,8 +19,10 @@ jobs:
     env:
       PLUGIN_DIR: "Plugins/VMCLiveLink"
       VRM_PLUGIN_DIR: "Plugins/VRMInterchange"
-      ENGINE_ROOTS: 'C:\Program Files\Epic Games\UE_5.6'
-      ENGINE_VERSIONS: '5.6.0'
+      # The supported engines, oldest first, in the same order in both lists. The runner has each
+      # at C:\Program Files\Epic Games\UE_<version>.
+      ENGINE_ROOTS: 'C:\Program Files\Epic Games\UE_5.6,C:\Program Files\Epic Games\UE_5.7,C:\Program Files\Epic Games\UE_5.8'
+      ENGINE_VERSIONS: '5.6.0,5.7.0,5.8.0'
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
@@ -79,167 +81,101 @@ jobs:
         run: echo "timestamp=$(Get-Date -Format 'yyyyMMdd-HHmmss')" >> $env:GITHUB_OUTPUT
         shell: powershell
 
-      - name: Prepare zip files (combined and individual plugins)
+      # For each engine: a combined zip (both plugins) and one zip per plugin, each named with the
+      # engine (for example VMCLiveLink-UE5.7-<timestamp>.zip), from build_fab.ps1's per-engine
+      # packages (<Plugin>_UE5_7_Fab.zip).
+      - name: Prepare zip files (combined and individual plugins, per engine)
+        env:
+          TIMESTAMP: ${{ steps.date.outputs.timestamp }}
         run: |
           $OutputDir = "$(Resolve-Path .)\FabBuilds"
-          $ZipFiles = Get-ChildItem -Path $OutputDir -Filter '*_Fab.zip' -File -ErrorAction SilentlyContinue
-
-          if (-not $ZipFiles -or $ZipFiles.Count -eq 0) {
-            Write-Error "No Fab zip files found in $OutputDir"
-            exit 1
-          }
-
-          # Use the first ENGINE_VERSIONS entry to construct a short engine folder name like "UE5.6"
-          $EngineVers = ($env:ENGINE_VERSIONS -split ",").ForEach({ $_.Trim(' ""') })
-          $FirstVer = $EngineVers[0]
-          if ($FirstVer -match '^(\d+)\.(\d+)') {
-            $ShortEngine = "UE$($matches[1]).$($matches[2])"
-          } else {
-            # Fallback: remove any trailing .0 and non-digit/dot chars
-            $ver = $FirstVer -replace '\.0+$','' -replace '[^0-9\.]',''
-            $ShortEngine = "UE$ver"
-          }
-
-          $Timestamp = '${{ steps.date.outputs.timestamp }}'
-          $CombinedZip = Join-Path $OutputDir ("VRMCombined-$Timestamp.zip")
-          $VMCOnlyZip = Join-Path $OutputDir ("VMCLiveLink-only-$Timestamp.zip")
-          $VRMOnlyZip = Join-Path $OutputDir ("VRMInterchange-only-$Timestamp.zip")
-
-          # === COMBINED ZIP (both plugins) ===
-          $TempDirCombined = Join-Path $env:TEMP ('fabzip_combined_' + [Guid]::NewGuid().ToString())
-          New-Item -ItemType Directory -Path $TempDirCombined | Out-Null
-
-          $TargetRootCombined = Join-Path $TempDirCombined $ShortEngine
-          $TargetPluginsCombined = Join-Path $TargetRootCombined 'Plugins'
-          $TargetVMCLCombined = Join-Path $TargetPluginsCombined 'VMCLiveLink'
-          $TargetVRMCombined  = Join-Path $TargetPluginsCombined 'VRMInterchange'
-
-          New-Item -ItemType Directory -Path $TargetVMCLCombined -Force | Out-Null
-          New-Item -ItemType Directory -Path $TargetVRMCombined  -Force | Out-Null
-
-          foreach ($z in $ZipFiles) {
-            if ($z.Name -match 'VRMInterchange') {
-              Write-Host "Extracting $($z.Name) to $TargetVRMCombined"
-              Expand-Archive -Path $z.FullName -DestinationPath $TargetVRMCombined -Force
-            } elseif ($z.Name -match 'VMCLiveLink') {
-              Write-Host "Extracting $($z.Name) to $TargetVMCLCombined"
-              Expand-Archive -Path $z.FullName -DestinationPath $TargetVMCLCombined -Force
-            } else {
-              Write-Warning "Zip $($z.Name) did not match a known plugin; extracting to Plugins root"
-              Expand-Archive -Path $z.FullName -DestinationPath $TargetPluginsCombined -Force
-            }
-          }
-
-          # Copy ThirdParty folder from source VRMInterchange to the combined zip
           $SourceThirdParty = Join-Path (Resolve-Path .) "$($env:VRM_PLUGIN_DIR)\ThirdParty"
-          if (Test-Path $SourceThirdParty) {
-            Write-Host "Copying ThirdParty folder to VRMInterchange in combined zip"
-            $DestThirdParty = Join-Path $TargetVRMCombined 'ThirdParty'
-            Copy-Item -Path $SourceThirdParty -Destination $DestThirdParty -Recurse -Force
-          } else {
-            Write-Warning "ThirdParty folder not found at $SourceThirdParty"
-          }
+          $EngineVers = ($env:ENGINE_VERSIONS -split ",").ForEach({ $_.Trim(' ""') })
 
-          if (Test-Path $CombinedZip) { Remove-Item $CombinedZip -Force }
-          Compress-Archive -Path (Join-Path $TempDirCombined '*') -DestinationPath $CombinedZip -Force
-          Remove-Item -Path $TempDirCombined -Recurse -Force
-
-          # === VMCLiveLink-only ZIP ===
-          $TempDirVMC = Join-Path $env:TEMP ('fabzip_vmc_' + [Guid]::NewGuid().ToString())
-          New-Item -ItemType Directory -Path $TempDirVMC | Out-Null
-
-          $TargetRootVMC = Join-Path $TempDirVMC $ShortEngine
-          $TargetPluginsVMC = Join-Path $TargetRootVMC 'Plugins'
-          $TargetVMCLVMC = Join-Path $TargetPluginsVMC 'VMCLiveLink'
-
-          New-Item -ItemType Directory -Path $TargetVMCLVMC -Force | Out-Null
-
-          foreach ($z in $ZipFiles) {
-            if ($z.Name -match 'VMCLiveLink' -and $z.Name -notmatch 'VRMInterchange') {
-              Write-Host "Extracting $($z.Name) to $TargetVMCLVMC for VMCLiveLink-only zip"
-              Expand-Archive -Path $z.FullName -DestinationPath $TargetVMCLVMC -Force
+          # Makes $ZipPath from the plugin packages given, each under <ShortEngine>\Plugins\<Plugin>.
+          function New-EngineZip($ZipPath, $ShortEngine, $Packages) {
+            $Temp = Join-Path $env:TEMP ('fabzip_' + [Guid]::NewGuid().ToString())
+            foreach ($Plugin in $Packages.Keys) {
+              $Target = Join-Path $Temp "$ShortEngine\Plugins\$Plugin"
+              New-Item -ItemType Directory -Path $Target -Force | Out-Null
+              Write-Host "  $Plugin <- $($Packages[$Plugin].Name)"
+              Expand-Archive -Path $Packages[$Plugin].FullName -DestinationPath $Target -Force
+              if ($Plugin -eq 'VRMInterchange') {
+                if (-not (Test-Path $SourceThirdParty)) { Write-Error "ThirdParty folder not found at $SourceThirdParty"; exit 1 }
+                Copy-Item -Path $SourceThirdParty -Destination (Join-Path $Target 'ThirdParty') -Recurse -Force
+              }
             }
+            if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+            Compress-Archive -Path (Join-Path $Temp '*') -DestinationPath $ZipPath -Force
+            Remove-Item -Path $Temp -Recurse -Force
+            Write-Host "Made $ZipPath"
           }
 
-          if (Test-Path $VMCOnlyZip) { Remove-Item $VMCOnlyZip -Force }
-          Compress-Archive -Path (Join-Path $TempDirVMC '*') -DestinationPath $VMCOnlyZip -Force
-          Remove-Item -Path $TempDirVMC -Recurse -Force
-
-          # === VRMInterchange-only ZIP ===
-          $TempDirVRM = Join-Path $env:TEMP ('fabzip_vrm_' + [Guid]::NewGuid().ToString())
-          New-Item -ItemType Directory -Path $TempDirVRM | Out-Null
-
-          $TargetRootVRM = Join-Path $TempDirVRM $ShortEngine
-          $TargetPluginsVRM = Join-Path $TargetRootVRM 'Plugins'
-          $TargetVRMVRM = Join-Path $TargetPluginsVRM 'VRMInterchange'
-
-          New-Item -ItemType Directory -Path $TargetVRMVRM -Force | Out-Null
-
-          foreach ($z in $ZipFiles) {
-            if ($z.Name -match 'VRMInterchange') {
-              Write-Host "Extracting $($z.Name) to $TargetVRMVRM for VRMInterchange-only zip"
-              Expand-Archive -Path $z.FullName -DestinationPath $TargetVRMVRM -Force
+          foreach ($Ver in $EngineVers) {
+            if ($Ver -notmatch '^(\d+)\.(\d+)') { Write-Error "Engine version '$Ver' isn't <major>.<minor>[.<patch>]"; exit 1 }
+            $Major = $matches[1]; $Minor = $matches[2]
+            $ShortEngine = "UE$Major.$Minor"
+            $Packages = @{}
+            foreach ($Plugin in @('VMCLiveLink', 'VRMInterchange')) {
+              $Zip = Get-Item -Path (Join-Path $OutputDir "$($Plugin)_UE$($Major)_$($Minor)_Fab.zip") -ErrorAction SilentlyContinue
+              if (-not $Zip) { Write-Error "No $Plugin package for UE $Ver in $OutputDir"; exit 1 }
+              # The package's descriptor must name its engine (the source descriptors name none).
+              Add-Type -AssemblyName System.IO.Compression.FileSystem
+              $Archive = [System.IO.Compression.ZipFile]::OpenRead($Zip.FullName)
+              try {
+                $Entry = $Archive.Entries | Where-Object { $_.FullName -eq "$Plugin.uplugin" } | Select-Object -First 1
+                if (-not $Entry) { Write-Error "$($Zip.Name) has no $Plugin.uplugin at its root"; exit 1 }
+                $Reader = New-Object System.IO.StreamReader($Entry.Open())
+                $Descriptor = $Reader.ReadToEnd()
+                $Reader.Dispose()
+              } finally {
+                $Archive.Dispose()
+              }
+              if ($Descriptor -notmatch '"EngineVersion"\s*:\s*"([^"]*)"' -or $matches[1] -ne $Ver) {
+                Write-Error "$($Zip.Name): EngineVersion is '$($matches[1])', expected '$Ver'"; exit 1
+              }
+              $Packages[$Plugin] = $Zip
             }
+            Write-Host "UE $Ver"
+            New-EngineZip (Join-Path $OutputDir "VRMCombined-$ShortEngine-$env:TIMESTAMP.zip") $ShortEngine $Packages
+            New-EngineZip (Join-Path $OutputDir "VMCLiveLink-$ShortEngine-$env:TIMESTAMP.zip") $ShortEngine @{ VMCLiveLink = $Packages['VMCLiveLink'] }
+            New-EngineZip (Join-Path $OutputDir "VRMInterchange-$ShortEngine-$env:TIMESTAMP.zip") $ShortEngine @{ VRMInterchange = $Packages['VRMInterchange'] }
           }
 
-          # Copy ThirdParty folder from source VRMInterchange to the VRM-only zip
-          if (Test-Path $SourceThirdParty) {
-            Write-Host "Copying ThirdParty folder to VRMInterchange in VRM-only zip"
-            $DestThirdPartyVRM = Join-Path $TargetVRMVRM 'ThirdParty'
-            Copy-Item -Path $SourceThirdParty -Destination $DestThirdPartyVRM -Recurse -Force
-          } else {
-            Write-Warning "ThirdParty folder not found at $SourceThirdParty"
-          }
+          $Made = @(Get-ChildItem -Path $OutputDir -Filter "*-UE*-$env:TIMESTAMP.zip" -File)
+          $Expected = 3 * $EngineVers.Count
+          if ($Made.Count -ne $Expected) { Write-Error "Made $($Made.Count) zips, expected $Expected"; exit 1 }
 
-          if (Test-Path $VRMOnlyZip) { Remove-Item $VRMOnlyZip -Force }
-          Compress-Archive -Path (Join-Path $TempDirVRM '*') -DestinationPath $VRMOnlyZip -Force
-          Remove-Item -Path $TempDirVRM -Recurse -Force
-
-      - name: Upload artifacts (all three zips)
+      - name: Upload artifacts (three zips per engine)
         uses: actions/upload-artifact@v6
         with:
           name: VMCLiveLink-Packages
-          path: |
-            FabBuilds\VRMCombined-${{ steps.date.outputs.timestamp }}.zip
-            FabBuilds\VMCLiveLink-only-${{ steps.date.outputs.timestamp }}.zip
-            FabBuilds\VRMInterchange-only-${{ steps.date.outputs.timestamp }}.zip
+          path: FabBuilds\*-UE*-${{ steps.date.outputs.timestamp }}.zip
           if-no-files-found: error
 
-      - name: Create GitHub Release
-        id: create_release
+      # A release tag publishes every zip to a GitHub Release (REST API; the create-release and
+      # upload-release-asset actions are archived).
+      - name: Create GitHub Release with the zips
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
-        uses: actions/create-release@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.ref_name }}-run${{ github.run_number }}
-          release_name: ${{ github.ref_name }}-${{ steps.date.outputs.timestamp }}
-          body: "Automated release created by CI for ${{ github.ref_name }}. The run number is included in the release tag for traceability. Includes combined package (VMCLiveLink + VRMInterchange) and individual plugin packages for Fab Marketplace submission."
-          draft: false
-          prerelease: false
-
-      - name: Upload release asset (Combined VRM & VMC files .zip)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: FabBuilds\VRMCombined-${{ steps.date.outputs.timestamp }}.zip
-          asset_name: VRMCombined-${{ steps.date.outputs.timestamp }}.zip
-          asset_content_type: application/zip
-
-      - name: Upload release asset (VMCLiveLink-only.zip)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: FabBuilds\VMCLiveLink-only-${{ steps.date.outputs.timestamp }}.zip
-          asset_name: VMCLiveLink-only-${{ steps.date.outputs.timestamp }}.zip
-          asset_content_type: application/zip
-
-      - name: Upload release asset (VRMInterchange-only.zip)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: FabBuilds\VRMInterchange-only-${{ steps.date.outputs.timestamp }}.zip
-          asset_name: VRMInterchange-only-${{ steps.date.outputs.timestamp }}.zip
-          asset_content_type: application/zip
+        env:
+          TIMESTAMP: ${{ steps.date.outputs.timestamp }}
+          TAG: ${{ github.ref_name }}-run${{ github.run_number }}
+          RELEASE_NAME: ${{ github.ref_name }}-${{ steps.date.outputs.timestamp }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          $Headers = @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $Body = @{
+            tag_name = $env:TAG
+            target_commitish = $env:COMMIT
+            name = $env:RELEASE_NAME
+            body = "Automated release created by CI for $env:GITHUB_REF_NAME. The run number is included in the release tag for traceability. For each engine ($env:ENGINE_VERSIONS): a combined package (VMCLiveLink + VRMInterchange) and a package per plugin, for Fab submission."
+            draft = $false
+            prerelease = $false
+          } | ConvertTo-Json
+          $Release = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases" -Headers $Headers -ContentType 'application/json' -Body $Body
+          Write-Host "Created release $($Release.html_url)"
+          foreach ($Zip in Get-ChildItem -Path FabBuilds -Filter "*-UE*-$env:TIMESTAMP.zip" -File) {
+            $Uri = "https://uploads.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($Release.id)/assets?name=$([Uri]::EscapeDataString($Zip.Name))"
+            Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/zip' -InFile $Zip.FullName | Out-Null
+            Write-Host "Uploaded $($Zip.Name)"
+          }

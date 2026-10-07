@@ -237,7 +237,9 @@ for ($i = 0; $i -lt $EngineRoots.Count; $i++) {
   # BuildPlugin with UAT (outputs to a packaged folder without Intermediate/Binaries by default)
   $packageDir = Join-Path $OutputDir "$pluginName-UE$($ver.Replace('.','_'))-Packaged"
   if (Test-Path -Path $packageDir) { Remove-Item -Recurse -Force -Path $packageDir }
-  & $uat BuildPlugin -Plugin="$($stageUPlugin.FullName)" -Package="$packageDir" -Rocket -VeryVerbose
+  # -ubtargs=-NoXGE: UnrealBuildTool doesn't hand the build to IncrediBuild, which on the build
+  # machine intermittently refuses with "Maximum number of concurrent builds reached".
+  & $uat BuildPlugin -Plugin="$($stageUPlugin.FullName)" -Package="$packageDir" -Rocket -VeryVerbose "-ubtargs=-NoXGE"
   if ($LASTEXITCODE -ne 0) { Fail "BuildPlugin failed for UE $ver" }
 
   # Zip
