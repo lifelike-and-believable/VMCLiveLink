@@ -195,15 +195,20 @@ def frame_packets(frame, t, opts):
 # ---------------------------------------------------------------------------------------------
 
 
+# How long before a deadline sleep_until stops sleeping and spins. On Windows before Python 3.11,
+# time.sleep wakes on the 15.6 ms timer tick, so a sleep can overrun by up to a tick.
+SPIN_MARGIN = 0.017 if sys.platform == "win32" and sys.version_info < (3, 11) else 0.002
+
+
 def sleep_until(deadline):
-    """Wait until time.perf_counter() reaches deadline. time.sleep on Windows (before Python 3.11)
-    rounds to the 15.6 ms timer tick, so it sleeps to within 2 ms and spins the rest."""
+    """Wait until time.perf_counter() reaches deadline: sleep while more than SPIN_MARGIN is left,
+    then spin."""
     while True:
         left = deadline - time.perf_counter()
         if left <= 0:
             return
-        if left > 0.002:
-            time.sleep(left - 0.002)
+        if left > SPIN_MARGIN:
+            time.sleep(left - SPIN_MARGIN)
 
 
 def cmd_send(opts):

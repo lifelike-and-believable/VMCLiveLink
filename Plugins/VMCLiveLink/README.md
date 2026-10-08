@@ -124,8 +124,8 @@ It also prints timing, since the last report:
 
 - **frame interval**: the time between frames as they arrived (p50, p95, min and max). With **Receive Thread** off, frames are stamped when the game thread handles them, so the intervals are rounded to engine ticks.
 - **Live Link evaluations**: how Live Link read the subject each engine tick, computed as Live Link does in engine time mode (read time = now minus the source's **Engine Time Offset**, its clock offset and its smooth offset):
-  - **newest frame held**: the share of ticks whose read time was past the newest frame, so the avatar showed the newest pose again instead of a new one.
-  - **read time went back**: ticks that read earlier than the tick before, which steps the avatar backwards. This happens when the smooth offset grows by more than a tick.
+  - **newest frame held**: the share of ticks whose read time was past the newest frame. With interpolation, the avatar then shows the newest pose again instead of a new one. Without it, Live Link shows the newest frame for any read past the one before, so repeated poses are more common than this share.
+  - **read time went back**: ticks that read earlier than the tick before, which steps the avatar backwards. This happens when the smooth or clock offset grows by more than a tick.
   - **newest frame minus read time**: how far behind the newest frame each read was.
   - **smooth offset** (Live Link's average frame interval times `LiveLink.TimedDataInput.NumFramesForSmoothOffset`), its **change per tick**, and the **clock offset**.
 
