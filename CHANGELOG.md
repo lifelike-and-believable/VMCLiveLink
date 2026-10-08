@@ -5,6 +5,7 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 ## [Unreleased]
 
 ### Added
+- **VRM:** the generated Live Link AnimBlueprint has a **VRM Expressions** node, after its Live Link Pose node and set to the character's avatar description, so a VMC stream's expressions reach the face without editing the AnimBlueprint.
 - Fab packages for UE 5.6, 5.7 and 5.8: the release workflow makes a combined package and one per plugin for each engine, and checks that each names its engine.
 - CI builds and tests every pull request on UE 5.6, 5.7 and 5.8, and fails if any tracked package was saved by an engine newer than 5.6 (`scripts/check_content_versions.ps1`). Pull requests from forks now fail the required check instead of skipping it, and editing a pull request no longer starts a run.
 - Both plugins build and pass their tests on UE 5.7 and 5.8 as well as 5.6. On 5.8, VRM imports create their bones as Interchange joint nodes, so the bones keep their bind poses and the import no longer reports an error, and importing into an actor Blueprint no longer trips an engine check. The README, User Guide, plugin READMEs and contributor docs say so ([plan](Planning%20Docs/UE_5.7_5.8_Support_Plan_2026-10.md)).

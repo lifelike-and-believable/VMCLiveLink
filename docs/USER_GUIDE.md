@@ -103,13 +103,11 @@ If the avatar faces the wrong way, set the source's **Yaw Offset Deg** to 180. T
 
 ## 7. Facial expressions
 
-VMC senders send expressions by name: VRM 0.x names such as `Joy`, `A` and `Blink_L`, or VRM 1.0 names such as `happy`, `aa` and `blinkLeft`, depending on the avatar loaded in the sender. The **VRM Expressions** node turns them into your avatar's morph targets, whichever version either side uses:
+VMC senders send expressions by name: VRM 0.x names such as `Joy`, `A` and `Blink_L`, or VRM 1.0 names such as `happy`, `aa` and `blinkLeft`, depending on the avatar loaded in the sender. The **VRM Expressions** node turns them into your avatar's morph targets, whichever version either side uses.
 
-1. Open `LiveLink/Animation/ABP_LL_VRM_Alice`.
-2. In the AnimGraph, add a **VRM Expressions** node after the **Live Link Pose** node and connect it to the output.
-3. Set the node's **Avatar Description** to `Alice_Avatar`. Compile and save.
+The import adds it: `LiveLink/Animation/ABP_LL_VRM_Alice` has a **VRM Expressions** node after its **Live Link Pose** node, with its **Avatar Description** set to `Alice_Avatar`. (An AnimBP from an earlier version of the plugin doesn't have it: add the node there by hand, after the **Live Link Pose** node, and set its **Avatar Description**; or reimport with **Actors: Update Existing** ticked.)
 
-Leave the expression names unmapped in the remapper (its **Curve Name Map** empty, **Preset** on *None / Manual*): the node expects the senders' own names. The generated AnimBP doesn't include this node yet, so add it by hand for each avatar.
+Leave the expression names unmapped in the remapper (its **Curve Name Map** empty, **Preset** on *None / Manual*): the node expects the senders' own names.
 
 For a MetaHuman or another ARKit face instead of a VRM avatar, map the expressions with a remapper preset and turn on its **Normalizer**; see [The Remapper](../Plugins/VMCLiveLink/README.md#the-remapper).
 
@@ -158,7 +156,7 @@ A subject restored from a preset keeps the maps saved in it. With empty maps and
 
 **Reimport** (right-click the skeletal mesh → **Reimport**) after you change the `.vrm` file. In the import dialog, each VRM option's **Update Existing** decides what happens to the assets made last time: on, they are updated in place, and the actors and Animation Blueprints keep your edits; off, new copies with `_1`-style names are made. The spring data and avatar description are replaced from the file, so edits to them are lost.
 
-**Actors: Update Existing** is off by default: tick it before reimporting, or you get `_1` copies of the actors and Animation Blueprints, without the **VRM Expressions** node you added in section 7. Spring Bones, IK Rig and Avatar Description update in place by default.
+**Actors: Update Existing** is off by default: tick it before reimporting, or you get `_1` copies of the actors and Animation Blueprints, and their edits. Spring Bones, IK Rig and Avatar Description update in place by default.
 
 **After updating the plugins:**
 - If the editor offers to register the VRM import pipelines again, click **Register**.
@@ -176,7 +174,7 @@ A subject restored from a preset keeps the maps saved in it. With empty maps and
 | The avatar stays in a T-pose, or only its root moves. | The bones aren't mapped: click **Map Bones From Humanoid Metadata** (section 6). |
 | Limbs twist or bend the wrong way. | The mesh's bones are rotated at rest: retarget instead (section 9). |
 | The avatar faces the wrong way. | Set the source's **Yaw Offset Deg** to 180. |
-| The face doesn't move. | Add the **VRM Expressions** node (section 7), and leave expression names unmapped. |
+| The face doesn't move. | Check the AnimBP's **VRM Expressions** node has the avatar's `<Mesh>_Avatar` (section 7), and leave expression names unmapped. |
 | Hair doesn't swing when the character moves or turns. | Untick **Use Spring Centers** (section 8). |
 | Hair tips don't swing on a VRoid avatar imported with 1.0.0. | Reimport it with the current version. |
 

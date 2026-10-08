@@ -20,6 +20,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMActorBlueprintWiring.h"
+#include "VRMAvatarDescription.h"
 #include "Animation/AnimInstance.h"
 
 #if WITH_EDITOR
@@ -65,6 +66,11 @@ void UVRMLiveLinkPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh,
 		{
 			AnimBP->SetPreviewMesh(Mesh);
 			AnimBP->MarkPackageDirty();
+			// The face: a VRM Expressions node for the character's avatar description. The avatar
+			// description pipeline adds it instead when it runs after this one (as in the default
+			// stack), so the node is never left without one.
+			VRMPipeline::AddExpressionsNode(AnimBP, Cast<UVRMAvatarDescription>(
+				FindExistingAsset(GetCharacterFolder(), CharacterName + TEXT("_Avatar"))));
 		}
 		if (ActorBP)
 		{

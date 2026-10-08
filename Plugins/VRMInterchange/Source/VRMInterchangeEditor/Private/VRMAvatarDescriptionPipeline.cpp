@@ -11,6 +11,8 @@
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
+#include "Animation/AnimBlueprint.h"
+#include "VRMActorBlueprintWiring.h"
 #include "VRMAvatarDescription.h"
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
@@ -155,6 +157,18 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	}
 	Description->MarkPackageDirty();
 	LastDescription = Description;
+
+	// The face: the generated Live Link AnimBlueprint gets a VRM Expressions node for this avatar
+	// description, if the Live Link pipeline has made it (in its default "Animation" subfolder, or
+	// with no subfolder). The Live Link pipeline adds it instead when it runs after this one.
+	const FString LiveLinkFolder = GetCharacterFolder() / TEXT("LiveLink");
+	const FString AnimBlueprintName = TEXT("ABP_LL_VRM_") + Mesh->GetName();
+	UAnimBlueprint* AnimBlueprint = Cast<UAnimBlueprint>(FindExistingAsset(LiveLinkFolder / TEXT("Animation"), AnimBlueprintName));
+	if (!AnimBlueprint)
+	{
+		AnimBlueprint = Cast<UAnimBlueprint>(FindExistingAsset(LiveLinkFolder, AnimBlueprintName));
+	}
+	VRMPipeline::AddExpressionsNode(AnimBlueprint, Description);
 
 	// The humanoid map, on the mesh itself, for VMCLiveLink's "Create Mapping" (no plugin dependency).
 	if (WriteHumanoidMetadata(Mesh, StagedAvatar))

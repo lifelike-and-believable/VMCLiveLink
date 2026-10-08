@@ -1,7 +1,13 @@
 // Copyright (c) 2026 Lifelike & Believable Animation Design, Inc. | Athomas Goldberg. All Rights Reserved.
 #include "VRMActorBlueprintWiring.h"
 
+#include "AnimGraphNode_Base.h"
+#include "AnimGraphNode_Root.h"
+#include "Animation/AnimBlueprint.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimNodeBase.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraphSchema_K2.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -13,6 +19,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/EngineVersionComparison.h"
+#include "VRMAvatarDescription.h"
 #include "VRMInterchangeLog.h"
 
 namespace VRMPipeline
@@ -173,6 +180,122 @@ namespace VRMPipeline
 		Defaults->Modify();
 		Property->SetObjectPropertyValue_InContainer(Defaults, Value);
 		Blueprint->MarkPackageDirty();
+		return true;
+	}
+	namespace
+	{
+		// The graph node class lives in VRMSpringBonesEditor, which this module doesn't link: found by name.
+		const TCHAR* const ExpressionsNodeClassPath = TEXT("/Script/VRMSpringBonesEditor.AnimGraphNode_VRMExpressions");
+
+		UEdGraph* FindAnimGraph(UAnimBlueprint& AnimBlueprint)
+		{
+			for (UEdGraph* Graph : AnimBlueprint.FunctionGraphs)
+			{
+				if (Graph && Graph->GetFName() == UEdGraphSchema_K2::GN_AnimGraph)
+				{
+					return Graph;
+				}
+			}
+			return nullptr;
+		}
+
+		// A node's pose pin (an FPoseLink) in a direction.
+		UEdGraphPin* FindPosePin(UEdGraphNode& Node, EEdGraphPinDirection Direction)
+		{
+			for (UEdGraphPin* Pin : Node.Pins)
+			{
+				if (Pin && Pin->Direction == Direction && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct
+					&& Pin->PinType.PinSubCategoryObject == FPoseLink::StaticStruct())
+				{
+					return Pin;
+				}
+			}
+			return nullptr;
+		}
+	}
+
+	bool AddExpressionsNode(UAnimBlueprint* AnimBlueprint, UVRMAvatarDescription* Description)
+	{
+		if (!AnimBlueprint || !Description)
+		{
+			return false;
+		}
+		UClass* NodeClass = FindObject<UClass>(nullptr, ExpressionsNodeClassPath);
+		UEdGraph* Graph = FindAnimGraph(*AnimBlueprint);
+		if (!NodeClass || !Graph)
+		{
+			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not add a VRM Expressions node to '%s' (%s)."),
+				*AnimBlueprint->GetPathName(), !NodeClass ? TEXT("the VRMSpringBonesEditor module isn't loaded") : TEXT("it has no AnimGraph"));
+			return false;
+		}
+		const UEdGraphSchema* Schema = Graph->GetSchema();
+
+		UEdGraphNode* ExpressionsNode = nullptr;
+		UAnimGraphNode_Root* Root = nullptr;
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (Node && Node->IsA(NodeClass))
+			{
+				ExpressionsNode = Node;
+			}
+			else if (UAnimGraphNode_Root* AsRoot = Cast<UAnimGraphNode_Root>(Node))
+			{
+				Root = AsRoot;
+			}
+		}
+
+		if (!ExpressionsNode)
+		{
+			// Between the output and the pose that feeds it.
+			UEdGraphPin* Result = Root ? FindPosePin(*Root, EGPD_Input) : nullptr;
+			if (!Result || Result->LinkedTo.Num() != 1)
+			{
+				UE_LOG(LogVRMInterchange, Log, TEXT("[VRMInterchange] '%s': its AnimGraph's output isn't fed by a single pose, so no VRM Expressions node was added. Add one by hand for facial expressions."),
+					*AnimBlueprint->GetPathName());
+				return false;
+			}
+			UEdGraphPin* Source = Result->LinkedTo[0];
+			UEdGraphNode* SourceNode = Source->GetOwningNode();
+
+			UEdGraphNode* NewNode = NewObject<UEdGraphNode>(Graph, NodeClass, NAME_None, RF_Transactional);
+			Graph->AddNode(NewNode, /*bFromUI*/ false, /*bSelectNewNode*/ false);
+			NewNode->CreateNewGuid();
+			NewNode->PostPlacedNewNode();
+			NewNode->AllocateDefaultPins();
+			NewNode->NodePosX = (SourceNode->NodePosX + Root->NodePosX) / 2;
+			NewNode->NodePosY = Root->NodePosY;
+
+			UEdGraphPin* In = FindPosePin(*NewNode, EGPD_Input);
+			UEdGraphPin* Out = FindPosePin(*NewNode, EGPD_Output);
+			if (!In || !Out || !Schema->TryCreateConnection(Source, In) || !Schema->TryCreateConnection(Out, Result))
+			{
+				UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] Could not connect a VRM Expressions node in '%s'."), *AnimBlueprint->GetPathName());
+				Graph->RemoveNode(NewNode);
+				Schema->TryCreateConnection(Source, Result); // as it was
+				return false;
+			}
+			ExpressionsNode = NewNode;
+		}
+		else
+		{
+			// One already there: fill in its avatar description only if it has none.
+			const UEdGraphPin* Avatar = ExpressionsNode->FindPin(TEXT("AvatarDescription"), EGPD_Input);
+			if (!Avatar || Avatar->LinkedTo.Num() > 0 || Avatar->DefaultObject)
+			{
+				return false;
+			}
+		}
+
+		UEdGraphPin* Avatar = ExpressionsNode->FindPin(TEXT("AvatarDescription"), EGPD_Input);
+		if (!Avatar)
+		{
+			UE_LOG(LogVRMInterchange, Warning, TEXT("[VRMInterchange] The VRM Expressions node in '%s' has no Avatar Description pin."), *AnimBlueprint->GetPathName());
+			return false;
+		}
+		Schema->TrySetDefaultObject(*Avatar, Description);
+
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBlueprint);
+		FKismetEditorUtilities::CompileBlueprint(AnimBlueprint);
 		return true;
 	}
 }
