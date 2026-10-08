@@ -248,7 +248,8 @@ bool FVMCSubjectDefaultsTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(TEXT("Interpolates animation (bone transforms too)"), Settings->InterpolationProcessor && Settings->InterpolationProcessor->IsA<ULiveLinkAnimationFrameInterpolationProcessor>());
 			TestTrue(TEXT("The processor belongs to the subject's settings"), Settings->InterpolationProcessor && Settings->InterpolationProcessor->GetOuter() == Settings);
-			TestTrue(TEXT("And the VMC remapper"), Settings->Remapper && Settings->Remapper->IsA<UVMCLiveLinkRemapper>());
+			// The remapper class is a project setting (Default Remapper Class): only check it's there.
+			TestNotNull(TEXT("And a remapper"), Settings->Remapper.Get());
 		}
 	}
 
