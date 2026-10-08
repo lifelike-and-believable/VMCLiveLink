@@ -312,8 +312,8 @@ bool FVMCLiveLinkSource::Tick(float DeltaTime)
         EnsureSubjectSettingsWithDefaults();
     }
 
-    // A new or edited remapper renames differently: republish the static data so Live Link runs
-    // it through the new worker.
+    // A new or edited remapper renames differently: publish a snapshot with its settings, which
+    // republishes the static data through them.
     if (Client && bEnsuredDefaults)
     {
         const ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName }));
@@ -323,8 +323,9 @@ bool FVMCLiveLinkSource::Tick(float DeltaTime)
         if (Remapper != LastRemapper.Get() || Revision != LastRemapperRevision)
         {
             LastRemapper = Remapper;
-            LastRemapperRevision = Revision;
             PublishSnapshot();
+            // After: marking the remapper as applied by this source can raise its revision.
+            LastRemapperRevision = VMCRemapper ? VMCRemapper->GetRevision() : Revision;
         }
     }
     return true;
@@ -346,8 +347,9 @@ void FVMCLiveLinkSource::PublishSnapshot()
     if (Client)
     {
         const ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName }));
-        if (const UVMCLiveLinkRemapper* VMCRemapper = SubjectSettings ? Cast<UVMCLiveLinkRemapper>(SubjectSettings->Remapper) : nullptr)
+        if (UVMCLiveLinkRemapper* VMCRemapper = SubjectSettings ? Cast<UVMCLiveLinkRemapper>(SubjectSettings->Remapper) : nullptr)
         {
+            VMCRemapper->SetAppliedBySource(true);
             New->Remap = MakeShared<const FVMCRemapConfig>(VMCRemapper->MakeConfig());
         }
     }

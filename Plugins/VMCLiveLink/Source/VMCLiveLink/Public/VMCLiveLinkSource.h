@@ -206,7 +206,7 @@ private:
     FString SenderStateText;          // what /VMC/Ext/OK says, when worth showing (VMCProtocol::DescribeSenderState)
     FString LockedSender;             // the sender locked to (bLockToFirstSender), or empty
     FString LastSender;               // the IP of the last packet used, or empty
-    TArray<FName> PublishedBones;     // the names in the last static data pushed
+    TArray<FName> PublishedBones;     // VMC's names in the last static data pushed, before the remapper renamed them
     TArray<FName> PublishedCurves;
     int32 IgnoredSenders = 0;         // senders whose packets were ignored since receiving started
     int32 NumDeviceSubjects = 0;      // device and camera subjects published

@@ -337,26 +337,26 @@ Pass if in step 2 the maps fill and Mapping Asset shows `MA_Manny`, and in step 
 
 **E-H4. Which thread runs the remapper worker.** *(P7.4 review; needs Visual Studio)*
 1. Build the editor in Development Editor from Visual Studio and run it under the debugger.
-2. Set a breakpoint in `FVMCLiveLinkRemapperWorker::RemapFrameData` (and one in `RemapStaticData`), and stream to a subject with a VMC remapper, with **Receive Thread** on.
-3. When each breakpoint hits, read the thread's name in **Debug → Windows → Threads**.
+2. Set a breakpoint in `FVMCLiveLinkSource::PushFrame`, on the `FrameRemapper->RemapFrameData` call, and stream to a subject with a VMC remapper, with **Receive Thread** on and then off.
+3. When it hits, read the thread's name in **Debug → Windows → Threads**.
 
-Pass when recorded: the thread names (for example the VMC receive thread, or the game thread). The API comments say only that the worker may run off the game thread; this records which thread it is.
+Pass when recorded: the thread names (the VMC receive thread with Receive Thread on, the game thread with it off). Live Link's own worker for the subject passes everything through, so a breakpoint inside `FVMCLiveLinkRemapperWorker::RemapFrameData` also hits on Live Link's thread; that one does nothing.
+
+**E-H5. Mapping Tools in the Live Link panel's subject details.** *(on each of UE 5.6, 5.7 and 5.8)*
+1. Add a VMC source and stream to it (`python scripts/vmc_sender.py send` will do), then select `VMC_Subject` in the Live Link panel.
+2. In the subject's details, find **Mapping Tools** and **Live Mapping** at the top, and the remapper's settings under **Remapper**.
+3. Set the remapper's Reference Skeleton to a VRM Interchange mesh and click **Map Bones From Humanoid Metadata**.
+4. Press **Ctrl+Z**.
+5. Change the subject's **Remapper** to another class (or clear it), then back to **VMC Live Link Remapper**.
+
+Pass if in step 2 the seven Mapping Tools buttons and the Live Mapping table are shown, in step 3 the Bone Name Map under Remapper fills and the table updates, and in step 5 the two sections disappear with the other class and come back with the VMC remapper. Record what step 4 does: the README says the buttons can't be undone in the Live Link panel (the subject settings aren't transactional), so the map is expected to stay.
 
 **E-H6. The avatar follows the stream, and keeps following when the mapping changes.** *(on each of UE 5.6, 5.7 and 5.8)*
 1. Stream to `VMC_Subject` (a webcam sender such as XR Animator, or `python scripts/vmc_sender.py send`). Place a generated `BP_LL_VRM_<Mesh>` and set its **Subject** to `VMC_Subject`.
 2. In the subject's remapper, set the Reference Skeleton to the avatar's mesh and click **Map Bones From Humanoid Metadata**. Press **Simulate**.
 3. While simulating, set the Reference Skeleton to another mesh and back, and click **Apply Preset**.
 
-Pass if the avatar follows the sender from step 2 on and keeps following through step 3, without returning to its reference pose.
-
-**E-H5. Mapping Tools in the Live Link panel's subject details.** *(on each of UE 5.6, 5.7 and 5.8)*
-1. Add a VMC source and stream to it (`python scripts/vmc_sender.py send` will do), then select `VMC_Subject` in the Live Link panel.
-2. In the subject's details, expand **Remapper**. Below the subject's own settings, find **Mapping Tools** and **Live Mapping**.
-3. Set the remapper's Reference Skeleton to a VRM Interchange mesh and click **Map Bones From Humanoid Metadata**.
-4. Press **Ctrl+Z**.
-5. Change the subject's **Remapper** to another class (or clear it), then back to **VMC Live Link Remapper**.
-
-Pass if in step 2 the seven Mapping Tools buttons and the Live Mapping table are shown, in step 3 the Bone Name Map under Remapper fills and the table updates, and in step 5 the two sections disappear with the other class and come back with the VMC remapper. Record what step 4 does: the README says the buttons can't be undone in the Live Link panel (the subject settings aren't transactional), so the map is expected to stay.
+Pass if the avatar follows the sender from step 2 on and keeps following through step 3, without returning to its reference pose, and the Output Log has no Live Link error about frame data that isn't formatted properly.
 
 ---
 
@@ -436,6 +436,8 @@ Copy this table into the issue or document where you record the run.
 | E-H2 | | |
 | E-H3 | | |
 | E-H4 | | thread names |
+| E-H5 | | per engine; what Ctrl+Z does |
+| E-H6 | | per engine |
 | E-I1 | | |
 | E-J1 | | time, peak memory |
 | E-J2 | | ms per frame |

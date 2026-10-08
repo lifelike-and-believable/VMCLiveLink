@@ -96,16 +96,33 @@ USkeletalMesh* UVMCLiveLinkRemapper::ResolveReferenceSkeleton() const
 
 ULiveLinkSubjectRemapper::FWorkerSharedPtr UVMCLiveLinkRemapper::CreateWorker()
 {
-	// A VMC source renames with MakeConfig itself, in the static data and frames it pushes: Live
-	// Link evaluates subjects with the static data the source pushed, not with the copy a remapper
+	// A VMC source applies MakeConfig itself, in the static data and frames it pushes: Live Link
+	// evaluates subjects with the static data the source pushed, not with the copy a remapper
 	// renamed, so renames made here would reach the subject's consumers only for the frame that was
-	// current when the remapper changed. Live Link's worker therefore passes everything through.
-	// (UE 5.6 to 5.8: FLiveLinkSubject builds its frame snapshot from StaticData, not from
-	// OverrideStaticData.)
-	FVMCRemapConfig PassThrough;
-	PassThrough.bUseRefTranslations = false;
-	Worker = MakeShared<FVMCLiveLinkRemapperWorker>(MoveTemp(PassThrough));
+	// current when the remapper changed (UE 5.6 to 5.8: FLiveLinkSubject builds its frame snapshot
+	// from StaticData, not from OverrideStaticData). For such a subject Live Link's worker passes
+	// everything through. Other sources' subjects get the full worker, as before.
+	if (bAppliedBySource)
+	{
+		FVMCRemapConfig PassThrough;
+		PassThrough.bUseRefTranslations = false;
+		PassThrough.bLogProblems = false; // the source's worker reports them
+		Worker = MakeShared<FVMCLiveLinkRemapperWorker>(MoveTemp(PassThrough));
+	}
+	else
+	{
+		Worker = MakeShared<FVMCLiveLinkRemapperWorker>(MakeConfig());
+	}
 	return Worker;
+}
+
+void UVMCLiveLinkRemapper::SetAppliedBySource(bool bApplied)
+{
+	if (bAppliedBySource != bApplied)
+	{
+		bAppliedBySource = bApplied;
+		MarkDirty(); // Live Link swaps in the worker that matches
+	}
 }
 
 FVMCRemapConfig UVMCLiveLinkRemapper::MakeConfig() const

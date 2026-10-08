@@ -67,12 +67,18 @@ bool FVMCRemapperWorkerSnapshotTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The old config keeps the old name"), RemappedBones(Before)[1], FName(TEXT("pelvis")));
 	TestEqual(TEXT("The new config has the edit"), RemappedBones(After)[1], FName(TEXT("hip_edited")));
 
-	// Live Link's own worker passes names through: the VMC source has already renamed them, in the
-	// static data Live Link evaluates with.
-	const TSharedPtr<FVMCLiveLinkRemapperWorker> LiveLinkWorker = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
-	if (!TestTrue(TEXT("A worker"), LiveLinkWorker.IsValid())) return false;
-	TestEqual(TEXT("Live Link's worker keeps the names"), RemappedBones(*LiveLinkWorker)[1], FName(TEXT("Hips")));
-	TestTrue(TEXT("GetWorker returns the newest worker"), Remapper->GetWorker().Get() == LiveLinkWorker.Get());
+	// Live Link's worker: the full one for another source's subject, and one that passes names
+	// through once a VMC source applies the remapper itself (in the static data Live Link evaluates).
+	const TSharedPtr<FVMCLiveLinkRemapperWorker> OtherSource = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
+	if (!TestTrue(TEXT("A worker"), OtherSource.IsValid())) return false;
+	TestEqual(TEXT("Another source's subject: Live Link's worker renames"), RemappedBones(*OtherSource)[1], FName(TEXT("hip_edited")));
+	const uint32 RevisionUnmarked = Remapper->GetRevision();
+	Remapper->SetAppliedBySource(true);
+	TestTrue(TEXT("Marking it raises the revision (Live Link swaps the worker)"), Remapper->GetRevision() > RevisionUnmarked);
+	const TSharedPtr<FVMCLiveLinkRemapperWorker> VMCSource = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
+	if (!TestTrue(TEXT("A worker"), VMCSource.IsValid())) return false;
+	TestEqual(TEXT("A VMC source's subject: Live Link's worker keeps the names"), RemappedBones(*VMCSource)[1], FName(TEXT("Hips")));
+	TestTrue(TEXT("GetWorker returns the newest worker"), Remapper->GetWorker().Get() == VMCSource.Get());
 	return true;
 }
 

@@ -7,7 +7,9 @@
 
 #include "Features/IModularFeatures.h"
 #include "ILiveLinkClient.h"
+#include "LiveLinkPresetTypes.h"
 #include "LiveLinkSubjectSettings.h"
+#include "UObject/Package.h"
 #include "LiveLinkTypes.h"
 #include "Roles/LiveLinkAnimationRole.h"
 #include "Roles/LiveLinkAnimationTypes.h"
@@ -118,6 +120,19 @@ bool FVMCRemapperEvaluationTest::RunTest(const FString& Parameters)
 	const FGuid SourceGuid = Client.AddSource(Source);
 	const FLiveLinkSubjectKey Key{ SourceGuid, Settings.SubjectName };
 	ON_SCOPE_EXIT { Client.RemoveSource(SourceGuid); Client.ForceTick(); };
+
+	// The subject with a VMC remapper, whatever the project's Default Remapper Class (the source
+	// keeps the settings of a subject that already exists, as for one restored from a preset).
+	{
+		FLiveLinkSubjectPreset Preset;
+		Preset.Key = Key;
+		Preset.Role = ULiveLinkAnimationRole::StaticClass();
+		Preset.Settings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
+		Preset.Settings->Remapper = NewObject<UVMCLiveLinkRemapper>(Preset.Settings);
+		Preset.bEnabled = true;
+		Client.CreateSubject(Preset);
+		Client.SetSubjectEnabled(Key, true);
+	}
 
 	// Frames until the subject exists, and the client has made it a snapshot.
 	SendFrame(*Source, 0.1f);

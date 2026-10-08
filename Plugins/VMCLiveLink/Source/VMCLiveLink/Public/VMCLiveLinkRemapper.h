@@ -68,10 +68,12 @@ struct FVMCMappingRow
 };
 
 /**
- * The one place VMC names become target names (P3.2). Immutable: the remapper builds a new worker
- * whenever its settings change, and Live Link swaps it in, so a worker in use is never edited
- * under it. Per-static-data state (which curves to synthesize, which bones get a rest
- * translation) is computed in RemapStaticData and used by RemapFrameData.
+ * The one place VMC names become target names (P3.2). Its configuration is fixed: a worker is made
+ * from the remapper's settings (UVMCLiveLinkRemapper::MakeConfig) and never edited. A VMC source
+ * makes one with each static data push and runs it over that static data and the frames after it;
+ * for other sources' subjects, Live Link runs the one CreateWorker makes. Per-static-data state
+ * (which curves to synthesize, which bones get a rest translation) is computed in RemapStaticData
+ * and used by RemapFrameData.
  */
 class FVMCLiveLinkRemapperWorker final : public ILiveLinkSubjectRemapperWorker
 {
@@ -148,18 +150,25 @@ public:
 	uint32 GetRevision() const { return Revision; }
 
 #if WITH_EDITOR
-	/** Any edit makes Live Link build a new worker. */
+	/** Any edit reaches the subject: the VMC source republishes with the new settings (and Live
+	 *  Link builds a new worker). */
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& Evt) override
 	{
 		Super::PostEditChangeProperty(Evt);
-		MarkDirty(); // Live Link builds a new worker from the edited settings
+		MarkDirty();
 	}
 #endif
 
 	// Utilities
-	/** Makes Live Link build a new worker and republish the static data. */
+	/** Makes the VMC source republish the static data with the current settings (and Live Link
+	 *  build a new worker). */
 	UFUNCTION(BlueprintCallable, Category = "LiveLink|Remapper")
 	void ForceRefreshStaticData() { MarkDirty(); }
+
+	/** Set by the VMC source that publishes this remapper's subject, when it takes MakeConfig to apply
+	 *  itself; CreateWorker then gives Live Link a worker that passes everything through, so nothing
+	 *  is applied twice. Not set for other sources' subjects, which get the full worker. Game thread. */
+	void SetAppliedBySource(bool bApplied);
 
 	/** Lists every name the subject is receiving in the maps (mapped to itself), then applies the
 	 *  preset that fits them (Seed From Subject). Game thread. */
@@ -298,7 +307,7 @@ public:
 
 private:
 	// Helpers
-	void MarkDirty();   // Live Link creates a new worker and republishes the static data
+	void MarkDirty();   // a new revision (the VMC source republishes) and a new Live Link worker
 
 	void SeedFromReferenceSkeleton();
 
@@ -332,5 +341,6 @@ private:
 private:
 	FLiveLinkSubjectKey CachedKey;
 	uint32 Revision = 0;
+	bool bAppliedBySource = false; // see SetAppliedBySource
 	TSharedPtr<FVMCLiveLinkRemapperWorker> Worker;
 };
