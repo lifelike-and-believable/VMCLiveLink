@@ -164,7 +164,7 @@ To drive a VRM avatar's expressions by their own names, leave expression curves 
 | **Save to Mapping Asset** | Saves the maps into the selected mapping asset, with the reference skeleton's signature if **Capture Signature On Save** is on. |
 | **Create Mapping Asset...** | Creates a mapping asset from the current maps and the reference skeleton's signature. |
 
-Every button can be undone (an asset made by **Create Mapping Asset...** stays).
+In the Live Link panel, the buttons can't be undone: Live Link creates subject settings without undo support, so **Edit → Undo** doesn't restore the maps. Save a Live Link preset or a mapping asset first if you may want them back. (In a details panel of the remapper itself, such as a remapper saved in an asset, each button is one undoable step; an asset made by **Create Mapping Asset...** stays.)
 
 ### Mapping Assets
 

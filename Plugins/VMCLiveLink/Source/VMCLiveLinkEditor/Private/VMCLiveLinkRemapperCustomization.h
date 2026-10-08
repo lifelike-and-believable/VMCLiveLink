@@ -26,8 +26,10 @@ public:
 
 	/**
 	 * Adds the Mapping Tools category (the buttons) and, for a single remapper, the Live Mapping
-	 * category (the table) to DetailBuilder. The buttons act on Remappers in one undoable transaction
-	 * each, then refresh RefreshBuilder, the panel that shows the remappers' maps.
+	 * category (the table) to DetailBuilder. The buttons act on Remappers in one transaction each, then
+	 * refresh RefreshBuilder, the panel that shows the remappers' maps. The transaction records only a
+	 * transactional remapper: Live Link's subject settings and their remapper aren't, so in the Live Link
+	 * panel the buttons can't be undone.
 	 */
 	static void AddMappingTools(IDetailLayoutBuilder& DetailBuilder, const TArray<TWeakObjectPtr<UVMCLiveLinkRemapper>>& Remappers,
 		const TWeakPtr<IDetailLayoutBuilder>& RefreshBuilder, ECategoryPriority::Type Priority);

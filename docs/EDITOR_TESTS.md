@@ -346,9 +346,10 @@ Pass when recorded: the thread names (for example the VMC receive thread, or the
 1. Add a VMC source and stream to it (`python scripts/vmc_sender.py send` will do), then select `VMC_Subject` in the Live Link panel.
 2. In the subject's details, expand **Remapper**. Below the subject's own settings, find **Mapping Tools** and **Live Mapping**.
 3. Set the remapper's Reference Skeleton to a VRM Interchange mesh and click **Map Bones From Humanoid Metadata**.
-4. Change the subject's **Remapper** to another class (or clear it), then back to **VMC Live Link Remapper**.
+4. Press **Ctrl+Z**.
+5. Change the subject's **Remapper** to another class (or clear it), then back to **VMC Live Link Remapper**.
 
-Pass if in step 2 the seven Mapping Tools buttons and the Live Mapping table are shown, in step 3 the Bone Name Map under Remapper fills and the table updates, and in step 4 the two sections disappear with the other class and come back with the VMC remapper.
+Pass if in step 2 the seven Mapping Tools buttons and the Live Mapping table are shown, in step 3 the Bone Name Map under Remapper fills and the table updates, and in step 5 the two sections disappear with the other class and come back with the VMC remapper. Record what step 4 does: the README says the buttons can't be undone in the Live Link panel (the subject settings aren't transactional), so the map is expected to stay.
 
 ---
 
