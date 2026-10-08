@@ -342,6 +342,13 @@ Pass if in step 2 the maps fill and Mapping Asset shows `MA_Manny`, and in step 
 
 Pass when recorded: the thread names (for example the VMC receive thread, or the game thread). The API comments say only that the worker may run off the game thread; this records which thread it is.
 
+**E-H6. The avatar follows the stream, and keeps following when the mapping changes.** *(on each of UE 5.6, 5.7 and 5.8)*
+1. Stream to `VMC_Subject` (a webcam sender such as XR Animator, or `python scripts/vmc_sender.py send`). Place a generated `BP_LL_VRM_<Mesh>` and set its **Subject** to `VMC_Subject`.
+2. In the subject's remapper, set the Reference Skeleton to the avatar's mesh and click **Map Bones From Humanoid Metadata**. Press **Simulate**.
+3. While simulating, set the Reference Skeleton to another mesh and back, and click **Apply Preset**.
+
+Pass if the avatar follows the sender from step 2 on and keeps following through step 3, without returning to its reference pose.
+
 **E-H5. Mapping Tools in the Live Link panel's subject details.** *(on each of UE 5.6, 5.7 and 5.8)*
 1. Add a VMC source and stream to it (`python scripts/vmc_sender.py send` will do), then select `VMC_Subject` in the Live Link panel.
 2. In the subject's details, expand **Remapper**. Below the subject's own settings, find **Mapping Tools** and **Live Mapping**.

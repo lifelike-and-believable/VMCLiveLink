@@ -122,7 +122,7 @@ Type `VMC.Stats` in the editor's console (or the output log's command line) to p
 
 ## The Remapper
 
-The source publishes VMC's own names: a `root` bone, the 55 Unity humanoid bones (`Hips`, `Spine`, `LeftUpperArm`, ...), any other bone the sender streams, and the expressions as curves. The **VMC Live Link Remapper** renames them to what your mesh uses. A new VMC subject gets one automatically; you can pick a different remapper class in **Project Settings → Plugins → VMC Live Link → Default Remapper Class**.
+The source publishes VMC's own names: a `root` bone, the 55 Unity humanoid bones (`Hips`, `Spine`, `LeftUpperArm`, ...), any other bone the sender streams, and the expressions as curves. The **VMC Live Link Remapper** renames them to what your mesh uses. The VMC source applies it to everything it sends Live Link, so the renamed names are what the Live Link Pose node and the other consumers see; a remapper of another class on a VMC subject, or this remapper on another source's subject, doesn't rename what Live Link evaluates (Live Link, UE 5.6 to 5.8, evaluates with the names the source sends). A new VMC subject gets one automatically; you can pick a different remapper class in **Project Settings → Plugins → VMC Live Link → Default Remapper Class**.
 
 Select the subject in the Live Link panel to edit its remapper. Its settings (Target, Mapping and Normalizer below) are shown inline under the subject's **Remapper**. The **Mapping Tools** buttons and the **Live Mapping** table come after the subject's own settings, at the end of its details. (A remapper shown in a details panel of its own has the same sections, in the order below.)
 

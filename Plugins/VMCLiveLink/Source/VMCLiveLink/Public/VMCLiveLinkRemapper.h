@@ -135,8 +135,14 @@ public:
 	virtual bool IsValidRemapper() const override { return true; }
 	/** The worker made by the last CreateWorker. */
 	virtual FWorkerSharedPtr GetWorker() const override { return Worker; }
-	/** A new worker from the current settings. Live Link calls it again whenever the remapper is dirty. */
+	/** Live Link's worker: it passes everything through. A VMC source applies MakeConfig in the
+	 *  static data and frames it pushes, since Live Link evaluates with the source's static data
+	 *  (see CreateWorker). Live Link calls it again whenever the remapper is dirty. */
 	virtual FWorkerSharedPtr CreateWorker() override;
+
+	/** Everything this remapper does, for a worker to apply: the maps, the normalizer and the
+	 *  reference skeleton's rest translations. Game thread (it may load the reference skeleton). */
+	FVMCRemapConfig MakeConfig() const;
 
 	/** Goes up with every change, so a source can republish its static data through the new worker. */
 	uint32 GetRevision() const { return Revision; }

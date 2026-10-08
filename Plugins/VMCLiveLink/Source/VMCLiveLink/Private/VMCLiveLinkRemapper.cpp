@@ -96,6 +96,20 @@ USkeletalMesh* UVMCLiveLinkRemapper::ResolveReferenceSkeleton() const
 
 ULiveLinkSubjectRemapper::FWorkerSharedPtr UVMCLiveLinkRemapper::CreateWorker()
 {
+	// A VMC source renames with MakeConfig itself, in the static data and frames it pushes: Live
+	// Link evaluates subjects with the static data the source pushed, not with the copy a remapper
+	// renamed, so renames made here would reach the subject's consumers only for the frame that was
+	// current when the remapper changed. Live Link's worker therefore passes everything through.
+	// (UE 5.6 to 5.8: FLiveLinkSubject builds its frame snapshot from StaticData, not from
+	// OverrideStaticData.)
+	FVMCRemapConfig PassThrough;
+	PassThrough.bUseRefTranslations = false;
+	Worker = MakeShared<FVMCLiveLinkRemapperWorker>(MoveTemp(PassThrough));
+	return Worker;
+}
+
+FVMCRemapConfig UVMCLiveLinkRemapper::MakeConfig() const
+{
 	FVMCRemapConfig Config;
 	Config.BoneNameMap = BoneNameMap;     // base class map
 	Config.CurveNameMap = CurveNameMap;
@@ -115,8 +129,7 @@ ULiveLinkSubjectRemapper::FWorkerSharedPtr UVMCLiveLinkRemapper::CreateWorker()
 			}
 		}
 	}
-	Worker = MakeShared<FVMCLiveLinkRemapperWorker>(MoveTemp(Config));
-	return Worker;
+	return Config;
 }
 
 void UVMCLiveLinkRemapper::Initialize(const FLiveLinkSubjectKey& InSubjectKey)
