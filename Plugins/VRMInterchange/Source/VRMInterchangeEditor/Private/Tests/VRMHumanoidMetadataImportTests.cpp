@@ -6,21 +6,26 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/SkeletalMesh.h"
 #include "InterchangeManager.h"
 #include "InterchangeSourceData.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
 #include "ObjectTools.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
+#include "VRMAvatarDescriptionPipeline.h"
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
+#include "VRMImportReport.h"
 #include "VRMParsedModel.h"
 
 namespace VRMHumanoidMetadataImportTests
 {
 	const TCHAR* const ContentPath = TEXT("/Game/VRMHumanoidMetadataTests");
+	const TCHAR* const AvatarPipelineAsset = TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMAvatarDescriptionPipeline.DefaultVRMAvatarDescriptionPipeline");
 
 	FString FixturePath(const TCHAR* Name)
 	{
@@ -28,7 +33,11 @@ namespace VRMHumanoidMetadataImportTests
 		return Plugin.IsValid() ? FPaths::Combine(Plugin->GetBaseDir(), TEXT("Tests"), TEXT("Fixtures"), FString(Name) + TEXT(".vrm")) : FString();
 	}
 
-	/** The plugin's stack (VRMImportPipelineRegistration), named here so the test doesn't read the project's settings. */
+	/**
+	 * The plugin's stack (VRMImportPipelineRegistration), named here rather than read from the
+	 * project's Interchange settings. The plugin's pipeline assets still take the VRM Interchange
+	 * project settings when they load; the test sets the one it needs (see RunTest).
+	 */
 	FImportAssetParameters MakeParameters()
 	{
 		FImportAssetParameters Parameters;
@@ -39,7 +48,7 @@ namespace VRMHumanoidMetadataImportTests
 			TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMIKRigPipeline.DefaultVRMIKRigPipeline"),
 			TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMLiveLinkPipeline.DefaultVRMLiveLinkPipeline"),
 			TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMMaterialPipeline.DefaultVRMMaterialPipeline"),
-			TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMAvatarDescriptionPipeline.DefaultVRMAvatarDescriptionPipeline") })
+			AvatarPipelineAsset })
 		{
 			Parameters.OverridePipelines.Add(FSoftObjectPath(Path));
 		}
@@ -62,6 +71,22 @@ namespace VRMHumanoidMetadataImportTests
 			}
 		}
 		return Out;
+	}
+
+	/** Deletes everything the imports made under ContentPath: Interchange's assets and the VRM pipelines' (none is saved). */
+	void DeleteImportedAssets()
+	{
+		TArray<FAssetData> Assets;
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(FName(ContentPath), Assets, /*bRecursive*/ true);
+		TArray<UObject*> Objects;
+		for (const FAssetData& Asset : Assets)
+		{
+			if (UObject* Object = Asset.FastGetAsset())
+			{
+				Objects.Add(Object);
+			}
+		}
+		ObjectTools::DeleteObjectsUnchecked(Objects);
 	}
 
 	USkeletalMesh* FindMesh(const TArray<UObject*>& Objects)
@@ -100,6 +125,19 @@ bool FVRMHumanoidMetadataImportTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// The pipeline asset takes "Generate Avatar Description" from the project settings; the metadata needs it on.
+	UVRMAvatarDescriptionPipeline* AvatarPipeline = LoadObject<UVRMAvatarDescriptionPipeline>(nullptr, AvatarPipelineAsset);
+	if (!TestNotNull(TEXT("The avatar description pipeline asset"), AvatarPipeline))
+	{
+		return false;
+	}
+	TGuardValue<bool> GenerateAvatarDescription(AvatarPipeline->bGenerateAvatarDescription, true);
+	ON_SCOPE_EXIT
+	{
+		FVRMImportReport::Get().Discard(); // the post-import report the imports started (P6.3)
+		DeleteImportedAssets();
+	};
+
 	UInterchangeManager& Manager = UInterchangeManager::GetInterchangeManager();
 	UInterchangeSourceData* Source = UInterchangeManager::CreateSourceData(Path);
 	TArray<UObject*> Imported;
@@ -107,7 +145,6 @@ bool FVRMHumanoidMetadataImportTest::RunTest(const FString& Parameters)
 	USkeletalMesh* Mesh = FindMesh(Imported);
 	if (!TestNotNull(TEXT("The import made a skeletal mesh"), Mesh))
 	{
-		ObjectTools::DeleteObjectsUnchecked(Imported);
 		return false;
 	}
 	TestTrue(TEXT("Import: the mesh has the humanoid map"), HumanoidTags(Mesh).OrderIndependentCompareEqual(Wanted));
@@ -119,12 +156,8 @@ bool FVRMHumanoidMetadataImportTest::RunTest(const FString& Parameters)
 	}
 	TArray<UObject*> Reimported;
 	Manager.ReimportAsset(Mesh, MakeParameters(), Reimported);
-	USkeletalMesh* ReimportedMesh = FindMesh(Reimported);
-	TestTrue(TEXT("The reimport updated the same mesh"), ReimportedMesh == Mesh);
+	TestTrue(TEXT("The reimport updated the same mesh"), FindMesh(Reimported) == Mesh);
 	TestTrue(TEXT("Reimport: the mesh has the humanoid map"), HumanoidTags(Mesh).OrderIndependentCompareEqual(Wanted));
-
-	Imported.Append(Reimported);
-	ObjectTools::DeleteObjectsUnchecked(Imported);
 	return true;
 }
 
