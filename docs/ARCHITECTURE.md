@@ -36,17 +36,17 @@ graph LR
   S[VMC sender] -- UDP / OSC --> R[FVMCUdpReceiver<br/>receive thread]
   R --> P[VMCOscParser]
   P --> A[FVMCFrameAssembler<br/>VMCProtocol parse + convert]
-  A -- static data, frames --> C[ILiveLinkClient]
-  C --> W[FVMCLiveLinkRemapperWorker<br/>rename, rest translations, normalizer]
-  W --> N[Live Link Pose node<br/>AnimBP]
+  A --> W[FVMCLiveLinkRemapperWorker<br/>rename, rest translations, normalizer]
+  W -- static data, frames --> C[ILiveLinkClient]
+  C --> N[Live Link Pose node<br/>AnimBP]
   A -- devices, camera --> C
 ```
 
 1. **Receive.** `FVMCUdpReceiver` reads datagrams on its own thread and timestamps each on arrival. With **Receive Thread** off, the OSC plugin's `UOSCServer` delivers messages on the game thread instead; both paths feed the same code from step 3 on.
 2. **Parse.** `VMCOscParser` walks the packet (bundles nested up to 8 deep) and hands each message's address and arguments over as views into the packet, without copying or allocating.
 3. **Classify and convert.** `VMCProtocol::ClassifyAddress` identifies the message; `FVMCFrameAssembler::ApplyMessage` parses its arguments, converts the transform to UE space (see [Coordinate conventions](#coordinate-conventions)) and stores it by index. The published skeleton is `root`, then the 55 Unity humanoid bones in a fixed order and hierarchy (`VMCHumanoid`), then any other bone in arrival order, parented to Hips. Indices never change once assigned.
-4. **Publish.** On `/VMC/Ext/Blend/Apply`, the source pushes static data to Live Link if a bone or curve was added or a setting changed, then pushes the frame with its arrival time. Devices and the camera are pushed as their own subjects as they arrive.
-5. **Remap.** Live Link runs each subject's remapper. The source publishes VMC's names; `UVMCLiveLinkRemapper` builds an immutable `FVMCLiveLinkRemapperWorker` from its settings, which renames bones and curves, gives rotation-only bones the reference skeleton's rest translations, and adds normalizer curves. Its per-name work is resolved once in `RemapStaticData`; `RemapFrameData` copies by index.
+4. **Remap.** When the subject has a `UVMCLiveLinkRemapper`, the source applies it itself: the game thread copies its settings (`MakeConfig`) into the source's snapshot, and the frame-building thread runs an `FVMCLiveLinkRemapperWorker` made from them over the static data and every frame. It renames bones and curves, gives rotation-only bones the reference skeleton's rest translations, and adds normalizer curves. Its per-name work is resolved once in `RemapStaticData`; `RemapFrameData` copies by index. The source does this, not Live Link, because Live Link (UE 5.6 to 5.8) evaluates a subject with the static data its source pushed: a remapper's renamed copy reaches the subject's consumers only for the frame that was current when the remapper changed. The source marks the remapper (`SetAppliedBySource`), and the remapper then gives Live Link a worker that passes everything through and reports itself not valid (`IsValidRemapper`), so Live Link keeps no renamed copy of the static data, which would be a stale duplicate it validates frames against; on another source's subject Live Link gets the full worker.
+5. **Publish.** On `/VMC/Ext/Blend/Apply`, the source pushes the static data to Live Link if a bone or curve was added, a setting changed or the remapper changed, then pushes the frame with its arrival time. Devices and the camera are pushed as their own subjects as they arrive.
 6. **Animate.** A Live Link Pose node in an Animation Blueprint reads the remapped subject.
 
 ### VMC threading
@@ -58,7 +58,7 @@ graph LR
 - **Bootstrap:** the subject must exist before frames are pushed. The receive thread asks the game thread to create it (`Tick`) and drops frames until it has.
 - **Switching** the path, port, bind address or subject stops the old path before the new one starts, so the two never run at once.
 - **Shared state:** frame timing, the last sender and the published names are read by the game thread for the status and the mapping table, under `StatsLock`. Message counters are atomics.
-- **Remapper workers** are immutable: an edit makes a new worker, which Live Link swaps in, so a worker in use is never changed.
+- **The remapper's settings** reach the frame-building thread as a copy (`FVMCRemapConfig`) in the source's snapshot, taken on the game thread whenever the remapper's revision changes. The worker made from it is used only by the frame-building thread, and replaced with each static data push.
 
 ### Humanoid map metadata
 

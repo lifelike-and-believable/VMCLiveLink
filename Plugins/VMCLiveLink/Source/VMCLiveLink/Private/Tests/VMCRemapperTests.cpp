@@ -51,22 +51,36 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCRemapperWorkerSnapshotTest, "VMC.Remapper.W
 bool FVMCRemapperWorkerSnapshotTest::RunTest(const FString& Parameters)
 {
 	using namespace VMCRemapperTests;
-	// A worker keeps the maps it was created with; edits reach Live Link through a new worker.
+	// A config keeps the maps it was made with; edits reach the source through a new config (the
+	// source takes one each time the remapper's revision changes).
 	UVMCLiveLinkRemapper* Remapper = NewObject<UVMCLiveLinkRemapper>();
 	Remapper->BoneNameMap.Add(TEXT("Hips"), TEXT("pelvis"));
 	Remapper->CurveNameMap.Add(TEXT("Joy"), TEXT("mouthSmileLeft"));
-	const TSharedPtr<FVMCLiveLinkRemapperWorker> Before = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
+	FVMCLiveLinkRemapperWorker Before(Remapper->MakeConfig());
 
 	const uint32 RevisionBefore = Remapper->GetRevision();
 	Remapper->BoneNameMap.Add(TEXT("Hips"), TEXT("hip_edited"));
 	Remapper->ApplyPreset(ELLRemapPreset::None); // any change through the API marks the remapper dirty
 	TestTrue(TEXT("A change raises the revision"), Remapper->GetRevision() > RevisionBefore);
-	const TSharedPtr<FVMCLiveLinkRemapperWorker> After = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
+	FVMCLiveLinkRemapperWorker After(Remapper->MakeConfig());
 
-	if (!TestTrue(TEXT("Workers"), Before.IsValid() && After.IsValid() && Before != After)) return false;
-	TestEqual(TEXT("The old worker keeps the old name"), RemappedBones(*Before)[1], FName(TEXT("pelvis")));
-	TestEqual(TEXT("The new worker has the edit"), RemappedBones(*After)[1], FName(TEXT("hip_edited")));
-	TestTrue(TEXT("GetWorker returns the newest worker"), Remapper->GetWorker().Get() == After.Get());
+	TestEqual(TEXT("The old config keeps the old name"), RemappedBones(Before)[1], FName(TEXT("pelvis")));
+	TestEqual(TEXT("The new config has the edit"), RemappedBones(After)[1], FName(TEXT("hip_edited")));
+
+	// Live Link's worker: the full one for another source's subject, and one that passes names
+	// through once a VMC source applies the remapper itself (in the static data Live Link evaluates).
+	const TSharedPtr<FVMCLiveLinkRemapperWorker> OtherSource = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
+	if (!TestTrue(TEXT("A worker"), OtherSource.IsValid())) return false;
+	TestEqual(TEXT("Another source's subject: Live Link's worker renames"), RemappedBones(*OtherSource)[1], FName(TEXT("hip_edited")));
+	TestTrue(TEXT("Another source's subject: a valid remapper (Live Link keeps its renamed copy)"), Remapper->IsValidRemapper());
+	const uint32 RevisionUnmarked = Remapper->GetRevision();
+	Remapper->SetAppliedBySource(true);
+	TestFalse(TEXT("A VMC source's subject: no remapped copy in Live Link (the source's static data is already renamed)"), Remapper->IsValidRemapper());
+	TestTrue(TEXT("Marking it raises the revision (Live Link swaps the worker)"), Remapper->GetRevision() > RevisionUnmarked);
+	const TSharedPtr<FVMCLiveLinkRemapperWorker> VMCSource = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
+	if (!TestTrue(TEXT("A worker"), VMCSource.IsValid())) return false;
+	TestEqual(TEXT("A VMC source's subject: Live Link's worker keeps the names"), RemappedBones(*VMCSource)[1], FName(TEXT("Hips")));
+	TestTrue(TEXT("GetWorker returns the newest worker"), Remapper->GetWorker().Get() == VMCSource.Get());
 	return true;
 }
 

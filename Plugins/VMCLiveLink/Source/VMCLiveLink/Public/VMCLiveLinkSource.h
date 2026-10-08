@@ -21,6 +21,8 @@ class FVMCFrameAssembler;
 class FVMCSenderFilter;
 struct FVMCDevicePose;
 class FVMCUdpReceiver;
+class FVMCLiveLinkRemapperWorker;
+struct FVMCRemapConfig;
 class FVMCMessageStats;
 class FOutputDevice;
 class FInternetAddr;
@@ -108,9 +110,17 @@ public:
     /** Whether a VMC source publishes Key (whether or not it has sent anything yet). Game thread. */
     static bool PublishesSubject(const FLiveLinkSubjectKey& Key);
 
+    /** Whether Remapper is the remapper of a subject a VMC source publishes (which applies it itself,
+     *  see FSnapshot::Remap). Game thread. */
+    static bool PublishesSubjectOf(const ULiveLinkSubjectRemapper* Remapper);
+
 #if WITH_DEV_AUTOMATION_TESTS
     /** Tests: sets what GetPublishedNames reports, as if static data with these names had been pushed. */
     void SetPublishedNamesForTest(const TArray<FName>& Bones, const TArray<FName>& Curves);
+    /** Tests: handles an OSC packet from 127.0.0.1 as if it had just arrived. Game thread. */
+    void InjectPacketForTest(TConstArrayView<uint8> Packet);
+    /** Tests: does what the source's ticker does each engine tick. Game thread. */
+    void TickForTest() { Tick(0.f); }
 #endif
 
 private:
@@ -119,6 +129,10 @@ private:
     {
         FVMCConnectionSettings Settings;
         uint32 Version = 0; // a new version republishes static data
+        /** The subject's VMC remapper (UVMCLiveLinkRemapper::MakeConfig), applied by this source to
+         *  the static data and frames it pushes; null without one. Live Link evaluates a subject
+         *  with the static data its source pushed, so renames must be in it. */
+        TSharedPtr<const FVMCRemapConfig> Remap;
     };
 
     // ---- Game thread ----
@@ -173,6 +187,8 @@ private:
     TMap<FName, FName> CameraSubjects; // camera name -> its published subject (kept apart: a name can match a serial)
     void InitSkeleton();
     bool bStaticDirty = false;           // a new bone or curve arrived
+    /** Applies the snapshot's remapper to frames, for the static data last pushed (made with it). */
+    TSharedPtr<FVMCLiveLinkRemapperWorker> FrameRemapper;
     uint32 PublishedStaticVersion = 0;   // snapshot version of the last static publish
     bool bWarnedLegacyRoot = false;
     bool bWarnedRootScaleOffset = false;
@@ -194,7 +210,7 @@ private:
     FString SenderStateText;          // what /VMC/Ext/OK says, when worth showing (VMCProtocol::DescribeSenderState)
     FString LockedSender;             // the sender locked to (bLockToFirstSender), or empty
     FString LastSender;               // the IP of the last packet used, or empty
-    TArray<FName> PublishedBones;     // the names in the last static data pushed
+    TArray<FName> PublishedBones;     // VMC's names in the last static data pushed, before the remapper renamed them
     TArray<FName> PublishedCurves;
     int32 IgnoredSenders = 0;         // senders whose packets were ignored since receiving started
     int32 NumDeviceSubjects = 0;      // device and camera subjects published

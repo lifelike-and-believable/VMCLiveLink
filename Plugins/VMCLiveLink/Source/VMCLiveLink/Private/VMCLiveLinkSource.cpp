@@ -9,6 +9,7 @@
 #include "VMCSourceDiagnostics.h"
 #include "VMCUdpReceiver.h"
 #include "IPAddress.h"
+#include "SocketSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/OutputDevice.h"
 
@@ -235,6 +236,23 @@ bool FVMCLiveLinkSource::PublishesSubject(const FLiveLinkSubjectKey& Key)
     });
 }
 
+bool FVMCLiveLinkSource::PublishesSubjectOf(const ULiveLinkSubjectRemapper* Remapper)
+{
+    check(IsInGameThread());
+    if (!Remapper)
+    {
+        return false;
+    }
+    FScopeLock RegistryLock(&GVMCSourcesLock);
+    return GVMCSources.ContainsByPredicate([Remapper](const FVMCLiveLinkSource* Source)
+    {
+        const ULiveLinkSubjectSettings* SubjectSettings = Source->Client
+            ? Cast<ULiveLinkSubjectSettings>(Source->Client->GetSubjectSettings({ Source->SourceGuid, Source->Settings.SubjectName }))
+            : nullptr;
+        return SubjectSettings && SubjectSettings->Remapper == Remapper;
+    });
+}
+
 bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves)
 {
     FScopeLock RegistryLock(&GVMCSourcesLock);
@@ -261,6 +279,15 @@ void FVMCLiveLinkSource::SetPublishedNamesForTest(const TArray<FName>& Bones, co
     FScopeLock Lock(&StatsLock);
     PublishedBones = Bones;
     PublishedCurves = Curves;
+}
+
+void FVMCLiveLinkSource::InjectPacketForTest(TConstArrayView<uint8> Packet)
+{
+    check(IsInGameThread());
+    const TSharedRef<FInternetAddr> Sender = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
+    bool bValid = false;
+    Sender->SetIp(TEXT("127.0.0.1"), bValid);
+    OnPacket(Packet, FPlatformTime::Seconds(), *Sender);
 }
 #endif
 
@@ -302,8 +329,8 @@ bool FVMCLiveLinkSource::Tick(float DeltaTime)
         EnsureSubjectSettingsWithDefaults();
     }
 
-    // A new or edited remapper renames differently: republish the static data so Live Link runs
-    // it through the new worker.
+    // A new or edited remapper renames differently: publish a snapshot with its settings, which
+    // republishes the static data through them.
     if (Client && bEnsuredDefaults)
     {
         const ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName }));
@@ -313,8 +340,9 @@ bool FVMCLiveLinkSource::Tick(float DeltaTime)
         if (Remapper != LastRemapper.Get() || Revision != LastRemapperRevision)
         {
             LastRemapper = Remapper;
-            LastRemapperRevision = Revision;
             PublishSnapshot();
+            // After: marking the remapper as applied by this source can raise its revision.
+            LastRemapperRevision = VMCRemapper ? VMCRemapper->GetRevision() : Revision;
         }
     }
     return true;
@@ -331,6 +359,17 @@ void FVMCLiveLinkSource::PublishSnapshot()
     TSharedRef<FSnapshot> New = MakeShared<FSnapshot>();
     New->Settings = Settings;
     New->Version = ++SnapshotVersion;
+    // The subject's VMC remapper, applied here rather than by Live Link (see FSnapshot::Remap).
+    // Tick publishes a new snapshot whenever the remapper or its settings change.
+    if (Client)
+    {
+        const ULiveLinkSubjectSettings* SubjectSettings = Cast<ULiveLinkSubjectSettings>(Client->GetSubjectSettings({ SourceGuid, Settings.SubjectName }));
+        if (UVMCLiveLinkRemapper* VMCRemapper = SubjectSettings ? Cast<UVMCLiveLinkRemapper>(SubjectSettings->Remapper) : nullptr)
+        {
+            VMCRemapper->SetAppliedBySource(true);
+            New->Remap = MakeShared<const FVMCRemapConfig>(VMCRemapper->MakeConfig());
+        }
+    }
     FScopeLock Lock(&SnapshotLock);
     Snapshot = MoveTemp(New);
 }
@@ -640,8 +679,18 @@ void FVMCLiveLinkSource::PushStaticData(const FSnapshot& Snap)
     {
         return;
     }
+    // VMC's names, renamed by the subject's VMC remapper. The frames pushed until the next static
+    // data go through the same worker, which resolved what they need (rest translations, added
+    // curves) for this static data.
+    FLiveLinkStaticDataStruct Static = Assembler->MakeStaticData(nullptr, nullptr);
+    FrameRemapper.Reset();
+    if (Snap.Remap)
+    {
+        FrameRemapper = MakeShared<FVMCLiveLinkRemapperWorker>(*Snap.Remap);
+        FrameRemapper->RemapStaticData(Static);
+    }
     Client->PushSubjectStaticData_AnyThread({ SourceGuid, Snap.Settings.SubjectName },
-        ULiveLinkAnimationRole::StaticClass(), Assembler->MakeStaticData(nullptr, nullptr)); // VMC names; the remapper renames
+        ULiveLinkAnimationRole::StaticClass(), MoveTemp(Static));
     PublishedStaticVersion = Snap.Version;
     bStaticSent = true;
 
@@ -667,6 +716,10 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
     Options.bUseRefOffsets = false;
 
     FLiveLinkFrameDataStruct Frame = Assembler->MakeFrameData(Options);
+    if (FrameRemapper)
+    {
+        FrameRemapper->RemapFrameData(FLiveLinkStaticDataStruct(), Frame); // uses what it resolved at static time
+    }
     FLiveLinkBaseFrameData& Base = *Frame.Cast<FLiveLinkAnimationFrameData>();
     // When the packet arrived (receive thread), or when the game thread got to it.
     Base.WorldTime = FLiveLinkWorldTime(ArrivalSeconds);
