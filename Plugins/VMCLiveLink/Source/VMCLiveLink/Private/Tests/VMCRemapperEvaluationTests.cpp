@@ -6,6 +6,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Features/IModularFeatures.h"
+#include "InterpolationProcessor/LiveLinkAnimationFrameInterpolateProcessor.h"
 #include "ILiveLinkClient.h"
 #include "LiveLinkPresetTypes.h"
 #include "LiveLinkSubjectSettings.h"
@@ -207,6 +208,71 @@ bool FVMCRemapperEvaluationTest::RunTest(const FString& Parameters)
 	TArray<FName> Bones, Curves;
 	TestTrue(TEXT("Published names found"), FVMCLiveLinkSource::GetPublishedNames(Key, Bones, Curves));
 	TestTrue(TEXT("Published names are VMC's"), Bones.Contains(FName(TEXT("Hips"))) && Curves.Contains(FName(TEXT("a"))));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCSubjectDefaultsTest, "VMC.Source.SubjectDefaults",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCSubjectDefaultsTest::RunTest(const FString& Parameters)
+{
+	using namespace VMCRemapperEvaluationTests;
+	IModularFeatures& Features = IModularFeatures::Get();
+	if (!TestTrue(TEXT("A Live Link client"), Features.IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName)))
+	{
+		return false;
+	}
+	ILiveLinkClient& Client = Features.GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
+
+	auto MakeSource = [&Client](TSharedPtr<FVMCLiveLinkSource>& OutSource, FLiveLinkSubjectKey& OutKey)
+	{
+		FVMCConnectionSettings Settings;
+		Settings.BindAddress = TEXT("127.0.0.1");
+		Settings.Port = 0;
+		Settings.bReceiveThread = true;
+		Settings.SubjectName = FName(*FString::Printf(TEXT("VMCSubjectDefaults_%s"), *FGuid::NewGuid().ToString(EGuidFormats::Short)));
+		OutSource = MakeShared<FVMCLiveLinkSource>(Settings, TEXT("VMC subject defaults test"));
+		OutKey = { Client.AddSource(OutSource), Settings.SubjectName };
+	};
+
+	// A new subject: the source creates it with an interpolation processor that blends bones.
+	{
+		TSharedPtr<FVMCLiveLinkSource> Source;
+		FLiveLinkSubjectKey Key;
+		MakeSource(Source, Key);
+		ON_SCOPE_EXIT { Client.RemoveSource(Key.Source); Client.ForceTick(); };
+		SendFrame(*Source, 0.1f);
+		Client.ForceTick();
+		const ULiveLinkSubjectSettings* Settings = Cast<ULiveLinkSubjectSettings>(Client.GetSubjectSettings(Key));
+		if (TestNotNull(TEXT("The new subject's settings"), Settings))
+		{
+			TestTrue(TEXT("Interpolates animation (bone transforms too)"), Settings->InterpolationProcessor && Settings->InterpolationProcessor->IsA<ULiveLinkAnimationFrameInterpolationProcessor>());
+			TestTrue(TEXT("The processor belongs to the subject's settings"), Settings->InterpolationProcessor && Settings->InterpolationProcessor->GetOuter() == Settings);
+			// The remapper class is a project setting (Default Remapper Class): only check it's there.
+			TestNotNull(TEXT("And a remapper"), Settings->Remapper.Get());
+		}
+	}
+
+	// A subject that already exists (a preset, the user's settings) keeps its settings.
+	{
+		TSharedPtr<FVMCLiveLinkSource> Source;
+		FLiveLinkSubjectKey Key;
+		MakeSource(Source, Key);
+		ON_SCOPE_EXIT { Client.RemoveSource(Key.Source); Client.ForceTick(); };
+		FLiveLinkSubjectPreset Preset;
+		Preset.Key = Key;
+		Preset.Role = ULiveLinkAnimationRole::StaticClass();
+		Preset.Settings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
+		Preset.bEnabled = true;
+		Client.CreateSubject(Preset);
+		SendFrame(*Source, 0.1f);
+		Client.ForceTick();
+		const ULiveLinkSubjectSettings* Settings = Cast<ULiveLinkSubjectSettings>(Client.GetSubjectSettings(Key));
+		if (TestNotNull(TEXT("The existing subject's settings"), Settings))
+		{
+			TestNull(TEXT("Its choice of no interpolation is kept"), Settings->InterpolationProcessor.Get());
+		}
+	}
 	return true;
 }
 
