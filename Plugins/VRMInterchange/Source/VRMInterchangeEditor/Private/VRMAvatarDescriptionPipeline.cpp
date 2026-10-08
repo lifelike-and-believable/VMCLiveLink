@@ -162,11 +162,13 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	// avatar description (one it reused only gets an unset avatar description filled in). It's the
 	// one the Live Link pipeline reported for this file, wherever it put it; nothing else is touched.
 	// The Live Link pipeline adds the node instead when it runs after this one.
-	if (const TArray<FVRMImportReport::FFile>& Files = FVRMImportReport::Get().GetPendingFiles(); Files.Num() > 0)
+	if (const FVRMImportReport::FFile* File = FVRMImportReport::Get().FindFile(GetSourceFilename()))
 	{
+		// The newest match: a later import of the same file, still pending, adds its _1 copy after.
 		const FString Prefix = TEXT("ABP_LL_VRM_") + Mesh->GetName();
-		for (const FVRMImportReport::FAsset& Asset : Files.Last().Assets)
+		for (int32 i = File->Assets.Num() - 1; i >= 0; --i)
 		{
+			const FVRMImportReport::FAsset& Asset = File->Assets[i];
 			UAnimBlueprint* AnimBlueprint = Asset.Name.StartsWith(Prefix) ? Cast<UAnimBlueprint>(Asset.Path.ResolveObject()) : nullptr;
 			if (AnimBlueprint)
 			{

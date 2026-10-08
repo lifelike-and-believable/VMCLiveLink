@@ -111,6 +111,17 @@ bool FVRMImportReportTest::RunTest(const FString& Parameters)
 	Report.BeginFile(TEXT("C:/Avatars/Alice.vrm"), /*bReimport*/ true);
 	TestEqual(TEXT("Still one file"), Report.GetPendingFiles().Num(), 1);
 	TestTrue(TEXT("Reimport noted"), FVRMImportReport::Describe(Report.GetPendingFiles()[0]).Contains(TEXT("Reimport:")));
+	// That import updating an asset the first one created: it has been updated.
+	Report.AddAsset(Spring, /*bUpdated*/ true);
+	TestTrue(TEXT("An asset updated by a later import is marked updated"), Report.GetPendingFiles()[0].Assets[0].bUpdated);
+
+	// Another file in between: each is found by its source, not by its position.
+	Report.BeginFile(TEXT("C:/Avatars/Bob.vrm"), /*bReimport*/ false);
+	Report.BeginFile(TEXT("C:/Avatars/Alice.vrm"), /*bReimport*/ true);
+	const FVRMImportReport::FFile* Alice = Report.FindFile(TEXT("C:/Avatars/Alice.vrm"));
+	TestTrue(TEXT("Found by its source"), Alice && Alice->SourceFile == TEXT("C:/Avatars/Alice.vrm") && Alice->Assets.Num() == 3);
+	TestTrue(TEXT("The last pending entry is another file"), Report.GetPendingFiles().Last().SourceFile == TEXT("C:/Avatars/Bob.vrm"));
+	TestNull(TEXT("An unknown source"), Report.FindFile(TEXT("C:/Avatars/Carol.vrm")));
 
 	Report.Discard();
 	TestEqual(TEXT("Discarded"), Report.GetPendingFiles().Num(), 0);

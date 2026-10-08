@@ -140,10 +140,18 @@ bool FVRMExpressionsNodeWiringTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Its avatar description"), Avatar && Avatar->DefaultObject == Description);
 	TestEqual(TEXT("Compiles without errors or warnings"), int32(AnimBlueprint->Status), int32(BS_UpToDate));
 
-	// Again: nothing to do.
-	TestFalse(TEXT("A second call changes nothing"), VRMPipeline::AddExpressionsNode(AnimBlueprint, MakeDescription(), /*bInsert*/ true));
+	// Again with the same description: nothing to do.
+	TestFalse(TEXT("A second call changes nothing"), VRMPipeline::AddExpressionsNode(AnimBlueprint, Description, /*bInsert*/ true));
 	TestEqual(TEXT("Still one node"), ExpressionsNodes(*Graph).Num(), 1);
+
+	// Another description: kept in a reused AnimBlueprint, replaced by this import's in one it made
+	// (the Live Link pipeline may have set an earlier import's, found by name).
+	UVRMAvatarDescription* ThisImport = MakeDescription();
+	TestFalse(TEXT("A reused AnimBlueprint keeps its avatar description"), VRMPipeline::AddExpressionsNode(AnimBlueprint, ThisImport, /*bInsert*/ false));
 	TestTrue(TEXT("The avatar description kept"), Avatar && Avatar->DefaultObject == Description);
+	TestTrue(TEXT("An AnimBlueprint the import made takes this import's"), VRMPipeline::AddExpressionsNode(AnimBlueprint, ThisImport, /*bInsert*/ true));
+	TestTrue(TEXT("Replaced"), Avatar && Avatar->DefaultObject == ThisImport);
+	TestEqual(TEXT("Still one node after replacing"), ExpressionsNodes(*Graph).Num(), 1);
 
 	// An existing node without an avatar description gets one.
 	{

@@ -282,9 +282,11 @@ namespace VRMPipeline
 		}
 		else
 		{
-			// One already there: fill in its avatar description only if it has none.
+			// One already there. In an AnimBlueprint the import made (bInsert), it takes this import's
+			// avatar description (the Live Link pipeline may have set an earlier import's, found by
+			// name); in a reused one, only an unset avatar description is filled in.
 			const UEdGraphPin* Avatar = ExpressionsNode->FindPin(TEXT("AvatarDescription"), EGPD_Input);
-			if (!Avatar || Avatar->LinkedTo.Num() > 0 || Avatar->DefaultObject)
+			if (!Avatar || Avatar->LinkedTo.Num() > 0 || Avatar->DefaultObject == Description || (Avatar->DefaultObject && !bInsert))
 			{
 				return false;
 			}
