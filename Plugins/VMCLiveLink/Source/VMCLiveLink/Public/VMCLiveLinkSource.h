@@ -17,6 +17,7 @@ struct FOSCMessage;
 
 class ULiveLinkSubjectRemapper;
 class ULiveLinkSubjectSettings;
+class ULiveLinkRole;
 class FVMCFrameAssembler;
 class FVMCSenderFilter;
 struct FVMCDevicePose;
@@ -144,6 +145,8 @@ private:
     bool Tick(float DeltaTime); // subject bootstrap for the receive thread
     void PublishSnapshot();
     void EnsureSubjectSettingsWithDefaults(); // create settings + attach the default remapper
+    /** New subject settings as Live Link makes them for a subject it creates (role defaults, interpolation). */
+    static ULiveLinkSubjectSettings* MakeDefaultSubjectSettings(const FLiveLinkSubjectKey& Key, TSubclassOf<ULiveLinkRole> Role);
 
     // ---- Frame-building thread (receive thread, or game thread) ----
     void OnPacket(TConstArrayView<uint8> Packet, double ArrivalSeconds, const FInternetAddr& Sender);

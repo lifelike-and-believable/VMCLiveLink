@@ -174,6 +174,7 @@ A subject restored from a preset keeps the maps saved in it. With empty maps and
 | The avatar stays in a T-pose, or only its root moves. | The bones aren't mapped: click **Map Bones From Humanoid Metadata** (section 6). |
 | Limbs twist or bend the wrong way. | The mesh's bones are rotated at rest: retarget instead (section 9). |
 | The avatar faces the wrong way. | Set the source's **Yaw Offset Deg** to 180. |
+| The avatar moves in steps. | In the Live Link panel, set the subject's **Interpolation** to **Animation Interpolation** (a subject in a preset saved by an earlier version may have **None**), then save the preset. If the viewport stops while the sender is focused, untick **Editor Preferences → General → Performance → Use Less CPU when in Background**. |
 | The face doesn't move. | Check the AnimBP's **VRM Expressions** node has the avatar's `<Mesh>_Avatar` (section 7), and leave expression names unmapped. |
 | Hair doesn't swing when the character moves or turns. | Untick **Use Spring Centers** (section 8). |
 | Hair tips don't swing on a VRoid avatar imported with 1.0.0. | Reimport it with the current version. |

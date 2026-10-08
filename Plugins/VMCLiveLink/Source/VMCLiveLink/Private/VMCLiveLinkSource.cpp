@@ -25,6 +25,9 @@
 
 #include "VMCLiveLinkSettings.h"
 #include "VMCLiveLinkSourceSettings.h"
+#include "InterpolationProcessor/LiveLinkAnimationFrameInterpolateProcessor.h"
+#include "LiveLinkFramePreProcessor.h"
+#include "LiveLinkSettings.h"
 #include "LiveLinkSubjectSettings.h"
 #include "LiveLinkSubjectRemapper.h"
 #include "VMCLiveLinkRemapper.h"
@@ -816,6 +819,55 @@ void FVMCLiveLinkSource::RemoveDeviceSubjects()
 
 // ---------------- Subject (game thread) ----------------
 
+ULiveLinkSubjectSettings* FVMCLiveLinkSource::MakeDefaultSubjectSettings(const FLiveLinkSubjectKey& Key, TSubclassOf<ULiveLinkRole> Role)
+{
+    // What FLiveLinkClient gives a subject it creates from pushed static data
+    // (PushSubjectStaticData_Internal), which a subject created through CreateSubject doesn't get.
+    // Without an interpolation processor, Live Link evaluates the frame closest to the read time,
+    // so the avatar holds each pose until the next arrives.
+    const ULiveLinkSettings* LiveLinkSettings = GetDefault<ULiveLinkSettings>();
+    const FLiveLinkRoleProjectSetting RoleSetting = LiveLinkSettings->GetDefaultSettingForRole(Role);
+
+    UClass* SettingsClass = RoleSetting.SettingClass.Get();
+    ULiveLinkSubjectSettings* NewSettings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage(),
+        SettingsClass ? SettingsClass : ULiveLinkSubjectSettings::StaticClass());
+    NewSettings->Initialize(Key);
+    NewSettings->Role = Role;
+
+    // The role's interpolation processor; else the project's, if it is for animation; else
+    // Animation Interpolation. (The project-wide default is normally the basic processor, which
+    // blends curves but not bone transforms; and in UE 5.6 the animation role's own entry may not
+    // resolve, its config naming the role's class under /Script/LiveLink.)
+    auto IsFor = [&Role](UClass* ProcessorClass, bool bAnimationOnly)
+    {
+        if (!ProcessorClass)
+        {
+            return false;
+        }
+        const UClass* ProcessorRole = ProcessorClass->GetDefaultObject<ULiveLinkFrameInterpolationProcessor>()->GetRole();
+        return Role->IsChildOf(ProcessorRole) && (!bAnimationOnly || ProcessorRole->IsChildOf(ULiveLinkAnimationRole::StaticClass()));
+    };
+    UClass* InterpolationClass = RoleSetting.FrameInterpolationProcessor.Get();
+    if (!IsFor(InterpolationClass, /*bAnimationOnly*/ false))
+    {
+        InterpolationClass = LiveLinkSettings->FrameInterpolationProcessor.Get();
+        if (!IsFor(InterpolationClass, /*bAnimationOnly*/ true))
+        {
+            InterpolationClass = ULiveLinkAnimationFrameInterpolationProcessor::StaticClass();
+        }
+    }
+    NewSettings->InterpolationProcessor = NewObject<ULiveLinkFrameInterpolationProcessor>(NewSettings, InterpolationClass);
+
+    for (const TSubclassOf<ULiveLinkFramePreProcessor>& PreProcessor : RoleSetting.FramePreProcessors)
+    {
+        if (PreProcessor && Role->IsChildOf(PreProcessor->GetDefaultObject<ULiveLinkFramePreProcessor>()->GetRole()))
+        {
+            NewSettings->PreProcessors.Add(NewObject<ULiveLinkFramePreProcessor>(NewSettings, PreProcessor.Get()));
+        }
+    }
+    return NewSettings;
+}
+
 void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
 {
     if (!Client || bEnsuredDefaults)
@@ -833,12 +885,12 @@ void FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults()
     }
     else
     {
-        // Bootstrap the subject with our default remapper.
+        // Bootstrap the subject as Live Link would (its role's settings class, pre-processors and
+        // interpolation, from Project Settings > Live Link), plus our default remapper.
         FLiveLinkSubjectPreset Preset;
         Preset.Key = Key;
         Preset.Role = ULiveLinkAnimationRole::StaticClass();
-
-        ULiveLinkSubjectSettings* NewSettings = NewObject<ULiveLinkSubjectSettings>(GetTransientPackage());
+        ULiveLinkSubjectSettings* NewSettings = MakeDefaultSubjectSettings(Key, Preset.Role);
 
         const UVMCLiveLinkSettings* Proj = GetDefault<UVMCLiveLinkSettings>();
         UClass* RemapperClass = (Proj && !Proj->DefaultRemapperClass.IsNull())
