@@ -90,9 +90,9 @@ If the sender is on another computer and nothing arrives, allow *Unreal Editor* 
 
 The stream uses the Unity humanoid bone names every VMC sender uses (`Hips`, `LeftUpperArm`, ...). The subject's **remapper** renames them to your avatar's bones.
 
-1. With the sender running (the subject appears only once data arrives), select `VMC_Subject` in the Live Link panel. In its details, find the **Remapper**.
+1. With the sender running (the subject appears only once data arrives), select `VMC_Subject` in the Live Link panel. In its details, find the **Remapper**: its settings are listed under it, and its **Mapping Tools** and **Live Mapping** sections are at the end of the details.
 2. Set **Target → Reference Skeleton** to your avatar's skeletal mesh (`SkeletalMeshes/Alice`).
-3. Click **Map Bones From Humanoid Metadata**. VRM Interchange stored the avatar's humanoid map on the mesh, so every bone maps exactly.
+3. In **Mapping Tools**, click **Map Bones From Humanoid Metadata**. VRM Interchange stored the avatar's humanoid map on the mesh, so every bone maps exactly.
 4. Open **Live Mapping**: every bone and curve received is listed, with a note on any that don't reach the mesh. Tick **Only names that don't reach the mesh**. The body bones should be gone. What is left is humanoid bones your avatar doesn't have (VRoid avatars have no `Jaw`), which drive nothing, and the expression curves, which section 7 connects.
 5. Drag `LiveLink/BP_LL_VRM_Alice` into the level. Select it and, in the Details panel, set **Subject** to `VMC_Subject`. (It starts empty.)
 6. Press **Simulate** (or **Play**). The avatar follows the performer.
