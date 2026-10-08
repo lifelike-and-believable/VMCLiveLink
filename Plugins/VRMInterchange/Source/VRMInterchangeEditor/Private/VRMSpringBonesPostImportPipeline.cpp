@@ -297,7 +297,7 @@ bool UVRMSpringBonesPostImportPipeline::SetSpringConfigOnAnimBlueprint(UObject* 
 
     if(UAnimBlueprint* ABP=Cast<UAnimBlueprint>(AnimBlueprintObj))
     {
-        if(!ABP->GeneratedClass){ FKismetEditorUtilities::CompileBlueprint(ABP);} 
+        if(!ABP->GeneratedClass){ FKismetEditorUtilities::CompileBlueprint(ABP, EBlueprintCompileOptions::SkipSave);} 
         UAnimBlueprintGeneratedClass* GenClass=Cast<UAnimBlueprintGeneratedClass>(ABP->GeneratedClass);
         if(!GenClass) return false;
         UObject* CDO=GenClass->GetDefaultObject();
@@ -353,7 +353,7 @@ bool UVRMSpringBonesPostImportPipeline::AssignPostProcessABPToMesh(USkeletalMesh
     UClass* BPClass=nullptr;
     if(UAnimBlueprint* ABP=Cast<UAnimBlueprint>(AnimBlueprintObj))
     {
-        FKismetEditorUtilities::CompileBlueprint(ABP);
+        FKismetEditorUtilities::CompileBlueprint(ABP, EBlueprintCompileOptions::SkipSave);
         BPClass=ABP->GeneratedClass;
     }
     else
@@ -407,7 +407,7 @@ void UVRMSpringBonesPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Sk
             if (!bReused || ABP->TargetSkeleton != Skeleton || !ABP->GeneratedClass)
             {
                 ABP->TargetSkeleton = Skeleton;
-                FKismetEditorUtilities::CompileBlueprint(ABP);
+                FKismetEditorUtilities::CompileBlueprint(ABP, EBlueprintCompileOptions::SkipSave);
             }
             if (SpringDataAsset && !SetSpringConfigOnAnimBlueprint(ABP, SpringDataAsset))
             {

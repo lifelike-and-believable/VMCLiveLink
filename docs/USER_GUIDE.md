@@ -105,7 +105,7 @@ If the avatar faces the wrong way, set the source's **Yaw Offset Deg** to 180. T
 
 VMC senders send expressions by name: VRM 0.x names such as `Joy`, `A` and `Blink_L`, or VRM 1.0 names such as `happy`, `aa` and `blinkLeft`, depending on the avatar loaded in the sender. The **VRM Expressions** node turns them into your avatar's morph targets, whichever version either side uses.
 
-The import adds it: `LiveLink/Animation/ABP_LL_VRM_Alice` has a **VRM Expressions** node after its **Live Link Pose** node, with its **Avatar Description** set to `Alice_Avatar`. (An AnimBP from an earlier version of the plugin doesn't have it: add the node there by hand, after the **Live Link Pose** node, and set its **Avatar Description**; or reimport with **Actors: Update Existing** ticked.)
+The import adds it: `LiveLink/Animation/ABP_LL_VRM_Alice` has a **VRM Expressions** node after its **Live Link Pose** node, with its **Avatar Description** set to `Alice_Avatar`. (The import adds it only to an AnimBP it makes, and only when the avatar has expressions; an AnimBP it reuses keeps your graph. In an AnimBP from an earlier version of the plugin, add the node by hand, after the **Live Link Pose** node, and set its **Avatar Description**.)
 
 Leave the expression names unmapped in the remapper (its **Curve Name Map** empty, **Preset** on *None / Manual*): the node expects the senders' own names.
 
@@ -156,7 +156,7 @@ A subject restored from a preset keeps the maps saved in it. With empty maps and
 
 **Reimport** (right-click the skeletal mesh → **Reimport**) after you change the `.vrm` file. In the import dialog, each VRM option's **Update Existing** decides what happens to the assets made last time: on, they are updated in place, and the actors and Animation Blueprints keep your edits; off, new copies with `_1`-style names are made. The spring data and avatar description are replaced from the file, so edits to them are lost.
 
-**Actors: Update Existing** is off by default: tick it before reimporting, or you get `_1` copies of the actors and Animation Blueprints, and their edits. Spring Bones, IK Rig and Avatar Description update in place by default.
+**Actors: Update Existing** is off by default: tick it before reimporting, or you get `_1` copies of the actors and Animation Blueprints, without your edits. Spring Bones, IK Rig and Avatar Description update in place by default.
 
 **After updating the plugins:**
 - If the editor offers to register the VRM import pipelines again, click **Register**.

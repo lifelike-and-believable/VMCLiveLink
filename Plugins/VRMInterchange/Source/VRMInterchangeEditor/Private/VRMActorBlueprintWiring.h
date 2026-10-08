@@ -42,12 +42,14 @@ namespace VRMPipeline
 	bool SetBlueprintObjectVariable(UBlueprint* Blueprint, FName VariableName, UObject* Value);
 
 	/**
-	 * Gives a generated Live Link AnimBlueprint its VRM Expressions node: inserted between the
-	 * AnimGraph's output and the pose that feeds it (the Live Link Pose node in the template), with
-	 * Description as its avatar description. If the AnimGraph already has one, only an unset avatar
-	 * description is filled in. Compiles the Blueprint when it changes it. False, with a log line,
-	 * when it changes nothing: no Description, the node's class isn't loaded, or the AnimGraph's
-	 * output isn't fed by a single pose (an edited graph is left to the user).
+	 * Gives a generated Live Link AnimBlueprint its VRM Expressions node: with bInsert, inserted
+	 * between the AnimGraph's output and the pose that feeds it (the Live Link Pose node in the
+	 * template), with Description as its avatar description. If the AnimGraph already has one, only
+	 * an unset avatar description is filled in. Pass bInsert only for an AnimBlueprint the import has
+	 * just made: one it reuses keeps the user's graph. Compiles the Blueprint (without saving it)
+	 * when it changes it. False when it changes nothing: no Description, or one without expressions
+	 * (the node would warn on every compile), the node's class isn't loaded, or the AnimGraph's
+	 * output isn't fed by a single pose (an edited graph is left to the user; logged).
 	 */
-	bool AddExpressionsNode(UAnimBlueprint* AnimBlueprint, UVRMAvatarDescription* Description);
+	bool AddExpressionsNode(UAnimBlueprint* AnimBlueprint, UVRMAvatarDescription* Description, bool bInsert);
 }

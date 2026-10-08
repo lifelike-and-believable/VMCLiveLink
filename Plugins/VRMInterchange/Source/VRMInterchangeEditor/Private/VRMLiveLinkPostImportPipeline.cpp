@@ -66,11 +66,12 @@ void UVRMLiveLinkPostImportPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh,
 		{
 			AnimBP->SetPreviewMesh(Mesh);
 			AnimBP->MarkPackageDirty();
-			// The face: a VRM Expressions node for the character's avatar description. The avatar
+			// The face: a VRM Expressions node for the character's avatar description, inserted only
+			// into an AnimBlueprint made now (a reused one keeps the user's graph). The avatar
 			// description pipeline adds it instead when it runs after this one (as in the default
 			// stack), so the node is never left without one.
 			VRMPipeline::AddExpressionsNode(AnimBP, Cast<UVRMAvatarDescription>(
-				FindExistingAsset(GetCharacterFolder(), CharacterName + TEXT("_Avatar"))));
+				FindExistingAsset(GetCharacterFolder(), CharacterName + TEXT("_Avatar"))), /*bInsert*/ !bAnimReused);
 		}
 		if (ActorBP)
 		{

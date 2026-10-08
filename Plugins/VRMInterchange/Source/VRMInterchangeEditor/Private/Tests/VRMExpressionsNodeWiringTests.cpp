@@ -11,6 +11,7 @@
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/Guid.h"
+#include "Misc/ScopeExit.h"
 #include "UObject/Package.h"
 #include "VRMActorBlueprintWiring.h"
 #include "VRMAvatarDescription.h"
@@ -95,15 +96,36 @@ bool FVRMExpressionsNodeWiringTest::RunTest(const FString& Parameters)
 {
 	using namespace VRMExpressionsNodeWiringTests;
 
-	UAnimBlueprint* AnimBlueprint = CopyTemplate();
+	// The copies are standalone (as the template is): released at the end, so they don't stay loaded.
+	TArray<UAnimBlueprint*> Copies;
+	ON_SCOPE_EXIT
+	{
+		for (UAnimBlueprint* Copy : Copies)
+		{
+			if (Copy)
+			{
+				Copy->ClearFlags(RF_Standalone | RF_Public);
+				Copy->MarkAsGarbage();
+			}
+		}
+	};
+	auto Copy = [&Copies]() { UAnimBlueprint* New = CopyTemplate(); Copies.Add(New); return New; };
+
+	UAnimBlueprint* AnimBlueprint = Copy();
 	UVRMAvatarDescription* Description = MakeDescription();
 	if (!TestNotNull(TEXT("The template AnimBlueprint"), AnimBlueprint)) return false;
 	UEdGraph* Graph = AnimGraph(*AnimBlueprint);
 	if (!TestNotNull(TEXT("Its AnimGraph"), Graph)) return false;
 	TestEqual(TEXT("The template has no expressions node"), ExpressionsNodes(*Graph).Num(), 0);
+	TestEqual(TEXT("The template compiles without errors or warnings"), int32(AnimBlueprint->Status), int32(BS_UpToDate));
+
+	// A reused AnimBlueprint (bInsert false) keeps its graph; a description without expressions adds nothing.
+	TestFalse(TEXT("Not inserted into a reused AnimBlueprint"), VRMPipeline::AddExpressionsNode(AnimBlueprint, Description, /*bInsert*/ false));
+	TestFalse(TEXT("Not inserted for an avatar without expressions"), VRMPipeline::AddExpressionsNode(AnimBlueprint, NewObject<UVRMAvatarDescription>(GetTransientPackage()), /*bInsert*/ true));
+	TestEqual(TEXT("Still no node"), ExpressionsNodes(*Graph).Num(), 0);
 
 	// Added between the output and the Live Link Pose node, with the avatar description.
-	TestTrue(TEXT("Adds the node"), VRMPipeline::AddExpressionsNode(AnimBlueprint, Description));
+	TestTrue(TEXT("Adds the node"), VRMPipeline::AddExpressionsNode(AnimBlueprint, Description, /*bInsert*/ true));
 	const TArray<UEdGraphNode*> Added = ExpressionsNodes(*Graph);
 	if (!TestEqual(TEXT("One expressions node"), Added.Num(), 1)) return false;
 	UEdGraphNode* Node = Added[0];
@@ -119,7 +141,7 @@ bool FVRMExpressionsNodeWiringTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Compiles without errors or warnings"), int32(AnimBlueprint->Status), int32(BS_UpToDate));
 
 	// Again: nothing to do.
-	TestFalse(TEXT("A second call changes nothing"), VRMPipeline::AddExpressionsNode(AnimBlueprint, MakeDescription()));
+	TestFalse(TEXT("A second call changes nothing"), VRMPipeline::AddExpressionsNode(AnimBlueprint, MakeDescription(), /*bInsert*/ true));
 	TestEqual(TEXT("Still one node"), ExpressionsNodes(*Graph).Num(), 1);
 	TestTrue(TEXT("The avatar description kept"), Avatar && Avatar->DefaultObject == Description);
 
@@ -128,29 +150,30 @@ bool FVRMExpressionsNodeWiringTest::RunTest(const FString& Parameters)
 		UEdGraphPin* Pin = Node->FindPin(TEXT("AvatarDescription"), EGPD_Input);
 		Pin->DefaultObject = nullptr;
 		UVRMAvatarDescription* Other = MakeDescription();
-		TestTrue(TEXT("Fills in an unset avatar description"), VRMPipeline::AddExpressionsNode(AnimBlueprint, Other));
+		TestTrue(TEXT("Fills in an unset avatar description, also in a reused AnimBlueprint"), VRMPipeline::AddExpressionsNode(AnimBlueprint, Other, /*bInsert*/ false));
 		TestTrue(TEXT("The new avatar description"), Pin->DefaultObject == Other);
 		TestEqual(TEXT("Still one node after filling in"), ExpressionsNodes(*Graph).Num(), 1);
 	}
 
 	// No avatar description: nothing is added (a node without one would warn on every compile).
-	UAnimBlueprint* Untouched = CopyTemplate();
-	if (TestNotNull(TEXT("A second copy"), Untouched))
+	UAnimBlueprint* Untouched = Copy();
+	UEdGraph* UntouchedGraph = Untouched ? AnimGraph(*Untouched) : nullptr;
+	if (TestNotNull(TEXT("A second copy's AnimGraph"), UntouchedGraph))
 	{
-		TestFalse(TEXT("No avatar description, no node"), VRMPipeline::AddExpressionsNode(Untouched, nullptr));
-		TestEqual(TEXT("No node added"), ExpressionsNodes(*AnimGraph(*Untouched)).Num(), 0);
+		TestFalse(TEXT("No avatar description, no node"), VRMPipeline::AddExpressionsNode(Untouched, nullptr, /*bInsert*/ true));
+		TestEqual(TEXT("No node added"), ExpressionsNodes(*UntouchedGraph).Num(), 0);
 	}
 
 	// An edited graph whose output isn't fed by a single pose is left alone.
-	UAnimBlueprint* Edited = CopyTemplate();
-	if (TestNotNull(TEXT("A third copy"), Edited))
+	UAnimBlueprint* Edited = Copy();
+	UEdGraph* EditedGraph = Edited ? AnimGraph(*Edited) : nullptr;
+	if (TestNotNull(TEXT("A third copy's AnimGraph"), EditedGraph))
 	{
-		UEdGraph* EditedGraph = AnimGraph(*Edited);
 		UEdGraphPin* EditedResult = Root(*EditedGraph) ? PosePin(*Root(*EditedGraph), EGPD_Input) : nullptr;
 		if (TestNotNull(TEXT("The output pin"), EditedResult))
 		{
 			EditedResult->BreakAllPinLinks();
-			TestFalse(TEXT("An unlinked output gets no node"), VRMPipeline::AddExpressionsNode(Edited, MakeDescription()));
+			TestFalse(TEXT("An unlinked output gets no node"), VRMPipeline::AddExpressionsNode(Edited, MakeDescription(), /*bInsert*/ true));
 			TestEqual(TEXT("No node in the edited graph"), ExpressionsNodes(*EditedGraph).Num(), 0);
 		}
 	}

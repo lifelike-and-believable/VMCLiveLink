@@ -158,17 +158,23 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	Description->MarkPackageDirty();
 	LastDescription = Description;
 
-	// The face: the generated Live Link AnimBlueprint gets a VRM Expressions node for this avatar
-	// description, if the Live Link pipeline has made it (in its default "Animation" subfolder, or
-	// with no subfolder). The Live Link pipeline adds it instead when it runs after this one.
-	const FString LiveLinkFolder = GetCharacterFolder() / TEXT("LiveLink");
-	const FString AnimBlueprintName = TEXT("ABP_LL_VRM_") + Mesh->GetName();
-	UAnimBlueprint* AnimBlueprint = Cast<UAnimBlueprint>(FindExistingAsset(LiveLinkFolder / TEXT("Animation"), AnimBlueprintName));
-	if (!AnimBlueprint)
+	// The face: the Live Link AnimBlueprint this import made gets a VRM Expressions node for this
+	// avatar description (one it reused only gets an unset avatar description filled in). It's the
+	// one the Live Link pipeline reported for this file, wherever it put it; nothing else is touched.
+	// The Live Link pipeline adds the node instead when it runs after this one.
+	if (const TArray<FVRMImportReport::FFile>& Files = FVRMImportReport::Get().GetPendingFiles(); Files.Num() > 0)
 	{
-		AnimBlueprint = Cast<UAnimBlueprint>(FindExistingAsset(LiveLinkFolder, AnimBlueprintName));
+		const FString Prefix = TEXT("ABP_LL_VRM_") + Mesh->GetName();
+		for (const FVRMImportReport::FAsset& Asset : Files.Last().Assets)
+		{
+			UAnimBlueprint* AnimBlueprint = Asset.Name.StartsWith(Prefix) ? Cast<UAnimBlueprint>(Asset.Path.ResolveObject()) : nullptr;
+			if (AnimBlueprint)
+			{
+				VRMPipeline::AddExpressionsNode(AnimBlueprint, Description, /*bInsert*/ !Asset.bUpdated);
+				break;
+			}
+		}
 	}
-	VRMPipeline::AddExpressionsNode(AnimBlueprint, Description);
 
 	// The humanoid map, on the mesh itself, for VMCLiveLink's "Create Mapping" (no plugin dependency).
 	if (WriteHumanoidMetadata(Mesh, StagedAvatar))

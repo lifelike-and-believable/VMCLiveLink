@@ -50,7 +50,7 @@ namespace VRMPipeline
 		}
 		if (!Blueprint->GeneratedClass)
 		{
-			FKismetEditorUtilities::CompileBlueprint(Blueprint);
+			FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipSave);
 		}
 
 		// 1) Added in this Blueprint's editor.
@@ -150,7 +150,7 @@ namespace VRMPipeline
 			}
 		}
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipSave);
 		return bAnimSet;
 	}
 
@@ -162,7 +162,7 @@ namespace VRMPipeline
 		}
 		if (!Blueprint->GeneratedClass)
 		{
-			FKismetEditorUtilities::CompileBlueprint(Blueprint);
+			FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipSave);
 		}
 		UClass* Class = Blueprint->GeneratedClass;
 		UObject* Defaults = Class ? Class->GetDefaultObject() : nullptr;
@@ -214,9 +214,9 @@ namespace VRMPipeline
 		}
 	}
 
-	bool AddExpressionsNode(UAnimBlueprint* AnimBlueprint, UVRMAvatarDescription* Description)
+	bool AddExpressionsNode(UAnimBlueprint* AnimBlueprint, UVRMAvatarDescription* Description, bool bInsert)
 	{
-		if (!AnimBlueprint || !Description)
+		if (!AnimBlueprint || !Description || Description->Avatar.Expressions.Num() == 0)
 		{
 			return false;
 		}
@@ -246,6 +246,10 @@ namespace VRMPipeline
 
 		if (!ExpressionsNode)
 		{
+			if (!bInsert)
+			{
+				return false; // a reused AnimBlueprint keeps the user's graph
+			}
 			// Between the output and the pose that feeds it.
 			UEdGraphPin* Result = Root ? FindPosePin(*Root, EGPD_Input) : nullptr;
 			if (!Result || Result->LinkedTo.Num() != 1)
@@ -295,7 +299,7 @@ namespace VRMPipeline
 		Schema->TrySetDefaultObject(*Avatar, Description);
 
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBlueprint);
-		FKismetEditorUtilities::CompileBlueprint(AnimBlueprint);
+		FKismetEditorUtilities::CompileBlueprint(AnimBlueprint, EBlueprintCompileOptions::SkipSave);
 		return true;
 	}
 }
