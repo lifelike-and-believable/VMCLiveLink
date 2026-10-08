@@ -9,6 +9,8 @@
 #include "InterchangeVRMNode.h"
 #include "Misc/App.h"
 #include "Nodes/InterchangeBaseNodeContainer.h"
+#include "UObject/MetaData.h"
+#include "UObject/Package.h"
 #include "VRMAvatarDescription.h"
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
@@ -16,7 +18,6 @@
 #include "VRMInterchangeLog.h"
 #include "VRMInterchangeSettings.h"
 #include "VRMParsedModel.h"
-#include "Subsystems/EditorAssetSubsystem.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
 namespace
@@ -24,23 +25,27 @@ namespace
 	/**
 	 * Writes the humanoid map onto the mesh as metadata for VMCLiveLink (P4.4, D-4), replacing any
 	 * left by an earlier import. Touches nothing when the tags are already right, so an unchanged
-	 * reimport doesn't dirty the mesh. Returns whether anything changed. Editor only.
+	 * reimport doesn't dirty the mesh. Returns whether anything changed. Writes the package's metadata
+	 * itself: UEditorAssetSubsystem's metadata functions do nothing during Play In Editor. Game thread.
 	 */
 	bool WriteHumanoidMetadata(USkeletalMesh* Mesh, const FVRMAvatarData& Avatar)
 	{
-		UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr;
-		if (!Assets || !Mesh)
+		if (!Mesh)
 		{
 			return false;
 		}
+		FMetaData& MetaData = Mesh->GetPackage()->GetMetaData();
 		const FString Prefix = VRM::HumanoidMetadataPrefix;
 		TMap<FName, FString> Existing;
-		for (const TPair<FName, FString>& Tag : Assets->GetMetadataTagValues(Mesh))
+		if (const TMap<FName, FString>* Tags = FMetaData::GetMapForObject(Mesh))
 		{
-			const FString Key = Tag.Key.ToString();
-			if (Key.StartsWith(Prefix) || Key == VRM::HumanoidMetadataVersionKey)
+			for (const TPair<FName, FString>& Tag : *Tags)
 			{
-				Existing.Add(Tag.Key, Tag.Value);
+				const FString Key = Tag.Key.ToString();
+				if (Key.StartsWith(Prefix) || Key == VRM::HumanoidMetadataVersionKey)
+				{
+					Existing.Add(Tag.Key, Tag.Value);
+				}
 			}
 		}
 		const TMap<FName, FString> Wanted = VRM::MakeHumanoidMetadata(Avatar);
@@ -48,11 +53,12 @@ namespace
 		{
 			return false;
 		}
+		Mesh->Modify();
 		for (const TPair<FName, FString>& Tag : Existing)
 		{
 			if (!Wanted.Contains(Tag.Key))
 			{
-				Assets->RemoveMetadataTag(Mesh, Tag.Key);
+				MetaData.RemoveValue(Mesh, Tag.Key);
 			}
 		}
 		for (const TPair<FName, FString>& Tag : Wanted)
@@ -60,7 +66,7 @@ namespace
 			const FString* Old = Existing.Find(Tag.Key);
 			if (!Old || *Old != Tag.Value)
 			{
-				Assets->SetMetadataTag(Mesh, Tag.Key, Tag.Value);
+				MetaData.SetValue(Mesh, Tag.Key, *Tag.Value);
 			}
 		}
 		return true;

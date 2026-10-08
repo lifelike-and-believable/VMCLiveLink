@@ -308,7 +308,7 @@ Run it with `--help` for the other options (VRM 1.0 names, v2.1 root, packets wi
 - A source receives one sender stream on one port. Use one source per sender.
 - Frames are timed by their arrival; the sender's `/VMC/Ext/T` only becomes their scene time, at an assumed 60 fps.
 - The generated Animation Blueprints in VRM Interchange don't add the VRM Expressions node; add it by hand.
-- Humanoid metadata (**Map Bones From Humanoid Metadata**, and its automatic use at subject creation) is read only in the editor. A packaged game uses the maps saved in the Live Link preset or a mapping asset.
+- Humanoid metadata (**Map Bones From Humanoid Metadata**, and its automatic use at subject creation) is read only in the editor, including during Play In Editor. A packaged game uses the maps saved in the Live Link preset or a mapping asset.
 
 ## License
 

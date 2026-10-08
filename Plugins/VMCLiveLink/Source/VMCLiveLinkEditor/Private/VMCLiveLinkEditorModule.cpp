@@ -8,8 +8,8 @@
 #include "VMCLiveLinkRemapperCustomization.h"
 #include "VMCLiveLinkSubjectSettingsCustomization.h"
 #include "LiveLinkSubjectSettings.h"
-#include "Editor.h"
-#include "Subsystems/EditorAssetSubsystem.h"
+#include "UObject/MetaData.h"
+#include "UObject/Package.h"
 
 
 #define LOCTEXT_NAMESPACE "FVMCLiveLinkEditorModule"
@@ -43,11 +43,13 @@ public:
 		PropertyEditor.RegisterCustomClassLayout(ULiveLinkSubjectSettings::StaticClass()->GetFName(),
 			FOnGetDetailCustomizationInstance::CreateStatic(&FVMCLiveLinkSubjectSettingsCustomization::MakeInstance));
 
-		// Lets the runtime remapper read a mesh's humanoid-map metadata (P4.4, D-4).
+		// Lets the runtime remapper read a mesh's humanoid-map metadata (P4.4, D-4). The package's
+		// metadata itself, not UEditorAssetSubsystem, which reads nothing during Play In Editor, when
+		// Live Link initializes the remappers of subjects made in PIE. Game thread.
 		UVMCLiveLinkRemapper::ReadAssetMetadata = [](UObject* Object)
 		{
-			UEditorAssetSubsystem* Assets = GEditor ? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>() : nullptr;
-			return Assets && Object ? Assets->GetMetadataTagValues(Object) : TMap<FName, FString>();
+			const TMap<FName, FString>* Tags = Object && IsInGameThread() ? FMetaData::GetMapForObject(Object) : nullptr;
+			return Tags ? *Tags : TMap<FName, FString>();
 		};
 #endif
 	}
