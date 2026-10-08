@@ -7,6 +7,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Misc/ScopeExit.h"
 #include "Roles/LiveLinkAnimationTypes.h"
+#include "UObject/MetaData.h"
+#include "UObject/Package.h"
 
 namespace VMCRemapperTests
 {
@@ -198,6 +200,41 @@ bool FVMCRemapperHumanoidMetadataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("... map kept"), Remapper->BoneNameMap.Num(), 1);
 	return true;
 }
+
+#if WITH_EDITOR && WITH_METADATA
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCRemapperHumanoidMetadataInPIETest, "VMC.Remapper.HumanoidMetadataInPIE",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCRemapperHumanoidMetadataInPIETest::RunTest(const FString& Parameters)
+{
+	// The editor module's reader (not a stand-in) finds the tags while Play In Editor runs, when Live
+	// Link initializes the remapper of a subject made in PIE.
+	if (!TestTrue(TEXT("The editor module set the reader"), (bool)UVMCLiveLinkRemapper::ReadAssetMetadata))
+	{
+		return false;
+	}
+	USkeletalMesh* Cube = LoadObject<USkeletalMesh>(nullptr, TEXT("/Engine/EngineMeshes/SkeletalCube.SkeletalCube"));
+	if (!TestNotNull(TEXT("SkeletalCube"), Cube) || !TestTrue(TEXT("SkeletalCube has a bone"), Cube->GetRefSkeleton().GetNum() > 0))
+	{
+		return false;
+	}
+	const FName CubeBone = Cube->GetRefSkeleton().GetBoneName(0);
+	const FName HipsKey(TEXT("VRM.Humanoid.Hips"));
+	FMetaData& MetaData = Cube->GetPackage()->GetMetaData();
+	MetaData.SetValue(Cube, HipsKey, *CubeBone.ToString()); // in memory only; the engine mesh isn't saved
+	ON_SCOPE_EXIT { MetaData.RemoveValue(Cube, HipsKey); };
+
+	UVMCLiveLinkRemapper* Remapper = NewObject<UVMCLiveLinkRemapper>();
+	Remapper->ReferenceSkeleton = Cube;
+	{
+		// What UEditorAssetSubsystem (the reader before) refuses: it logged an error and read nothing.
+		TGuardValue<bool> PlayInEditor(GIsPlayInEditorWorld, true);
+		TestTrue(TEXT("Mapped from the metadata during PIE"), Remapper->MapBonesFromHumanoidMetadata());
+	}
+	TestEqual(TEXT("... Hips to the mesh's bone"), Remapper->BoneNameMap.FindRef(TEXT("Hips")), CubeBone);
+	return true;
+}
+#endif // WITH_EDITOR && WITH_METADATA
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCRemapperMappingTableTest, "VMC.Remapper.MappingTable",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
