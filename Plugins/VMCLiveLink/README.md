@@ -35,9 +35,9 @@ It works on its own. [VRM Interchange](https://github.com/lifelike-and-believabl
 1. **Enable the plugin.** Open **Edit → Plugins**, search for *VMC Live Link*, tick it and restart the editor. (It is enabled by default when installed in a project's `Plugins` folder.)
 2. **Add the source.** Open **Window → Virtual Production → Live Link**. Click **+ Add Source → VMC Live Link Source**, check the settings (the defaults suit most senders: port 39539, every network interface, subject `VMC_Subject`) and click **Create**. The source's status reads *Listening on :39539, waiting for data*.
 3. **Start the sender.** Point your VMC sender at this computer's IP address and port 39539 (see [Sender Setup](#sender-setup)). Use `127.0.0.1` if the sender runs on the same computer. The status changes to *Receiving 60.0 fps from …*, and the subject `VMC_Subject` appears with a green dot.
-4. **Map the names to your mesh.** Select the subject in the Live Link panel. Its **Remapper** (a VMC Live Link Remapper, added automatically) is in the details:
+4. **Map the names to your mesh.** Select the subject in the Live Link panel. Its **Remapper** (a VMC Live Link Remapper, added automatically) is in the details, with its settings inline under it, and the subject's details end with the remapper's **Mapping Tools** and **Live Mapping**:
    - Set **Target → Reference Skeleton** to the skeletal mesh you want to drive.
-   - For a mesh imported with VRM Interchange, click **Map Bones From Humanoid Metadata**. Otherwise, see [The Remapper](#the-remapper).
+   - For a mesh imported with VRM Interchange, click **Mapping Tools → Map Bones From Humanoid Metadata**. Otherwise, see [The Remapper](#the-remapper).
    - Open **Live Mapping**: every bone and curve received is listed, with a note on any that don't reach the mesh.
 5. **Drive the character.** In the mesh's Animation Blueprint, add a **Live Link Pose** node, set its subject to `VMC_Subject` and connect it to the output pose. Place the character in the level, select its skeletal mesh component and tick **Update Animation in Editor** (in **Skeletal Mesh**, under the advanced options; it isn't saved, so tick it again after reopening the level) so it animates outside Play; or press **Play** or **Simulate**. It moves as soon as data arrives.
 
@@ -124,7 +124,7 @@ Type `VMC.Stats` in the editor's console (or the output log's command line) to p
 
 The source publishes VMC's own names: a `root` bone, the 55 Unity humanoid bones (`Hips`, `Spine`, `LeftUpperArm`, ...), any other bone the sender streams, and the expressions as curves. The **VMC Live Link Remapper** renames them to what your mesh uses. A new VMC subject gets one automatically; you can pick a different remapper class in **Project Settings → Plugins → VMC Live Link → Default Remapper Class**.
 
-Select the subject in the Live Link panel to edit its remapper. The details are grouped as follows.
+Select the subject in the Live Link panel to edit its remapper. Its settings (Target, Mapping and Normalizer below) are shown inline under the subject's **Remapper**. The **Mapping Tools** buttons and the **Live Mapping** table come after the subject's own settings, at the end of its details. (A remapper shown in a details panel of its own has the same sections, in the order below.)
 
 ### Target
 
@@ -164,7 +164,7 @@ To drive a VRM avatar's expressions by their own names, leave expression curves 
 | **Save to Mapping Asset** | Saves the maps into the selected mapping asset, with the reference skeleton's signature if **Capture Signature On Save** is on. |
 | **Create Mapping Asset...** | Creates a mapping asset from the current maps and the reference skeleton's signature. |
 
-Every button can be undone (an asset made by **Create Mapping Asset...** stays).
+In the Live Link panel, the buttons can't be undone: Live Link creates subject settings without undo support, so **Edit → Undo** doesn't restore the maps. Save a Live Link preset or a mapping asset first if you may want them back. (In a details panel of the remapper itself, such as a remapper saved in an asset, each button is one undoable step; an asset made by **Create Mapping Asset...** stays.)
 
 ### Mapping Assets
 

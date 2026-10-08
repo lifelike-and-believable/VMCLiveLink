@@ -32,7 +32,7 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(const TSharedPtr<IDetai
 
 void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
-	Remappers.Reset();
+	TArray<TWeakObjectPtr<UVMCLiveLinkRemapper>> Remappers;
 	TArray<TWeakObjectPtr<UObject>> Objects;
 	DetailBuilder.GetObjectsBeingCustomized(Objects);
 	for (const TWeakObjectPtr<UObject>& Object : Objects)
@@ -84,10 +84,22 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 	Normalizer.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, JoyToSmileStrength));
 	Normalizer.AddProperty(GET_MEMBER_NAME_CHECKED(UVMCLiveLinkRemapper, BlinkMirrorStrength));
 
-	IDetailCategoryBuilder& Tools = DetailBuilder.EditCategory(TEXT("Mapping Tools"), LOCTEXT("MappingTools", "Mapping Tools"), ECategoryPriority::Important);
+	AddMappingTools(DetailBuilder, Remappers, Builder, ECategoryPriority::Important);
+}
+
+void FVMCLiveLinkRemapperCustomization::AddMappingTools(IDetailLayoutBuilder& DetailBuilder, const TArray<TWeakObjectPtr<UVMCLiveLinkRemapper>>& Remappers,
+	const TWeakPtr<IDetailLayoutBuilder>& RefreshBuilder, ECategoryPriority::Type Priority)
+{
+	IDetailCategoryBuilder& Tools = DetailBuilder.EditCategory(TEXT("Mapping Tools"), LOCTEXT("MappingTools", "Mapping Tools"), Priority);
+
+	// The buttons outlive this call; they keep their own copies of the remappers and the panel.
+	auto RunAction = [Remappers, RefreshBuilder](const FText& TransactionName, TFunctionRef<void(UVMCLiveLinkRemapper&)> Action)
+	{
+		return Run(Remappers, RefreshBuilder, TransactionName, Action);
+	};
 
 	TSharedRef<SWrapBox> Buttons = SNew(SWrapBox).UseAllottedSize(true);
-	auto AddButton = [this, &Buttons](const FText& Label, const FText& Tooltip, TFunction<FReply()> OnClicked)
+	auto AddButton = [&Buttons](const FText& Label, const FText& Tooltip, TFunction<FReply()> OnClicked)
 	{
 		Buttons->AddSlot().Padding(2.f)
 		[
@@ -100,22 +112,22 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 
 	AddButton(LOCTEXT("ApplyPreset", "Apply Preset"),
 		LOCTEXT("ApplyPresetTip", "Adds the selected preset's entries to the maps (entries you edited are kept)."),
-		[this]() { return Run(LOCTEXT("ApplyPresetTx", "Apply VMC Remapper Preset"), [](UVMCLiveLinkRemapper& R) { R.ApplyPreset(R.Preset); }); });
+		[RunAction]() { return RunAction(LOCTEXT("ApplyPresetTx", "Apply VMC Remapper Preset"), [](UVMCLiveLinkRemapper& R) { R.ApplyPreset(R.Preset); }); });
 	AddButton(LOCTEXT("SeedFromSubject", "Seed From Subject"),
 		LOCTEXT("SeedFromSubjectTip", "Lists the names the subject is receiving and applies the preset that fits them."),
-		[this]() { return Run(LOCTEXT("SeedTx", "Seed VMC Remapper From Subject"), [](UVMCLiveLinkRemapper& R) { R.DetectAndSeedFromSubject(); }); });
+		[RunAction]() { return RunAction(LOCTEXT("SeedTx", "Seed VMC Remapper From Subject"), [](UVMCLiveLinkRemapper& R) { R.DetectAndSeedFromSubject(); }); });
 	AddButton(LOCTEXT("ApplyAsset", "Apply Mapping Asset"),
 		LOCTEXT("ApplyAssetTip", "Replaces the maps with the selected mapping asset's."),
-		[this]() { return Run(LOCTEXT("ApplyAssetTx", "Apply VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R) { R.ApplyMappingAsset(R.MappingAsset.LoadSynchronous()); }); });
+		[RunAction]() { return RunAction(LOCTEXT("ApplyAssetTx", "Apply VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R) { R.ApplyMappingAsset(R.MappingAsset.LoadSynchronous()); }); });
 	AddButton(LOCTEXT("FromHumanoid", "Map Bones From Humanoid Metadata"),
 		LOCTEXT("FromHumanoidTip", "Replaces the bone map with the humanoid map stored on the reference skeleton (VRM.Humanoid.* metadata, written by VRM importers). Curves are left as they are."),
-		[this]() { return Run(LOCTEXT("FromHumanoidTx", "Map VMC Bones From Humanoid Metadata"), [](UVMCLiveLinkRemapper& R) { R.MapBonesFromHumanoidMetadata(); }); });
+		[RunAction]() { return RunAction(LOCTEXT("FromHumanoidTx", "Map VMC Bones From Humanoid Metadata"), [](UVMCLiveLinkRemapper& R) { R.MapBonesFromHumanoidMetadata(); }); });
 	AddButton(LOCTEXT("AutoDetect", "Auto-Detect Mapping"),
 		LOCTEXT("AutoDetectTip", "Finds the mapping asset made for the reference skeleton and applies it."),
-		[this]() { return Run(LOCTEXT("AutoDetectTx", "Auto-Detect VMC Mapping"), [](UVMCLiveLinkRemapper& R) { R.AutoDetectAndApplyMapping(); }); });
+		[RunAction]() { return RunAction(LOCTEXT("AutoDetectTx", "Auto-Detect VMC Mapping"), [](UVMCLiveLinkRemapper& R) { R.AutoDetectAndApplyMapping(); }); });
 	AddButton(LOCTEXT("SaveToAsset", "Save to Mapping Asset"),
 		LOCTEXT("SaveToAssetTip", "Saves the maps into the selected mapping asset (and the reference skeleton's signature, if Capture Signature On Save is on)."),
-		[this]() { return Run(LOCTEXT("SaveTx", "Save VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R)
+		[RunAction]() { return RunAction(LOCTEXT("SaveTx", "Save VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R)
 		{
 			if (UVMCLiveLinkMappingAsset* Asset = R.MappingAsset.LoadSynchronous())
 			{
@@ -125,7 +137,7 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 		}); });
 	AddButton(LOCTEXT("CreateAsset", "Create Mapping Asset..."),
 		LOCTEXT("CreateAssetTip", "Creates a mapping asset from the current maps and the reference skeleton's signature, and selects it."),
-		[this]() { return Run(LOCTEXT("CreateTx", "Create VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R) { CreateMappingAsset(R); }); });
+		[RunAction]() { return RunAction(LOCTEXT("CreateTx", "Create VMC Mapping Asset"), [](UVMCLiveLinkRemapper& R) { CreateMappingAsset(R); }); });
 
 	Tools.AddCustomRow(LOCTEXT("MappingToolsFilter", "Mapping Tools Preset Asset Seed Detect Save Create Humanoid Metadata"))
 		.WholeRowContent()
@@ -136,7 +148,7 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 	// One table for one remapper; with several selected, their names differ.
 	if (Remappers.Num() == 1)
 	{
-		IDetailCategoryBuilder& Live = DetailBuilder.EditCategory(TEXT("Live Mapping"), LOCTEXT("LiveMapping", "Live Mapping"), ECategoryPriority::Important);
+		IDetailCategoryBuilder& Live = DetailBuilder.EditCategory(TEXT("Live Mapping"), LOCTEXT("LiveMapping", "Live Mapping"), Priority);
 		Live.AddCustomRow(LOCTEXT("LiveMappingFilter", "Live Mapping Incoming Outgoing Unmapped Duplicate"))
 			.WholeRowContent()
 			[
@@ -145,7 +157,8 @@ void FVMCLiveLinkRemapperCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 	}
 }
 
-FReply FVMCLiveLinkRemapperCustomization::Run(const FText& TransactionName, TFunctionRef<void(UVMCLiveLinkRemapper&)> Action)
+FReply FVMCLiveLinkRemapperCustomization::Run(const TArray<TWeakObjectPtr<UVMCLiveLinkRemapper>>& Remappers, const TWeakPtr<IDetailLayoutBuilder>& RefreshBuilder,
+	const FText& TransactionName, TFunctionRef<void(UVMCLiveLinkRemapper&)> Action)
 {
 	{
 		const FScopedTransaction Transaction(TransactionName);
@@ -159,7 +172,7 @@ FReply FVMCLiveLinkRemapperCustomization::Run(const FText& TransactionName, TFun
 		}
 	}
 	// Map entries may have been added or removed; rebuild the rows.
-	if (const TSharedPtr<IDetailLayoutBuilder> Pinned = Builder.Pin())
+	if (const TSharedPtr<IDetailLayoutBuilder> Pinned = RefreshBuilder.Pin())
 	{
 		Pinned->ForceRefreshDetails();
 	}

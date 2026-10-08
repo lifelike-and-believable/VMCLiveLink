@@ -342,6 +342,15 @@ Pass if in step 2 the maps fill and Mapping Asset shows `MA_Manny`, and in step 
 
 Pass when recorded: the thread names (for example the VMC receive thread, or the game thread). The API comments say only that the worker may run off the game thread; this records which thread it is.
 
+**E-H5. Mapping Tools in the Live Link panel's subject details.** *(on each of UE 5.6, 5.7 and 5.8)*
+1. Add a VMC source and stream to it (`python scripts/vmc_sender.py send` will do), then select `VMC_Subject` in the Live Link panel.
+2. In the subject's details, expand **Remapper**. Below the subject's own settings, find **Mapping Tools** and **Live Mapping**.
+3. Set the remapper's Reference Skeleton to a VRM Interchange mesh and click **Map Bones From Humanoid Metadata**.
+4. Press **Ctrl+Z**.
+5. Change the subject's **Remapper** to another class (or clear it), then back to **VMC Live Link Remapper**.
+
+Pass if in step 2 the seven Mapping Tools buttons and the Live Mapping table are shown, in step 3 the Bone Name Map under Remapper fills and the table updates, and in step 5 the two sections disappear with the other class and come back with the VMC remapper. Record what step 4 does: the README says the buttons can't be undone in the Live Link panel (the subject settings aren't transactional), so the map is expected to stay.
+
 ---
 
 ## I. Documentation checks

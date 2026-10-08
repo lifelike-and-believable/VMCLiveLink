@@ -27,7 +27,7 @@ graph LR
 | Module | Type | Contents |
 |---|---|---|
 | **VMCLiveLink** | Runtime | The Live Link source (`FVMCLiveLinkSource`) and its factory and settings; the UDP receiver (`FVMCUdpReceiver`) and OSC parser (`VMCOscParser`); VMC message parsing (`VMCProtocol`); frame assembly (`FVMCFrameAssembler`); the humanoid skeleton table (`VMCHumanoid`); the sender filter; diagnostics (`VMCSourceDiagnostics`, `VMC.Stats`); the remapper (`UVMCLiveLinkRemapper` and its worker) and the mapping asset (`UVMCLiveLinkMappingAsset`); project settings (`UVMCLiveLinkSettings`). |
-| **VMCLiveLinkEditor** | Editor | The remapper's details panel (`FVMCLiveLinkRemapperCustomization`) with the live mapping table (`SVMCMappingTable`); the mapping asset's asset definition and factory; the retarget actor factory; reading editor metadata for the remapper (`UVMCLiveLinkRemapper::ReadAssetMetadata`). |
+| **VMCLiveLinkEditor** | Editor | The remapper's details panel (`FVMCLiveLinkRemapperCustomization`) with the live mapping table (`SVMCMappingTable`), and the same tools in the Live Link panel's subject details, where the remapper is shown inline (`FVMCLiveLinkSubjectSettingsCustomization`); the mapping asset's asset definition and factory; the retarget actor factory; reading editor metadata for the remapper (`UVMCLiveLinkRemapper::ReadAssetMetadata`). |
 
 ### VMC data flow
 
