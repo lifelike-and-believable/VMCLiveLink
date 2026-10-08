@@ -86,3 +86,68 @@ private:
 	uint64 LastCounts[NumKinds] = {};
 	TMap<FString, uint64> LastUnknown;
 };
+
+/** Percentiles of a set of values (nearest rank). Count 0 when there were none. */
+struct FVMCDistribution
+{
+	int32 Count = 0;
+	double Min = 0.0;
+	double P50 = 0.0;
+	double P95 = 0.0;
+	double Max = 0.0;
+};
+
+namespace VMCDiagnostics
+{
+	/** Sorts Values and summarises them. */
+	FVMCDistribution Summarize(TArray<double>& Values);
+}
+
+/** One Live Link evaluation of the VMC subject, as Live Link computed its read time. Seconds. */
+struct FVMCEvaluationSample
+{
+	double ReadTime = 0.0;          // engine time Live Link read the subject at
+	double DistanceToNewest = 0.0;  // the newest buffered frame's time minus ReadTime; < 0: read past it, so the newest is held
+	double UserOffset = 0.0;        // the source's Engine Time Offset
+	double ClockOffset = 0.0;       // Live Link's estimate of arrival-to-processing time
+	double SmoothOffset = 0.0;      // Live Link's smoothing offset (frame interval x LiveLink.TimedDataInput.NumFramesForSmoothOffset)
+};
+
+/**
+ * Timing for VMC.Stats (plan O1): the frames' arrival intervals, and how Live Link read the
+ * subject each engine tick. Collected since the last report. Thread safe: intervals come from the
+ * thread that builds frames, evaluations and reports from the game thread.
+ */
+class FVMCTimingStats
+{
+public:
+	/** Samples kept between reports, of each kind; the oldest are dropped beyond it. */
+	static constexpr int32 MaxSamples = 8192;
+
+	void Reset();
+	void AddInterval(double Seconds);
+	void AddEvaluation(const FVMCEvaluationSample& Sample);
+	/** Live Link evaluates the subject in a mode other than engine time: the read-time numbers don't apply. */
+	void SetNotEngineTime(bool bInNotEngineTime);
+
+	/** Report lines for VMC.Stats, then starts collecting again. */
+	FString Report();
+
+private:
+	void Add(TArray<double>& Samples, double Value);
+
+	FCriticalSection Lock;
+	TArray<double> Intervals;
+	TArray<double> Distances;
+	TArray<double> SmoothOffsets;
+	TArray<double> SmoothChanges;   // |change| of the smooth offset from one evaluation to the next
+	TArray<double> ClockOffsets;
+	int32 Evaluations = 0;
+	int32 Held = 0;                 // evaluations that read past the newest frame
+	int32 Backwards = 0;            // evaluations whose read time was earlier than the one before
+	double UserOffset = 0.0;
+	bool bNotEngineTime = false;
+	bool bHasLast = false;          // kept across reports, so the first change after a report counts
+	double LastReadTime = 0.0;
+	double LastSmoothOffset = 0.0;
+};

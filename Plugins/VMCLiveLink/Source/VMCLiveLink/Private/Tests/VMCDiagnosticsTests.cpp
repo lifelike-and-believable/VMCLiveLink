@@ -239,4 +239,65 @@ bool FVMCDiagnosticsSourceTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCDiagnosticsTimingTest, "VMC.Diagnostics.Timing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCDiagnosticsTimingTest::RunTest(const FString& Parameters)
+{
+	// Percentiles, nearest rank.
+	{
+		TArray<double> Values;
+		for (int32 i = 100; i >= 1; --i) Values.Add(double(i));
+		const FVMCDistribution D = VMCDiagnostics::Summarize(Values);
+		TestEqual(TEXT("Count"), D.Count, 100);
+		TestEqual(TEXT("Min"), D.Min, 1.0);
+		TestEqual(TEXT("p50"), D.P50, 50.0);
+		TestEqual(TEXT("p95"), D.P95, 95.0);
+		TestEqual(TEXT("Max"), D.Max, 100.0);
+		TArray<double> One = { 7.0 };
+		const FVMCDistribution S = VMCDiagnostics::Summarize(One);
+		TestTrue(TEXT("One value is every percentile"), S.Count == 1 && S.Min == 7.0 && S.P50 == 7.0 && S.P95 == 7.0 && S.Max == 7.0);
+		TArray<double> None;
+		TestEqual(TEXT("No values"), VMCDiagnostics::Summarize(None).Count, 0);
+	}
+
+	FVMCTimingStats Stats;
+	TestTrue(TEXT("Empty report"), Stats.Report().Contains(TEXT("frame interval: no frames")));
+
+	Stats.AddInterval(0.030);
+	Stats.AddInterval(0.040);
+	Stats.AddInterval(0.050);
+	// Four reads: the second reads past the newest frame (held), the third goes back in time.
+	auto Eval = [&Stats](double ReadTime, double Distance, double Smooth)
+	{
+		FVMCEvaluationSample Sample;
+		Sample.ReadTime = ReadTime;
+		Sample.DistanceToNewest = Distance;
+		Sample.SmoothOffset = Smooth;
+		Sample.ClockOffset = 0.002;
+		Sample.UserOffset = 0.0;
+		Stats.AddEvaluation(Sample);
+	};
+	Eval(10.000, 0.010, 0.060);
+	Eval(10.016, -0.004, 0.060);
+	Eval(10.010, 0.020, 0.080);
+	Eval(10.026, 0.005, 0.075);
+	const FString Report = Stats.Report();
+	AddInfo(Report);
+	TestTrue(TEXT("Interval percentiles"), Report.Contains(TEXT("p50 40.0  p95 50.0  min 30.0  max 50.0 ms (3)")));
+	TestTrue(TEXT("Held and backwards"), Report.Contains(TEXT("Live Link evaluations: 4, newest frame held in 1 (25.0%), read time went back in 1")));
+	TestTrue(TEXT("Smooth offset"), Report.Contains(TEXT("p50 60.0  p95 80.0  min 60.0  max 80.0 ms (4)")));
+	TestTrue(TEXT("Smooth offset changes (0, 20, 5 ms)"), Report.Contains(TEXT("p50 5.0  p95 20.0  min 0.0  max 20.0 ms (3)")));
+
+	// A report starts collecting again; the next change is measured from the last read.
+	Eval(10.020, 0.010, 0.075);
+	const FString Next = Stats.Report();
+	TestTrue(TEXT("Since the last report"), Next.Contains(TEXT("frame interval: no frames")) && Next.Contains(TEXT("Live Link evaluations: 1, newest frame held in 0 (0.0%), read time went back in 1")));
+
+	Stats.SetNotEngineTime(true);
+	Eval(10.040, 0.010, 0.075);
+	TestTrue(TEXT("Not engine time"), Stats.Report().Contains(TEXT("isn't Engine Time")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

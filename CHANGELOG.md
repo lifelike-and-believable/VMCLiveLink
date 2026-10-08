@@ -5,6 +5,7 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 ## [Unreleased]
 
 ### Added
+- **VMC:** `VMC.Stats` prints timing since the last report: the frames' arrival intervals (p50, p95, min, max), and how Live Link read the subject each tick. That covers how often it held the newest frame, how often its read time went backwards, how far behind the newest frame it read, and its smooth and clock offsets. These are the measurements for the [smoothness plan](Planning%20Docs/VMC_Smoothness_and_Performance_Plan_2026-10.md) (O1).
 - **VRM:** the generated Live Link AnimBlueprint has a **VRM Expressions** node, after its Live Link Pose node and set to the character's avatar description, so a VMC stream's expressions reach the face without editing the AnimBlueprint.
 - Fab packages for UE 5.6, 5.7 and 5.8: the release workflow makes a combined package and one per plugin for each engine, and checks that each names its engine.
 - CI builds and tests every pull request on UE 5.6, 5.7 and 5.8, and fails if any tracked package was saved by an engine newer than 5.6 (`scripts/check_content_versions.ps1`). Pull requests from forks now fail the required check instead of skipping it, and editing a pull request no longer starts a run.
@@ -19,6 +20,7 @@ All notable changes to the VMC Live Link and VRM Interchange plugins. The format
 - The VRM import dialog starts each new import from the project settings, not from the choices made in the dialog last time. A reimport still uses the choices made when the asset was imported.
 
 ### Fixed
+- `scripts/vmc_sender.py record` stamped each packet with the time it started waiting for it rather than when it arrived, so a replay sent every packet one interval early. `replay` and `send` slept with `time.sleep`, which on Windows before Python 3.11 rounds to 15.6 ms. Packets are now stamped on arrival and sent to within a millisecond.
 - **VRM:** an import no longer saves the Blueprints it generates or updates (the Live Link actor and AnimBlueprint, the retarget actor, the spring post-process AnimBlueprint) when the Blueprint editor's **Save on Compile** is on.
 - **VMC:** the remapper's bone and curve names never reached the avatar. Live Link (UE 5.6 to 5.8) evaluates a subject with the names its source sent, not with the copy a remapper renamed, so an avatar driven through the VMC remapper stayed in its reference pose (and moved for one frame whenever the remapper changed). The VMC source now applies its subject's VMC remapper itself, to the static data and frames it sends, so the mapped names, rest translations and normalizer curves reach the Live Link Pose node.
 - **VMC:** the remapper's **Mapping Tools** buttons (**Map Bones From Humanoid Metadata**, **Apply Preset**, **Auto-Detect Mapping**, ...) and **Live Mapping** table weren't shown in the Live Link panel, where the remapper is shown inline in the subject's settings: they appeared only in a details panel of the remapper itself. They are now at the end of the subject's details whenever its remapper is a VMC remapper.

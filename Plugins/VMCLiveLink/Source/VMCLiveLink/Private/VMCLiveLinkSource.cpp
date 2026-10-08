@@ -11,6 +11,7 @@
 #include "IPAddress.h"
 #include "SocketSubsystem.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/App.h"
 #include "Misc/OutputDevice.h"
 
 // Live Link
@@ -25,6 +26,7 @@
 
 #include "VMCLiveLinkSettings.h"
 #include "VMCLiveLinkSourceSettings.h"
+#include "LiveLinkSourceSettings.h"
 #include "LiveLinkSubjectSettings.h"
 #include "LiveLinkSubjectRemapper.h"
 #include "VMCLiveLinkRemapper.h"
@@ -102,6 +104,7 @@ void FVMCLiveLinkSource::InitSkeleton()
     SenderFilter = MakeUnique<FVMCSenderFilter>();
     MessageStats = MakeUnique<FVMCMessageStats>();
     MessageStats->Reset(FPlatformTime::Seconds());
+    TimingStats = MakeUnique<FVMCTimingStats>();
 
     FScopeLock Lock(&GVMCSourcesLock);
     GVMCSources.Add(this);
@@ -121,6 +124,10 @@ void FVMCLiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSource
     PublishSnapshot();
 
     TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FVMCLiveLinkSource::Tick));
+    if (Client) // tests pass none
+    {
+        LiveLinkTickedHandle = Client->OnLiveLinkTicked().AddRaw(this, &FVMCLiveLinkSource::OnLiveLinkTicked);
+    }
     // The source stays valid when the port can't be opened, so its status says why ("Can't listen
     // on port") rather than "Stopped"; a new port in the settings starts receiving again.
     StartReceiving();
@@ -148,6 +155,10 @@ FVMCLiveLinkSource::~FVMCLiveLinkSource()
     {
         FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
     }
+    if (Client && LiveLinkTickedHandle.IsValid())
+    {
+        Client->OnLiveLinkTicked().Remove(LiveLinkTickedHandle);
+    }
 }
 
 bool FVMCLiveLinkSource::RequestSourceShutdown()
@@ -157,6 +168,11 @@ bool FVMCLiveLinkSource::RequestSourceShutdown()
     {
         FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
         TickerHandle.Reset();
+    }
+    if (Client && LiveLinkTickedHandle.IsValid())
+    {
+        Client->OnLiveLinkTicked().Remove(LiveLinkTickedHandle);
+        LiveLinkTickedHandle.Reset();
     }
     bIsValid = false;
     Client = nullptr;
@@ -176,6 +192,7 @@ bool FVMCLiveLinkSource::StartReceiving()
         SenderStateText.Reset();
     }
     MessageStats->Reset(FPlatformTime::Seconds());
+    TimingStats->Reset();
     // The frame-building thread's sender caches, so the first packet on the new path notes its sender.
     LastSenderHash = 0;
     LastSenderSeen.Reset();
@@ -303,8 +320,47 @@ FText FVMCLiveLinkSource::GetSourceMachineName() const
 
 FString FVMCLiveLinkSource::GetStatsReport()
 {
-    return FString::Printf(TEXT("VMC source '%s' (subject %s, %s:%d, %s):\n%s"), *SourceName, *Settings.SubjectName.ToString(),
-        *Settings.BindAddress, Settings.Port, *GetSourceStatus().ToString(), *MessageStats->Report(FPlatformTime::Seconds()));
+    return FString::Printf(TEXT("VMC source '%s' (subject %s, %s:%d, %s):\n%s%s"), *SourceName, *Settings.SubjectName.ToString(),
+        *Settings.BindAddress, Settings.Port, *GetSourceStatus().ToString(), *MessageStats->Report(FPlatformTime::Seconds()),
+        *TimingStats->Report());
+}
+
+void FVMCLiveLinkSource::OnLiveLinkTicked()
+{
+    // Live Link has just built this tick's snapshots. Redo its read-time arithmetic
+    // (FLiveLinkSubject::Update, engine time mode) with what it used: the source's buffer settings,
+    // which Live Link updates as frames arrive, and the subject's buffered frames. The frame times
+    // Live Link gives out include the clock and smooth offsets, so the newest one, minus the read
+    // time before those offsets, is how far the read was behind the newest frame.
+    if (!Client)
+    {
+        return;
+    }
+    const ULiveLinkSourceSettings* SourceSettings = Client->GetSourceSettings(SourceGuid);
+    if (!SourceSettings)
+    {
+        return;
+    }
+    const bool bEngineTime = SourceSettings->Mode == ELiveLinkSourceMode::EngineTime;
+    TimingStats->SetNotEngineTime(!bEngineTime);
+    if (!bEngineTime)
+    {
+        return;
+    }
+    const TArray<FLiveLinkTime> FrameTimes = Client->GetSubjectFrameTimes(FLiveLinkSubjectKey(SourceGuid, Settings.SubjectName));
+    if (FrameTimes.Num() == 0)
+    {
+        return;
+    }
+    const FLiveLinkSourceBufferManagementSettings& Buffer = SourceSettings->BufferSettings;
+    const double Now = FApp::GetCurrentTime();
+    FVMCEvaluationSample Sample;
+    Sample.UserOffset = Buffer.EngineTimeOffset;
+    Sample.ClockOffset = Buffer.EngineTimeClockOffset;
+    Sample.SmoothOffset = Buffer.SmoothEngineTimeOffset;
+    Sample.ReadTime = Now - Buffer.EngineTimeOffset - Buffer.EngineTimeClockOffset - Buffer.SmoothEngineTimeOffset;
+    Sample.DistanceToNewest = FrameTimes.Last().WorldTime - (Now - Buffer.EngineTimeOffset);
+    TimingStats->AddEvaluation(Sample);
 }
 
 void FVMCLiveLinkSource::ReportAllStats(FOutputDevice& Ar)
@@ -735,6 +791,7 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
         const double Interval = ArrivalSeconds - LastFrameSeconds;
         MeanFrameInterval = MeanFrameInterval > 0.0 ? FMath::Lerp(MeanFrameInterval, Interval, StatsSmoothing) : Interval;
         MeanIntervalDeviation = FMath::Lerp(MeanIntervalDeviation, FMath::Abs(Interval - MeanFrameInterval), StatsSmoothing);
+        TimingStats->AddInterval(Interval);
     }
     LastFrameSeconds = ArrivalSeconds;
 }

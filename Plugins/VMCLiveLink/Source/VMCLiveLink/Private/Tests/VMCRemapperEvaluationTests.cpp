@@ -210,4 +210,45 @@ bool FVMCRemapperEvaluationTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FVMCSourceTimingStatsTest, "VMC.Source.TimingStats",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FVMCSourceTimingStatsTest::RunTest(const FString& Parameters)
+{
+	// VMC.Stats reports the frames' intervals and how Live Link read the subject, through the
+	// editor's Live Link client.
+	using namespace VMCRemapperEvaluationTests;
+	IModularFeatures& Features = IModularFeatures::Get();
+	if (!TestTrue(TEXT("A Live Link client"), Features.IsModularFeatureAvailable(ILiveLinkClient::ModularFeatureName)))
+	{
+		return false;
+	}
+	ILiveLinkClient& Client = Features.GetModularFeature<ILiveLinkClient>(ILiveLinkClient::ModularFeatureName);
+
+	FVMCConnectionSettings Settings;
+	Settings.BindAddress = TEXT("127.0.0.1");
+	Settings.Port = 0;
+	Settings.bReceiveThread = true;
+	Settings.SubjectName = FName(*FString::Printf(TEXT("VMCTimingStats_%s"), *FGuid::NewGuid().ToString(EGuidFormats::Short)));
+	TSharedPtr<FVMCLiveLinkSource> Source = MakeShared<FVMCLiveLinkSource>(Settings, TEXT("VMC timing stats test"));
+	const FGuid SourceGuid = Client.AddSource(Source);
+	ON_SCOPE_EXIT { Client.RemoveSource(SourceGuid); Client.ForceTick(); };
+
+	// The first frame bootstraps the subject (and isn't buffered), so the first tick has nothing to
+	// read; the second frame is read by the next two ticks.
+	SendFrame(*Source, 0.1f);
+	Client.ForceTick();
+	FPlatformProcess::Sleep(0.02f);
+	SendFrame(*Source, 0.2f);
+	Client.ForceTick();
+	Client.ForceTick();
+	const FString Report = Source->GetStatsReport();
+	AddInfo(Report);
+	TestTrue(TEXT("One interval"), Report.Contains(TEXT("frame interval:")) && Report.Contains(TEXT("ms (1)")));
+	TestTrue(TEXT("Live Link's reads, once per tick with frames"), Report.Contains(TEXT("Live Link evaluations: 2,")));
+	TestTrue(TEXT("The offsets"), Report.Contains(TEXT("smooth offset:")) && Report.Contains(TEXT("clock offset:")));
+	TestTrue(TEXT("Collected again after a report"), Source->GetStatsReport().Contains(TEXT("frame interval: no frames")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
