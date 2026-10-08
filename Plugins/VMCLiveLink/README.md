@@ -133,7 +133,7 @@ It also prints timing, since the last report:
 
 ## The Remapper
 
-The source publishes VMC's own names: a `root` bone, the 55 Unity humanoid bones (`Hips`, `Spine`, `LeftUpperArm`, ...), any other bone the sender streams, and the expressions as curves. The **VMC Live Link Remapper** renames them to what your mesh uses. The VMC source applies it to everything it sends Live Link, so the renamed names are what the Live Link Pose node and the other consumers see; a remapper of another class on a VMC subject doesn't rename what Live Link evaluates (Live Link, UE 5.6 to 5.8, evaluates with the names the source sends). On another source's subject, this remapper is applied by Live Link as before, so the same limit applies there. A new VMC subject gets one automatically; you can pick a different remapper class in **Project Settings → Plugins → VMC Live Link → Default Remapper Class**.
+The source publishes VMC's own names: a `root` bone, the 55 Unity humanoid bones (`Hips`, `Spine`, `LeftUpperArm`, ...), any other bone the sender streams, and the expressions as curves. The **VMC Live Link Remapper** renames them to what your mesh uses. The VMC source applies it to everything it sends Live Link, so the renamed names are what the Live Link Pose node and the other consumers see; a remapper of another class on a VMC subject doesn't rename what Live Link evaluates (Live Link, UE 5.6 to 5.8, evaluates with the names the source sends). On another source's subject, this remapper is applied by Live Link as before, so the same limit applies there. A new VMC subject gets one automatically, with the interpolation and pre-processors **Project Settings → Live Link** gives the animation role (**Animation Interpolation** if none is set for it); you can pick a different remapper class in **Project Settings → Plugins → VMC Live Link → Default Remapper Class**.
 
 Select the subject in the Live Link panel to edit its remapper. Its settings (Target, Mapping and Normalizer below) are shown inline under the subject's **Remapper**. The **Mapping Tools** buttons and the **Live Mapping** table are at the top of the subject's details. (A remapper shown in a details panel of its own has the same sections, in the order below.)
 
@@ -287,6 +287,8 @@ Use **Yaw Offset Deg** to turn it (180 turns it round). A character sunk into th
 ### Jitter or stutter
 
 Keep **Receive Thread** on. Its status shows the jitter; a few milliseconds is normal over Wi-Fi. Prefer a wired network for the sender.
+
+If the avatar moves in steps, check the subject's **Interpolation** in the Live Link panel: it should be **Animation Interpolation** (a subject saved in a preset by an earlier version may have **None**; set it and save the preset again). If the viewport stops while the sender's window is focused, untick **Editor Preferences → General → Performance → Use Less CPU when in Background**.
 
 ## Performance
 
