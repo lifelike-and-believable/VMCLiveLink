@@ -25,6 +25,7 @@ class FVMCUdpReceiver;
 class FVMCLiveLinkRemapperWorker;
 struct FVMCRemapConfig;
 class FVMCMessageStats;
+class FVMCTimingStats;
 class FOutputDevice;
 class FInternetAddr;
 class ULiveLinkSourceSettings;
@@ -176,6 +177,8 @@ private:
     TUniquePtr<FVMCUdpReceiver> Receiver;
     TStrongObjectPtr<UOSCServer> OscServer;
     FTSTicker::FDelegateHandle TickerHandle;
+    FDelegateHandle LiveLinkTickedHandle;
+    void OnLiveLinkTicked(); // records how Live Link read the subject this tick, for VMC.Stats
     uint32 SnapshotVersion = 0;
     TWeakObjectPtr<ULiveLinkSubjectRemapper> LastRemapper; // to republish static data when it changes
     uint32 LastRemapperRevision = 0;
@@ -199,6 +202,7 @@ private:
     uint32 LastSenderHash = 0;          // the receive thread's last sender (FInternetAddr hash)
     FString LastSenderSeen;             // and its IP; the OSC path compares this directly
     TUniquePtr<FVMCMessageStats> MessageStats; // counted while frames are built, reported by VMC.Stats
+    TUniquePtr<FVMCTimingStats> TimingStats;   // arrival intervals and Live Link's reads, reported by VMC.Stats
 
     // Shared between the threads
     std::atomic<bool> bStaticSent { false };

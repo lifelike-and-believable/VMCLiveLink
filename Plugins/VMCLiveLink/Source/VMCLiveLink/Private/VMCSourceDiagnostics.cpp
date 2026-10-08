@@ -171,3 +171,122 @@ FString FVMCMessageStats::Report(double NowSeconds)
 	LastUnknown = MoveTemp(UnknownNow);
 	return FString(Out.ToView());
 }
+
+FVMCDistribution VMCDiagnostics::Summarize(TArray<double>& Values)
+{
+	FVMCDistribution Out;
+	Out.Count = Values.Num();
+	if (Out.Count == 0)
+	{
+		return Out;
+	}
+	Values.Sort();
+	// Nearest rank: the smallest value with at least P of the values at or below it.
+	auto Rank = [&Values](double P) { return Values[FMath::Clamp(FMath::CeilToInt(P * Values.Num()) - 1, 0, Values.Num() - 1)]; };
+	Out.Min = Values[0];
+	Out.P50 = Rank(0.5);
+	Out.P95 = Rank(0.95);
+	Out.Max = Values.Last();
+	return Out;
+}
+
+void FVMCTimingStats::Reset()
+{
+	FScopeLock ScopeLock(&Lock);
+	Intervals.Reset();
+	Distances.Reset();
+	SmoothOffsets.Reset();
+	SmoothChanges.Reset();
+	ClockOffsets.Reset();
+	Evaluations = Held = Backwards = 0;
+	bHasLast = false;
+}
+
+void FVMCTimingStats::Add(TArray<double>& Samples, double Value)
+{
+	if (Samples.Num() >= MaxSamples)
+	{
+		Samples.RemoveAt(0, MaxSamples / 2, EAllowShrinking::No); // rare: VMC.Stats wasn't run for a long time
+	}
+	Samples.Add(Value);
+}
+
+void FVMCTimingStats::AddInterval(double Seconds)
+{
+	FScopeLock ScopeLock(&Lock);
+	Add(Intervals, Seconds);
+}
+
+void FVMCTimingStats::AddEvaluation(const FVMCEvaluationSample& Sample)
+{
+	FScopeLock ScopeLock(&Lock);
+	++Evaluations;
+	Held += Sample.DistanceToNewest < 0.0 ? 1 : 0;
+	Add(Distances, Sample.DistanceToNewest);
+	Add(SmoothOffsets, Sample.SmoothOffset);
+	Add(ClockOffsets, Sample.ClockOffset);
+	UserOffset = Sample.UserOffset;
+	if (bHasLast)
+	{
+		Backwards += Sample.ReadTime < LastReadTime ? 1 : 0;
+		Add(SmoothChanges, FMath::Abs(Sample.SmoothOffset - LastSmoothOffset));
+	}
+	bHasLast = true;
+	LastReadTime = Sample.ReadTime;
+	LastSmoothOffset = Sample.SmoothOffset;
+}
+
+void FVMCTimingStats::SetNotEngineTime(bool bInNotEngineTime)
+{
+	FScopeLock ScopeLock(&Lock);
+	bNotEngineTime = bInNotEngineTime;
+}
+
+FString FVMCTimingStats::Report()
+{
+	FScopeLock ScopeLock(&Lock);
+	TStringBuilder<1024> Out;
+	auto Line = [&Out](const TCHAR* Label, const FVMCDistribution& D)
+	{
+		Out.Appendf(TEXT("  %-34s p50 %.1f  p95 %.1f  min %.1f  max %.1f ms (%d)\n"), Label, D.P50 * 1000.0, D.P95 * 1000.0, D.Min * 1000.0, D.Max * 1000.0, D.Count);
+	};
+
+	if (Intervals.Num() > 0)
+	{
+		Line(TEXT("frame interval:"), VMCDiagnostics::Summarize(Intervals));
+	}
+	else
+	{
+		Out.Append(TEXT("  frame interval: no frames\n"));
+	}
+
+	if (bNotEngineTime)
+	{
+		Out.Append(TEXT("  Live Link evaluation: the source's mode isn't Engine Time, so no read-time numbers\n"));
+	}
+	else if (Evaluations == 0)
+	{
+		Out.Append(TEXT("  Live Link evaluation: none (no frames buffered, or Live Link didn't tick)\n"));
+	}
+	else
+	{
+		Out.Appendf(TEXT("  Live Link evaluations: %d, newest frame held in %d (%.1f%%), read time went back in %d\n"),
+			Evaluations, Held, 100.0 * Held / Evaluations, Backwards);
+		Line(TEXT("newest frame minus read time:"), VMCDiagnostics::Summarize(Distances));
+		Line(TEXT("smooth offset:"), VMCDiagnostics::Summarize(SmoothOffsets));
+		if (SmoothChanges.Num() > 0)
+		{
+			Line(TEXT("smooth offset change per tick:"), VMCDiagnostics::Summarize(SmoothChanges));
+		}
+		Line(TEXT("clock offset:"), VMCDiagnostics::Summarize(ClockOffsets));
+		Out.Appendf(TEXT("  user offset (Engine Time Offset): %.1f ms\n"), UserOffset * 1000.0);
+	}
+
+	Intervals.Reset();
+	Distances.Reset();
+	SmoothOffsets.Reset();
+	SmoothChanges.Reset();
+	ClockOffsets.Reset();
+	Evaluations = Held = Backwards = 0;
+	return FString(Out.ToView());
+}

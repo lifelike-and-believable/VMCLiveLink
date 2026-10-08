@@ -195,6 +195,22 @@ def frame_packets(frame, t, opts):
 # ---------------------------------------------------------------------------------------------
 
 
+# How long before a deadline sleep_until stops sleeping and spins. On Windows before Python 3.11,
+# time.sleep wakes on the 15.6 ms timer tick, so a sleep can overrun by up to a tick.
+SPIN_MARGIN = 0.017 if sys.platform == "win32" and sys.version_info < (3, 11) else 0.002
+
+
+def sleep_until(deadline):
+    """Wait until time.perf_counter() reaches deadline: sleep while more than SPIN_MARGIN is left,
+    then spin."""
+    while True:
+        left = deadline - time.perf_counter()
+        if left <= 0:
+            return
+        if left > SPIN_MARGIN:
+            time.sleep(left - SPIN_MARGIN)
+
+
 def cmd_send(opts):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dt = 1.0 / opts.fps
@@ -207,9 +223,7 @@ def cmd_send(opts):
             for p in frame_packets(frame, frame * dt, opts):
                 sock.sendto(p, (opts.host, opts.port))
             frame += 1
-            delay = start + frame * dt - time.perf_counter()
-            if delay > 0:
-                time.sleep(delay)
+            sleep_until(start + frame * dt)
     except KeyboardInterrupt:
         pass
     print(f"Sent {frame} frames")
@@ -225,13 +239,13 @@ def cmd_record(opts):
     with open(opts.out, "wb") as f:
         try:
             while True:
-                now = time.perf_counter()
-                if start is not None and opts.duration and now - start > opts.duration:
+                if start is not None and opts.duration and time.perf_counter() - start > opts.duration:
                     break
                 try:
                     data, _ = sock.recvfrom(65535)
                 except socket.timeout:
                     continue
+                now = time.perf_counter()  # when the packet arrived, not when we started waiting
                 if start is None:
                     start = now
                 f.write(struct.pack("<dI", now - start, len(data)) + data)
@@ -266,9 +280,7 @@ def cmd_replay(opts):
     start = time.perf_counter()
     count = 0
     for t, data in read_recording(opts.file):
-        delay = start + t / opts.speed - time.perf_counter()
-        if delay > 0:
-            time.sleep(delay)
+        sleep_until(start + t / opts.speed)
         sock.sendto(data, (opts.host, opts.port))
         count += 1
     print(f"Replayed {count} packets to {opts.host}:{opts.port}")

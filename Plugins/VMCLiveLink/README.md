@@ -120,6 +120,17 @@ The creation panel warns before you click **Create** if the port can't be opened
 
 Type `VMC.Stats` in the editor's console (or the output log's command line) to print, for each VMC source, the packets and messages per second for each VMC address since the last report, and any addresses the plugin doesn't use. Packets refused by **Allowed Senders** or **Lock to First Sender** aren't counted. With **Receive Thread** off, the packet count is a message count.
 
+It also prints timing, since the last report:
+
+- **frame interval**: the time between frames as they arrived (p50, p95, min and max). With **Receive Thread** off, frames are stamped when the game thread handles them, so the intervals are rounded to engine ticks.
+- **Live Link evaluations**: how Live Link read the subject each engine tick, computed as Live Link does in engine time mode (read time = now minus the source's **Engine Time Offset**, its clock offset and its smooth offset):
+  - **newest frame held**: the share of ticks whose read time was past the newest frame. With interpolation, the avatar then shows the newest pose again instead of a new one. Without it, Live Link shows the newest frame for any read past the one before, so repeated poses are more common than this share.
+  - **read time went back**: ticks that read earlier than the tick before, which steps the avatar backwards. This happens when the smooth or clock offset grows by more than a tick.
+  - **newest frame minus read time**: how far behind the newest frame each read was.
+  - **smooth offset** (Live Link's average frame interval times `LiveLink.TimedDataInput.NumFramesForSmoothOffset`), its **change per tick**, and the **clock offset**.
+
+  If the source's mode isn't **Engine Time**, the report says so instead.
+
 ## The Remapper
 
 The source publishes VMC's own names: a `root` bone, the 55 Unity humanoid bones (`Hips`, `Spine`, `LeftUpperArm`, ...), any other bone the sender streams, and the expressions as curves. The **VMC Live Link Remapper** renames them to what your mesh uses. The VMC source applies it to everything it sends Live Link, so the renamed names are what the Live Link Pose node and the other consumers see; a remapper of another class on a VMC subject doesn't rename what Live Link evaluates (Live Link, UE 5.6 to 5.8, evaluates with the names the source sends). On another source's subject, this remapper is applied by Live Link as before, so the same limit applies there. A new VMC subject gets one automatically, with the interpolation and pre-processors **Project Settings → Live Link** gives the animation role (**Animation Interpolation** if none is set for it); you can pick a different remapper class in **Project Settings → Plugins → VMC Live Link → Default Remapper Class**.
@@ -294,7 +305,7 @@ If the avatar moves in steps, check the subject's **Interpolation** in the Live 
 python scripts/vmc_sender.py send --port 39539 --fps 60 --duration 10
 ```
 
-It can also record a real sender's stream and replay it:
+It can also record a real sender's stream and replay it with its timing (each packet is stamped when it arrives, and replayed to within a millisecond), so `VMC.Stats` can compare a change on the same stream:
 
 ```
 python scripts/vmc_sender.py record --listen 39540 --out capture.vmcrec
