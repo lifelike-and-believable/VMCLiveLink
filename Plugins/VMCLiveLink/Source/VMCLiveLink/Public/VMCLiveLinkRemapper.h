@@ -133,8 +133,13 @@ public:
 	virtual void Initialize(const FLiveLinkSubjectKey& InSubjectKey) override;
 	/** The Animation role. */
 	virtual TSubclassOf<ULiveLinkRole> GetSupportedRole() const override { return ULiveLinkAnimationRole::StaticClass(); }
-	/** Always valid: empty maps pass every name through. */
-	virtual bool IsValidRemapper() const override { return true; }
+	/** Valid (empty maps pass every name through), except for a subject whose VMC source applies it
+	 *  itself (SetAppliedBySource). There Live Link keeps no remapped copy of the static data: its
+	 *  worker passes everything through, so the copy would only be a stale duplicate of the source's
+	 *  static data, which Live Link validates frames against until its next tick refreshes the copy
+	 *  (UE 5.6 to 5.8: a frame arriving with a changed curve count would be rejected). Live Link
+	 *  clears the subject's frames once when this turns false. */
+	virtual bool IsValidRemapper() const override { return !bAppliedBySource; }
 	/** The worker made by the last CreateWorker. */
 	virtual FWorkerSharedPtr GetWorker() const override { return Worker; }
 	/** Live Link's worker: it passes everything through. A VMC source applies MakeConfig in the

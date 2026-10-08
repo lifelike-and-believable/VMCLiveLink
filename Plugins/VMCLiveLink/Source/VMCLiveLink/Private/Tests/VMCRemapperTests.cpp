@@ -72,8 +72,10 @@ bool FVMCRemapperWorkerSnapshotTest::RunTest(const FString& Parameters)
 	const TSharedPtr<FVMCLiveLinkRemapperWorker> OtherSource = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
 	if (!TestTrue(TEXT("A worker"), OtherSource.IsValid())) return false;
 	TestEqual(TEXT("Another source's subject: Live Link's worker renames"), RemappedBones(*OtherSource)[1], FName(TEXT("hip_edited")));
+	TestTrue(TEXT("Another source's subject: a valid remapper (Live Link keeps its renamed copy)"), Remapper->IsValidRemapper());
 	const uint32 RevisionUnmarked = Remapper->GetRevision();
 	Remapper->SetAppliedBySource(true);
+	TestFalse(TEXT("A VMC source's subject: no remapped copy in Live Link (the source's static data is already renamed)"), Remapper->IsValidRemapper());
 	TestTrue(TEXT("Marking it raises the revision (Live Link swaps the worker)"), Remapper->GetRevision() > RevisionUnmarked);
 	const TSharedPtr<FVMCLiveLinkRemapperWorker> VMCSource = StaticCastSharedPtr<FVMCLiveLinkRemapperWorker>(Remapper->CreateWorker());
 	if (!TestTrue(TEXT("A worker"), VMCSource.IsValid())) return false;

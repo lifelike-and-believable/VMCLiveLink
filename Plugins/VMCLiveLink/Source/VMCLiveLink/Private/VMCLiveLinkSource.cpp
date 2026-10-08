@@ -236,6 +236,23 @@ bool FVMCLiveLinkSource::PublishesSubject(const FLiveLinkSubjectKey& Key)
     });
 }
 
+bool FVMCLiveLinkSource::PublishesSubjectOf(const ULiveLinkSubjectRemapper* Remapper)
+{
+    check(IsInGameThread());
+    if (!Remapper)
+    {
+        return false;
+    }
+    FScopeLock RegistryLock(&GVMCSourcesLock);
+    return GVMCSources.ContainsByPredicate([Remapper](const FVMCLiveLinkSource* Source)
+    {
+        const ULiveLinkSubjectSettings* SubjectSettings = Source->Client
+            ? Cast<ULiveLinkSubjectSettings>(Source->Client->GetSubjectSettings({ Source->SourceGuid, Source->Settings.SubjectName }))
+            : nullptr;
+        return SubjectSettings && SubjectSettings->Remapper == Remapper;
+    });
+}
+
 bool FVMCLiveLinkSource::GetPublishedNames(const FLiveLinkSubjectKey& Key, TArray<FName>& OutBones, TArray<FName>& OutCurves)
 {
     FScopeLock RegistryLock(&GVMCSourcesLock);

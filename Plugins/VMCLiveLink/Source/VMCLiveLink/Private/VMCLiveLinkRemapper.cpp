@@ -102,6 +102,13 @@ ULiveLinkSubjectRemapper::FWorkerSharedPtr UVMCLiveLinkRemapper::CreateWorker()
 	// current when the remapper changed (UE 5.6 to 5.8: FLiveLinkSubject builds its frame snapshot
 	// from StaticData, not from OverrideStaticData). For such a subject Live Link's worker passes
 	// everything through. Other sources' subjects get the full worker, as before.
+	// The source marks the remapper when it publishes a snapshot; a remapper swapped in by code and
+	// built by a Live Link tick before the source's next tick is found here instead (game thread:
+	// Live Link builds workers in its tick).
+	if (!bAppliedBySource && IsInGameThread() && FVMCLiveLinkSource::PublishesSubjectOf(this))
+	{
+		bAppliedBySource = true;
+	}
 	if (bAppliedBySource)
 	{
 		FVMCRemapConfig PassThrough;

@@ -180,6 +180,29 @@ bool FVMCRemapperEvaluationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Evaluates after remapping"), Remapped.bOk);
 	TestTrue(TEXT("The new mapping reaches the evaluated frame"), Remapped.Bones.Contains(FName(TEXT("TestHips2"))) && !Remapped.Bones.Contains(FName(TEXT("Hips"))));
 
+	// A new VMC remapper swapped in by code, and a Live Link tick before the source's: Live Link must
+	// not get a worker that applies the remapper on top of the source (the normalizer's added curve
+	// would then be added twice, and the frames rejected).
+	{
+		UVMCLiveLinkRemapper* Swapped = NewObject<UVMCLiveLinkRemapper>(SubjectSettings);
+		Swapped->BoneNameMap.Add(TEXT("Hips"), TEXT("TestHips3"));
+		Swapped->CurveNameMap.Add(TEXT("a"), TEXT("eyeBlinkLeft"));
+		Swapped->bEnableMetaHumanCurveNormalizer = true; // adds eyeBlinkRight
+		SubjectSettings->Remapper = Swapped;
+		Client.ForceTick();
+		Source->TickForTest();
+		for (int32 i = 0; i < 3; ++i)
+		{
+			SendFrame(*Source, 0.7f + i * 0.1f);
+			Client.ForceTick();
+		}
+		FEvaluated Swap = Evaluate(Client, Settings.SubjectName);
+		TestTrue(TEXT("Evaluates after the swap"), Swap.bOk);
+		TestTrue(TEXT("The swapped remapper's bone name"), Swap.Bones.Contains(FName(TEXT("TestHips3"))));
+		TestEqual(TEXT("The normalizer's curve is added once"), Swap.Curves.FilterByPredicate([](FName N) { return N == FName(TEXT("eyeBlinkRight")); }).Num(), 1);
+		TestEqual(TEXT("A value per curve after the swap"), Swap.NumValues, Swap.Curves.Num());
+	}
+
 	// What the Live Mapping table lists is still what VMC sends.
 	TArray<FName> Bones, Curves;
 	TestTrue(TEXT("Published names found"), FVMCLiveLinkSource::GetPublishedNames(Key, Bones, Curves));

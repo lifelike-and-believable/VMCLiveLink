@@ -110,6 +110,10 @@ public:
     /** Whether a VMC source publishes Key (whether or not it has sent anything yet). Game thread. */
     static bool PublishesSubject(const FLiveLinkSubjectKey& Key);
 
+    /** Whether Remapper is the remapper of a subject a VMC source publishes (which applies it itself,
+     *  see FSnapshot::Remap). Game thread. */
+    static bool PublishesSubjectOf(const ULiveLinkSubjectRemapper* Remapper);
+
 #if WITH_DEV_AUTOMATION_TESTS
     /** Tests: sets what GetPublishedNames reports, as if static data with these names had been pushed. */
     void SetPublishedNamesForTest(const TArray<FName>& Bones, const TArray<FName>& Curves);
