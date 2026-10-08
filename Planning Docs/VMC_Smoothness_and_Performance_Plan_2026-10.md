@@ -1,6 +1,6 @@
 # VMC smoothness and performance plan
 
-October 2026. With XR Animator streaming to a VRM avatar, the motion looks choppy although the VMC source reports receiving well over 30 fps. This plan says why, what to measure, and what to change, as pull requests with acceptance criteria.
+October 2026. With XR Animator streaming to a VRM avatar, the motion looks choppy although the VMC source reports receiving well over 30 fps. This plan says why, what to measure, and what to change, as pull requests with acceptance criteria. Engine references are to UE 5.6; 5.7 and 5.8 have the same code unless noted.
 
 ## 1. What we know
 
@@ -9,85 +9,96 @@ October 2026. With XR Animator streaming to a VRM avatar, the motion looks chopp
 | What | Value | Where from |
 |---|---|---|
 | XR Animator's frame rate at the source | 15 to 27 fps (lower while the machine was building) | the source's status line and `VMC.Stats`, 2026-10-07 |
-| Jitter (mean deviation of the frame interval) | about 31 ms at 27 fps, so roughly one frame interval | the same |
-| Packets per frame | about 4 (bones, blend shapes, apply, OK), 55 bones and about 16 curves | `VMC.Stats` |
+| Jitter (mean deviation of the frame interval) | about 31 ms at 27 fps: about one frame interval | the same |
+| Packets per frame | about 4 (bones, blend shapes, apply, OK): 55 bones and about 16 curves | `VMC.Stats` |
 | Building a VMC frame (55 bones, 60 curves) | 17 µs for the messages, 1 µs for the frame | `VMC.Perf.StreamFrame` |
 | Spring solver, 200 joints and 30 colliders | 0.13 ms per frame | `VRM.Perf.SpringSolver` |
 
-The plugins' own CPU cost is tiny: well under 1% of a 60 fps frame. The choppiness isn't a CPU problem in our code; it's a timing problem, in what the avatar shows between poses that arrive irregularly.
+The plugins' own CPU cost is far below a frame's budget. The choppiness is a timing problem: what Live Link gives the avatar between poses that arrive irregularly.
 
-### Found in the code (not guesses)
+### How Live Link times a VMC subject (engine source)
 
-1. **New VMC subjects have no interpolation.** When Live Link creates a subject from pushed static data, it gives it the role's default interpolation processor from the Live Link project settings (`LiveLinkClient.cpp`, `PushSubjectStaticData_Internal`). Our source creates its subject itself, in `FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults`, with a fresh `ULiveLinkSubjectSettings` and no processor. The Live Link panel shows **Interpolation: None** for `VMC_Subject`. Without interpolation, Live Link evaluates the closest frame, so the avatar holds each pose until the next one, at the sender's rate (about 27 fps) and with its jitter.
-2. **Live Link evaluates at the current time.** The source's **Engine Time Offset** (Live Link's buffer settings) is 0. Even with interpolation, the evaluation time is usually after the newest frame (frames are stamped on arrival), so there is nothing to blend towards and the newest pose is held: the same steps. Blending needs the evaluation time to be behind the newest frame by about one frame interval plus the jitter. Here that's about 37 + 31 ≈ 68 ms.
-3. **The editor throttles itself in the background.** With XR Animator focused, the Unreal editor is a background window, and **Editor Preferences → General → Performance → Use Less CPU when in Background** (on by default) slows the whole editor down. The viewport is then choppy whatever the data. This is the user's setting; the plugin must not change it.
+- Frames are stamped with their arrival time on the receive thread (`VMCUdpReceiver.cpp`), or when the game thread handles them with **Receive Thread** off.
+- Each engine tick, Live Link builds the subject's snapshot (what the Live Link Pose node reads) at `ReadTime = now - EngineTimeOffset - EngineTimeClockOffset - SmoothEngineTimeOffset` (`LiveLinkSubject.cpp:191`):
+  - `EngineTimeOffset`: the source's setting, 0 by default.
+  - `EngineTimeClockOffset`: an estimate of the gap between the frames' stamps and when the client processes them (up to one engine tick here).
+  - `SmoothEngineTimeOffset`: the average arrival interval times `LiveLink.TimedDataInput.NumFramesForSmoothOffset` (a console variable, 1.5 by default, global to every Live Link source): about 55 ms at 27 fps (`LiveLinkTimedDataInput.cpp:260`).
+- So Live Link already evaluates about one and a half frames behind the newest, which gives an interpolator two frames to blend between, most of the time.
+
+### Found in the code
+
+1. **New VMC subjects have no interpolation: the main cause.** When Live Link creates a subject from pushed static data, it gives it the role's default interpolation processor, and the role's settings class and pre-processors (`LiveLinkClient.cpp`, `PushSubjectStaticData_Internal`). Our source creates its subject itself, in `FVMCLiveLinkSource::EnsureSubjectSettingsWithDefaults`, with a fresh `ULiveLinkSubjectSettings` and none of these. The Live Link panel shows **Interpolation: None** for `VMC_Subject`. Without a processor, the snapshot is the frame closest to the read time, so the avatar holds each pose until the next one: steps at the sender's rate, with its jitter.
+2. **The smooth offset itself jitters with this stream.** `UpdateSmoothEngineTimeOffset` treats an interval more than 5 ms from the average as a change of rate and, after 5 such intervals, restarts its average (`FrameIntervalThreshold`, `FrameIntervalSnapCount`). With about 31 ms of jitter, nearly every interval counts. A model of the algorithm (Gaussian intervals, 37 ms mean, 39 ms deviation; not a capture) gives an offset between 17 and 123 ms that changes by 6 ms at the median, 17 ms at p90 and 43 ms at most per arriving frame. A change larger than an engine tick moves the read time backwards, so the avatar can step back and forth even with interpolation. This needs measuring on the real stream (O1).
+3. **The editor in the background stops its viewports.** With XR Animator focused, the editor is a background window. With **Editor Preferences → General → Performance → Use Less CPU when in Background** (on by default), it slows its tick and turns realtime off for its viewports (`EditorEngine.cpp`), so the viewport effectively stops updating, whatever the data. This is the user's setting; the plugin doesn't change it.
+4. **Republishing static data clears the buffer.** Every static data push (a new curve or bone name, a remapper or setting change) clears the subject's frames (`PushSubjectStaticData_Internal` → `ClearFrames`), so the avatar holds for about the evaluation delay. Rare during a stream, but visible.
+5. **Spring bones step at render rates that aren't a multiple of 60 Hz.** `FVRMSpringSolver::Step` takes fixed 60 Hz steps and outputs the latest step's tails without blending in the time left over, so at 75 or 144 Hz, or a varying 45 to 55 fps, frames with no step keep the tails still while the body moves.
 
 ### Not known yet
 
-- How much of the jitter comes from XR Animator (camera rate, AI inference time) and how much from the network stack or our receive thread. One computer, loopback, so the network part should be small.
-- Whether the generated avatar actor ticks its animation every frame in every case (for example, visibility-based tick options in the template), and how the spring bones look at a variable frame rate.
-- How smooth "smooth enough" is, numerically: we have no measure of it yet.
+- How large the jitter is on the real stream, how much of it XR Animator causes (camera rate, inference time) and how much the receive path adds (one computer, loopback: probably little).
+- How the smooth offset behaves on the real stream (finding 2 is a model).
+- Whether, in UE 5.6, the animation role's default interpolation processor resolves: 5.6's `BaseGame.ini` names the role as `/Script/LiveLink.LiveLinkAnimationRole`, though the class is in `LiveLinkInterface` (5.7 and 5.8 name it there). If it doesn't resolve, the project-wide default `LiveLinkBasicFrameInterpolationProcessor` would apply, which blends curves but not bone transforms.
 
-## 2. Decisions
+## 2. Decisions for the owner
 
-| ID | Decision | Choice |
+| ID | Decision | Recommendation |
 |---|---|---|
-| S-1 | Default evaluation delay (Engine Time Offset) for a new VMC source | **Decided 2026-10-08: about 66 ms** (two frames at 30 fps), adjustable per source. Lower latency (about 40 ms) gives occasional steps when packets bunch up. |
-| S-2 | Make the delay adapt to the measured jitter | Not now. A fixed default, plus the measurements in O1, first; revisit if one value can't suit both webcam senders (variable) and VR-tracker senders (steady). |
-| S-3 | Change the user's editor settings (background throttling) | No. Document it, and say so in the troubleshooting tables; consider a hint in the source's status line when the editor is throttled (O5). |
+| S-1 | How to keep the read time behind the newest frame: Live Link's smooth offset (automatic, but it jitters with this stream: finding 2), or a fixed delay | **Reopened** (the 66 ms agreed on 2026-10-08 assumed Live Link added no delay of its own; it adds about 55 ms). Decide after O1 measures the smooth offset on the real stream. If it jitters as modelled, prefer O3a (steady stamps in the source, keeping Live Link's offset) over O3b (a fixed delay with the smooth offset off, which needs a project-wide console variable). |
+| S-2 | Change the user's editor settings (background throttling) | No. Document it; consider a hint in the source's status line (O6). |
 
 ## 3. Work
 
 In order. Each item is one pull request following CONTRIBUTING (review, CI on three engines, CHANGELOG, docs).
 
-### O1. Measure smoothness
+### O1. Measure
 
-Before changing the timing, make it measurable, so the effect of each change is a number and not an impression.
+Make smoothness a number before changing it.
 
-- **Arrival statistics:** `VMC.Stats` gains the frame interval's percentiles (p50, p95, max) over its window, next to the mean and jitter it has.
-- **Evaluation statistics:** how often Live Link evaluated the subject without a later frame to blend towards (it held a pose). Live Link's buffer statistics (`IsBufferStatsEnabled`: overflow and underflow counts, shown by the Timed Data Monitor plugin) count exactly that. Check them in 5.6 to 5.8, and report them in `VMC.Stats` if they can be read.
-- **A recorded stream to replay:** record XR Animator with `python scripts/vmc_sender.py record --out <file>` (it keeps the timing), and replay it with `vmc_sender.py send`, so every change is compared on the same input. Keep the recording out of the repository (decision D-8) unless it is our own capture.
+- **Arrival:** `VMC.Stats` gains the frame interval's percentiles (p50, p95, max) next to its mean and jitter, and says which receive path is in use (thread, or game thread, whose stamps are quantised to engine ticks).
+- **Evaluation:** the subject's last read-time offsets (user, clock, smooth) and whether the snapshot held the newest frame. Live Link exposes them through `ITimeManagementModule::Get().GetTimedDataInputCollection()` (the channel's `GetLastEvaluationData()`: `DistanceToNewestSampleSeconds < 0` means the read time was after the newest frame; and the overflow and underflow counts). That needs `TimeManagement` in `VMCLiveLink.Build.cs`. The counters mean different things on the two paths: on the interpolated path a hold of the newest frame is an *overflow* and a read before the oldest an *underflow*; on today's closest-frame path the same hold counts as an *underflow*, and only with buffer statistics on. So compare the per-evaluation "held" share, counted by `VMC.Stats` itself, not the raw counters. `LogLiveLink Verbose` also prints the read time and offsets.
+- **A recording to replay:** fix `scripts/vmc_sender.py record` first: it stamps a packet with the time it *started waiting* for it (`now` is taken before `recvfrom`), so a replay shifts every frame one interval early; and `replay` sleeps with `time.sleep`, whose resolution on Windows before Python 3.11 is about 15.6 ms. Take the time after `recvfrom`, and require Python 3.11 or spin for the last millisecond. Then record XR Animator and check that `VMC.Stats` reads the same for the live stream and its replay. Keep the recording out of the repository (decision D-8).
 
-Acceptance: for the recorded XR Animator stream, the current numbers are written down (interval percentiles, the share of held evaluations); they are the baseline for O2 and O3.
+Acceptance: for the recorded stream, the baseline is written down: interval percentiles, the smooth offset's range and per-frame change, and the share of held snapshots.
 
-### O2. Interpolation for new VMC subjects
+### O2. Interpolation, and the role's defaults, for new VMC subjects
 
-- `EnsureSubjectSettingsWithDefaults` gives the new subject the interpolation processor Live Link would: the role's default from **Project Settings → Live Link** (`ULiveLinkSettings::GetDefaultSettingForRole`), else the project-wide default if it suits the role, as `PushSubjectStaticData_Internal` does. A subject that already exists (from a preset, or set up by the user) keeps its settings, as now.
-- Test: a new VMC subject's settings have the animation role's interpolation processor; an existing subject's choice is kept.
+- `EnsureSubjectSettingsWithDefaults` gives the new subject what Live Link would: the role's settings class, its pre-processors and its interpolation processor from **Project Settings → Live Link** (`ULiveLinkSettings::GetDefaultSettingForRole`), else the project-wide processor if it suits the role, as `PushSubjectStaticData_Internal` does. If no processor resolves for the animation role (see "Not known yet"), use `ULiveLinkAnimationFrameInterpolationProcessor`, which blends bone transforms. Objects are created with the new settings as their outer, as the remapper is, so `CreateSubject` copies them. A subject that already exists (a preset, the user's settings) keeps its own.
+- Test: a new VMC subject has `ULiveLinkAnimationFrameInterpolationProcessor` (the class, not just any processor); an existing subject's choice is kept.
 
-Acceptance: with the recorded stream and the delay at 0, nothing changes visibly (there is still nothing to blend towards); this is the groundwork for O3.
+Acceptance: measured with O1 on the recording; expected to remove most of the stepping, since Live Link's smooth offset already keeps the read time behind the newest frame.
 
-### O3. Default evaluation delay
+### O3. A steady read time (as S-1 decides)
 
-- The VMC source's settings default **Engine Time Offset** to 0.066 s (S-1). It is Live Link's own buffer setting, so it is already shown in the source's details; the creation panel gains it too, with its unit and what it trades (latency for smoothness).
-- Test: evaluating a subject between two received frames, with the delay, gives a pose between them (interpolated), not the older one. Use the source's test hooks (`InjectPacketForTest`) and the client's `EvaluateFrameAtWorldTime_AnyThread`, with frames stamped at known times.
-- Docs: the VMC README's source settings and troubleshooting ("choppy motion"), the User Guide.
+- **O3a, steady stamps in the source (recommended if O1 confirms finding 2):** the source stamps each frame on a smoothed clock rather than its raw arrival time: for example a running estimate of the sender's interval, with each stamp `max(previous stamp + a minimum step, smoothed arrival)`, or the sender's own time (`/VMC/Ext/T`) when it sends one, mapped by Live Link's clock-offset estimator. The intervals Live Link sees are then steady, so its smooth offset stops jittering, and the latency stays Live Link's ~1.5 frames.
+- **O3b, a fixed delay:** the VMC source defaults its **Engine Time Offset** to a fixed value, with the smooth offset turned off by `LiveLink.TimedDataInput.NumFramesForSmoothOffset 0`, a project-wide console variable that affects every Live Link source. The total latency is then the fixed delay plus the clock offset.
+- Either way: the source's frame buffer (`MaxNumberOfFrameToBuffered`, 10 by default) covers the delay at the sender's rate. At 120 Hz, 10 frames are 83 ms, too few for about 70 ms of delay plus margin, so the VMC default rises (for example to 30).
+- Test, through the path the avatar uses: a test hook that takes the arrival time (`OnPacket` does; `InjectPacketForTest` stamps `FPlatformTime::Seconds()`), frames stamped near the current time (Live Link's clock-offset estimator jumps to the first sample's offset, so stamps far from now are offset), `ForceTick`, then `EvaluateFrame_AnyThread` (the snapshot from `Update`, which applies the smooth offset; `EvaluateFrameAtWorldTime_AnyThread` doesn't). Expect a pose between two received ones.
+- Docs: the VMC README's source settings and troubleshooting ("choppy motion"), with the total latency stated.
 
-Acceptance: on the recorded stream, the share of held evaluations (O1) drops to near 0, and the avatar moves smoothly in the editor with the editor focused. The added latency is the delay, about 66 ms.
+Acceptance: on the recording, the share of held snapshots near 0 and the read time moving forward every tick; latency written down.
 
-### O4. The avatar ticks every frame
+### O4. Spring bones between steps
 
-- Check the generated actor template's skeletal mesh component settings (visibility-based anim tick option, update rate optimizations) and the spring bone node at a variable frame rate (it uses fixed sub-steps, so the result should not depend on the frame rate). Fix anything that skips or slows animation updates for a Live Link avatar.
-- Acceptance: written down what each setting is and why; a change only where one causes skipped updates.
+- `FVRMSpringSolver` blends between the previous and the latest step's tails by the time left over, so the tails move every rendered frame at any rate. Test: at 144 Hz and at a varying rate, the tails' motion between frames has no zero-motion frames while the head moves.
 
-### O5. Background throttling
+### O5. The avatar ticks every frame
 
-- Troubleshooting entries (User Guide and VMC README): choppy motion while another app is focused → the editor's **Use Less CPU when in Background**.
-- Optional: the source's status line notes when the editor is being throttled (if it can be read without changing it).
+- Check the generated actor template's skeletal mesh settings (visibility-based anim tick option, update rate optimisations). Change only what skips or slows animation updates for a Live Link avatar; write down what each setting is and why.
 
-Acceptance: the docs say it, with the menu path.
+### O6. Background throttling
 
-### O6. Sender settings
+- Troubleshooting entries (User Guide and VMC README): the viewport stops while another app is focused → **Use Less CPU when in Background**.
+- Optional: a hint in the source's status line when the editor is throttled. That needs UnrealEd, so it belongs in `VMCLiveLinkEditor`.
 
-- What XR Animator (and VSeeFace, VirtualMotionCapture) offers that affects the rate and the jitter: camera frame rate, smoothing, send rate. Recommendations in the User Guide's sender section.
+### O7. Sender settings
 
-Acceptance: written recommendations, checked with each sender's current version.
+- What XR Animator (and VSeeFace, VirtualMotionCapture) offers that affects the rate and the jitter: camera frame rate, smoothing, send rate. Recommendations in the User Guide, checked with each sender's current version.
 
-### O7. Editor checks
+### O8. Editor checks
 
-- A new editor check for smoothness: stream (XR Animator, or the recorded file), editor focused, Simulate; the avatar moves without visible steps. Record the O1 numbers. On UE 5.6, 5.7 and 5.8.
+- A smoothness check: stream (XR Animator, or the recording), editor focused, Simulate; the avatar and its springs move without visible steps; record the O1 numbers. On UE 5.6, 5.7 and 5.8, at 60 Hz and at another refresh rate.
 
 ## 4. Not in scope
 
-- CPU optimization of the plugins: the measured costs (section 1) are far below a frame's budget. The benchmarks stay as regression guards.
-- Changing how Live Link evaluates subjects (engine code).
+- CPU optimisation of the plugins: the measured costs are far below a frame's budget. The benchmarks stay as regression guards.
+- Changing how Live Link evaluates subjects (engine code). O3b only sets an engine console variable, and only if S-1 chooses it.
