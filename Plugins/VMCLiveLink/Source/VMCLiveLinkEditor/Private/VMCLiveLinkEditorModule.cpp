@@ -6,6 +6,8 @@
 #include "PropertyEditorModule.h"
 #include "VMCLiveLinkRemapper.h"
 #include "VMCLiveLinkRemapperCustomization.h"
+#include "VMCLiveLinkSubjectSettingsCustomization.h"
+#include "LiveLinkSubjectSettings.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
 
@@ -37,6 +39,9 @@ public:
 		FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyEditor.RegisterCustomClassLayout(UVMCLiveLinkRemapper::StaticClass()->GetFName(),
 			FOnGetDetailCustomizationInstance::CreateStatic(&FVMCLiveLinkRemapperCustomization::MakeInstance));
+		// The same tools in the Live Link panel, where the remapper is shown inline in the subject's settings
+		PropertyEditor.RegisterCustomClassLayout(ULiveLinkSubjectSettings::StaticClass()->GetFName(),
+			FOnGetDetailCustomizationInstance::CreateStatic(&FVMCLiveLinkSubjectSettingsCustomization::MakeInstance));
 
 		// Lets the runtime remapper read a mesh's humanoid-map metadata (P4.4, D-4). The package's
 		// metadata itself, not UEditorAssetSubsystem, which reads nothing during Play In Editor, when
@@ -56,6 +61,7 @@ public:
 		if (FPropertyEditorModule* PropertyEditor = FModuleManager::GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
 		{
 			PropertyEditor->UnregisterCustomClassLayout(UVMCLiveLinkRemapper::StaticClass()->GetFName());
+			PropertyEditor->UnregisterCustomClassLayout(ULiveLinkSubjectSettings::StaticClass()->GetFName());
 		}
 #endif
 	}
