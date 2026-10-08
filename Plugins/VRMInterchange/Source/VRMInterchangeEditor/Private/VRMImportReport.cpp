@@ -58,8 +58,12 @@ void FVRMImportReport::AddAsset(const UObject* Asset, bool bUpdated)
 		return;
 	}
 	const FSoftObjectPath Path(Asset);
-	if (File->Assets.ContainsByPredicate([&Path](const FAsset& Existing) { return Existing.Path == Path; }))
+	if (FAsset* Existing = File->Assets.FindByPredicate([&Path](const FAsset& Listed) { return Listed.Path == Path; }))
 	{
+		// Reported again (a later import of the same file, before the report is shown): an asset
+		// updated in place once has been updated.
+		Existing->bUpdated |= bUpdated;
+		Existing->bRewired |= bUpdated && Asset->IsA<UBlueprint>();
 		return;
 	}
 	FAsset& Entry = File->Assets.AddDefaulted_GetRef();

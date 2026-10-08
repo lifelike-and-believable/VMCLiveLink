@@ -218,7 +218,7 @@ UObject* UVRMPipelineBase::DuplicateTemplateAsset(const TCHAR* TemplatePath, con
 	}
 	if (UBlueprint* Blueprint = Cast<UBlueprint>(Duplicate))
 	{
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipSave);
 	}
 	Duplicate->MarkPackageDirty();
 	FVRMImportReport::Get().AddAsset(Duplicate, /*bUpdated*/ false);

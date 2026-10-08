@@ -63,6 +63,7 @@ public class VRMInterchangeEditor : ModuleRules
 
             // UEdGraphSchema_K2 pin types, for the actor wiring tests
             "BlueprintGraph",
+            "AnimGraph", // the VRM Expressions node added to generated Live Link AnimBlueprints
 
             // UMaterialEditingLibrary, to build the MToon materials (P4.5); RHI for the compile test
             "MaterialEditor",

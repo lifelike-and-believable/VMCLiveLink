@@ -11,6 +11,8 @@
 #include "Nodes/InterchangeBaseNodeContainer.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
+#include "Animation/AnimBlueprint.h"
+#include "VRMActorBlueprintWiring.h"
 #include "VRMAvatarDescription.h"
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
@@ -155,6 +157,26 @@ void UVRMAvatarDescriptionPipeline::OnSkeletalMeshImported(USkeletalMesh* Mesh, 
 	}
 	Description->MarkPackageDirty();
 	LastDescription = Description;
+
+	// The face: the Live Link AnimBlueprint this import made gets a VRM Expressions node for this
+	// avatar description (one it reused only gets an unset avatar description filled in). It's the
+	// one the Live Link pipeline reported for this file, wherever it put it; nothing else is touched.
+	// The Live Link pipeline adds the node instead when it runs after this one.
+	if (const FVRMImportReport::FFile* File = FVRMImportReport::Get().FindFile(GetSourceFilename()))
+	{
+		// The newest match: a later import of the same file, still pending, adds its _1 copy after.
+		const FString Prefix = TEXT("ABP_LL_VRM_") + Mesh->GetName();
+		for (int32 i = File->Assets.Num() - 1; i >= 0; --i)
+		{
+			const FVRMImportReport::FAsset& Asset = File->Assets[i];
+			UAnimBlueprint* AnimBlueprint = Asset.Name.StartsWith(Prefix) ? Cast<UAnimBlueprint>(Asset.Path.ResolveObject()) : nullptr;
+			if (AnimBlueprint)
+			{
+				VRMPipeline::AddExpressionsNode(AnimBlueprint, Description, /*bInsert*/ !Asset.bUpdated);
+				break;
+			}
+		}
+	}
 
 	// The humanoid map, on the mesh itself, for VMCLiveLink's "Create Mapping" (no plugin dependency).
 	if (WriteHumanoidMetadata(Mesh, StagedAvatar))

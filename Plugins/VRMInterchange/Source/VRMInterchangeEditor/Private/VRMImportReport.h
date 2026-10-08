@@ -54,6 +54,12 @@ public:
 	void Discard();
 
 	const TArray<FFile>& GetPendingFiles() const { return Files; }
+	/** The pending entry for SourceFile, or null. The report is only flushed by a ticker, so a script
+	 *  or test that imports several files keeps them all pending: find a file by its source. */
+	const FFile* FindFile(const FString& SourceFile) const
+	{
+		return Files.FindByPredicate([&SourceFile](const FFile& File) { return File.SourceFile == SourceFile; });
+	}
 
 	/** The notification's text for one file: what was created, updated and the licence. */
 	static FString Describe(const FFile& File);

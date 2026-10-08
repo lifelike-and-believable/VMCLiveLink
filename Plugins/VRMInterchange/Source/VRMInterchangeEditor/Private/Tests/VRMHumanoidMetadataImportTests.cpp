@@ -6,7 +6,10 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Animation/AnimBlueprint.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraphSchema_K2.h"
 #include "Engine/SkeletalMesh.h"
 #include "InterchangeManager.h"
 #include "InterchangeSourceData.h"
@@ -20,6 +23,7 @@
 #include "VRMAvatarParser.h"
 #include "VRMDocument.h"
 #include "VRMImportReport.h"
+#include "VRMLiveLinkPostImportPipeline.h"
 #include "VRMParsedModel.h"
 
 namespace VRMHumanoidMetadataImportTests
@@ -132,6 +136,13 @@ bool FVRMHumanoidMetadataImportTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	TGuardValue<bool> GenerateAvatarDescription(AvatarPipeline->bGenerateAvatarDescription, true);
+	// The Live Link actor and its AnimBlueprint too, for the VRM Expressions node.
+	UVRMLiveLinkPostImportPipeline* LiveLinkPipeline = LoadObject<UVRMLiveLinkPostImportPipeline>(nullptr, TEXT("/VRMInterchange/DefaultPipelines/DefaultVRMLiveLinkPipeline.DefaultVRMLiveLinkPipeline"));
+	if (!TestNotNull(TEXT("The Live Link pipeline asset"), LiveLinkPipeline))
+	{
+		return false;
+	}
+	TGuardValue<bool> GenerateLiveLinkActor(LiveLinkPipeline->bGenerateLiveLinkEnabledActor, true);
 	ON_SCOPE_EXIT
 	{
 		FVRMImportReport::Get().Discard(); // the post-import report the imports started (P6.3)
@@ -148,6 +159,39 @@ bool FVRMHumanoidMetadataImportTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	TestTrue(TEXT("Import: the mesh has the humanoid map"), HumanoidTags(Mesh).OrderIndependentCompareEqual(Wanted));
+
+	// The face: the generated Live Link AnimBlueprint has a VRM Expressions node set to the character's
+	// avatar description (added by the avatar description pipeline, which runs after the Live Link one).
+	{
+		TArray<FAssetData> Assets;
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(FName(ContentPath), Assets, /*bRecursive*/ true);
+		const FString AnimBlueprintName = TEXT("ABP_LL_VRM_") + Mesh->GetName();
+		const FAssetData* Found = Assets.FindByPredicate([&AnimBlueprintName](const FAssetData& Asset) { return Asset.AssetName.ToString() == AnimBlueprintName; });
+		UAnimBlueprint* AnimBlueprint = Found ? Cast<UAnimBlueprint>(Found->GetAsset()) : nullptr;
+		if (TestNotNull(TEXT("The Live Link AnimBlueprint"), AnimBlueprint))
+		{
+			const UObject* NodeAvatar = nullptr;
+			int32 NodeCount = 0;
+			for (const UEdGraph* Graph : AnimBlueprint->FunctionGraphs)
+			{
+				if (!Graph || Graph->GetFName() != UEdGraphSchema_K2::GN_AnimGraph)
+				{
+					continue;
+				}
+				for (const UEdGraphNode* Node : Graph->Nodes)
+				{
+					if (Node && Node->GetClass()->GetName() == TEXT("AnimGraphNode_VRMExpressions"))
+					{
+						++NodeCount;
+						const UEdGraphPin* Pin = Node->FindPin(TEXT("AvatarDescription"), EGPD_Input);
+						NodeAvatar = Pin ? Pin->DefaultObject.Get() : nullptr;
+					}
+				}
+			}
+			TestEqual(TEXT("One VRM Expressions node"), NodeCount, 1);
+			TestTrue(TEXT("Set to the character's avatar description"), NodeAvatar && NodeAvatar->GetName() == Mesh->GetName() + TEXT("_Avatar"));
+		}
+	}
 
 	// A reimport puts missing tags back.
 	if (TMap<FName, FString>* Tags = FMetaData::GetMapForObject(Mesh))
