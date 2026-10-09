@@ -126,6 +126,8 @@ public:
 
 	void Reset();
 	void AddInterval(double Seconds);
+	/** A frame's arrival minus the time it was given (0 without steady frame times). */
+	void AddFrameTimeLag(double Seconds);
 	void AddEvaluation(const FVMCEvaluationSample& Sample);
 	/** Live Link evaluates the subject in a mode other than engine time: the read-time numbers don't apply. */
 	void SetNotEngineTime(bool bInNotEngineTime);
@@ -138,6 +140,7 @@ private:
 
 	FCriticalSection Lock;
 	TArray<double> Intervals;
+	TArray<double> FrameTimeLags;
 	TArray<double> Distances;
 	TArray<double> SmoothOffsets;
 	TArray<double> SmoothChanges;   // |change| of the smooth offset from one evaluation to the next

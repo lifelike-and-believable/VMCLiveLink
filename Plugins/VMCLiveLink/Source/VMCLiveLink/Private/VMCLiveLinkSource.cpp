@@ -4,6 +4,7 @@
 #include "VMCHumanoid.h"
 #include "VMCProtocol.h"
 #include "VMCFrameAssembler.h"
+#include "VMCFrameClock.h"
 #include "VMCOscParser.h"
 #include "VMCSenderFilter.h"
 #include "VMCSourceDiagnostics.h"
@@ -108,6 +109,7 @@ void FVMCLiveLinkSource::InitSkeleton()
     MessageStats = MakeUnique<FVMCMessageStats>();
     MessageStats->Reset(FPlatformTime::Seconds());
     TimingStats = MakeUnique<FVMCTimingStats>();
+    FrameClock = MakeUnique<FVMCFrameClock>();
 
     FScopeLock Lock(&GVMCSourcesLock);
     GVMCSources.Add(this);
@@ -196,6 +198,7 @@ bool FVMCLiveLinkSource::StartReceiving()
     }
     MessageStats->Reset(FPlatformTime::Seconds());
     TimingStats->Reset();
+    FrameClock->Reset();
     // The frame-building thread's sender caches, so the first packet on the new path notes its sender.
     LastSenderHash = 0;
     LastSenderSeen.Reset();
@@ -780,8 +783,10 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
         FrameRemapper->RemapFrameData(FLiveLinkStaticDataStruct(), Frame); // uses what it resolved at static time
     }
     FLiveLinkBaseFrameData& Base = *Frame.Cast<FLiveLinkAnimationFrameData>();
-    // When the packet arrived (receive thread), or when the game thread got to it.
-    Base.WorldTime = FLiveLinkWorldTime(ArrivalSeconds);
+    // When the packet arrived (receive thread), or when the game thread got to it; or, with steady
+    // frame times, that evened out (FVMCFrameClock).
+    const double FrameSeconds = Snap.Settings.bSteadyFrameTimes ? FrameClock->Stamp(ArrivalSeconds) : ArrivalSeconds;
+    Base.WorldTime = FLiveLinkWorldTime(FrameSeconds);
     if (const TOptional<float> SenderTime = Assembler->GetSenderTime())
     {
         Base.MetaData.SceneTime = FQualifiedFrameTime(FFrameTime::FromDecimal(double(*SenderTime) * SenderTimeRate.AsDecimal()), SenderTimeRate);
@@ -796,6 +801,7 @@ void FVMCLiveLinkSource::PushFrame(const FSnapshot& Snap, double ArrivalSeconds)
         MeanIntervalDeviation = FMath::Lerp(MeanIntervalDeviation, FMath::Abs(Interval - MeanFrameInterval), StatsSmoothing);
         TimingStats->AddInterval(Interval);
     }
+    TimingStats->AddFrameTimeLag(ArrivalSeconds - FrameSeconds);
     LastFrameSeconds = ArrivalSeconds;
 }
 
@@ -848,7 +854,9 @@ void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double Arrival
     }
     Data->Transform = Device.Transform;
     // Timed like the main subject's frames (PushFrame), so the subjects stay in step.
-    Data->WorldTime = FLiveLinkWorldTime(ArrivalSeconds);
+    // On the body frames' clock: the same time as the frame from the same packet, so Live Link's
+    // per-source smoothing doesn't count it as a frame of its own.
+    Data->WorldTime = FLiveLinkWorldTime(Snap.Settings.bSteadyFrameTimes ? FrameClock->Map(ArrivalSeconds) : ArrivalSeconds);
     if (const TOptional<float> SenderTime = Assembler->GetSenderTime())
     {
         Data->MetaData.SceneTime = FQualifiedFrameTime(FFrameTime::FromDecimal(double(*SenderTime) * SenderTimeRate.AsDecimal()), SenderTimeRate);

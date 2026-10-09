@@ -158,6 +158,7 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 			else if (Key.Equals(TEXT("lockfirst"), ESearchCase::IgnoreCase))   Flag = &Out.bLockToFirstSender;
 			else if (Key.Equals(TEXT("devices"), ESearchCase::IgnoreCase))     Flag = &Out.bDeviceSubjects;
 			else if (Key.Equals(TEXT("camera"), ESearchCase::IgnoreCase))      Flag = &Out.bCameraSubject;
+			else if (Key.Equals(TEXT("steady"), ESearchCase::IgnoreCase))      Flag = &Out.bSteadyFrameTimes;
 			if (Flag && !ParseBool(Trimmed, *Flag))
 			{
 				Error(FString::Printf(TEXT("%s '%s' is not a yes/no value (1/0, true/false, yes/no, on/off)"), *Key, *Trimmed));
@@ -169,11 +170,11 @@ bool FVMCConnectionSettings::FromString(const FString& ConnectionString, FVMCCon
 
 FString FVMCConnectionSettings::ToString() const
 {
-	return FString::Printf(TEXT("port=%d;bind=%s;unity2ue=%d;meters2cm=%d;yaw=%s;zeromissing=%d;incomingtranslations=%d;thread=%d;senders=%s;lockfirst=%d;devices=%d;camera=%d;subject=%s"),
+	return FString::Printf(TEXT("port=%d;bind=%s;unity2ue=%d;meters2cm=%d;yaw=%s;zeromissing=%d;incomingtranslations=%d;thread=%d;senders=%s;lockfirst=%d;devices=%d;camera=%d;steady=%d;subject=%s"),
 		Port, *BindAddress, bUnityToUE ? 1 : 0, bMetersToCm ? 1 : 0, *FString::SanitizeFloat(YawOffsetDeg),
 		bZeroMissingCurves ? 1 : 0, bPreferIncomingTranslations ? 1 : 0,
 		bReceiveThread ? 1 : 0, *FString::Join(AllowedSenders, TEXT(",")), bLockToFirstSender ? 1 : 0,
-		bDeviceSubjects ? 1 : 0, bCameraSubject ? 1 : 0, *SubjectName.ToString());
+		bDeviceSubjects ? 1 : 0, bCameraSubject ? 1 : 0, bSteadyFrameTimes ? 1 : 0, *SubjectName.ToString());
 }
 
 bool FVMCConnectionSettings::Validate(TArray<FString>* OutErrors) const
@@ -201,5 +202,5 @@ bool FVMCConnectionSettings::operator==(const FVMCConnectionSettings& Other) con
 		&& bZeroMissingCurves == Other.bZeroMissingCurves && bPreferIncomingTranslations == Other.bPreferIncomingTranslations
 		&& bReceiveThread == Other.bReceiveThread && AllowedSenders == Other.AllowedSenders
 		&& bLockToFirstSender == Other.bLockToFirstSender && bDeviceSubjects == Other.bDeviceSubjects
-		&& bCameraSubject == Other.bCameraSubject;
+		&& bCameraSubject == Other.bCameraSubject && bSteadyFrameTimes == Other.bSteadyFrameTimes;
 }

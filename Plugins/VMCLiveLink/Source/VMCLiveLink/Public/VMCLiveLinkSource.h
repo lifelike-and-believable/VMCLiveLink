@@ -26,6 +26,7 @@ class FVMCLiveLinkRemapperWorker;
 struct FVMCRemapConfig;
 class FVMCMessageStats;
 class FVMCTimingStats;
+class FVMCFrameClock;
 class FOutputDevice;
 class FInternetAddr;
 class ULiveLinkSourceSettings;
@@ -202,6 +203,7 @@ private:
     uint32 LastSenderHash = 0;          // the receive thread's last sender (FInternetAddr hash)
     FString LastSenderSeen;             // and its IP; the OSC path compares this directly
     TUniquePtr<FVMCMessageStats> MessageStats; // counted while frames are built, reported by VMC.Stats
+    TUniquePtr<FVMCFrameClock> FrameClock;     // steady frame times (Settings.bSteadyFrameTimes); reset while nothing is received
     TUniquePtr<FVMCTimingStats> TimingStats;   // arrival intervals and Live Link's reads, reported by VMC.Stats
 
     // Shared between the threads

@@ -174,6 +174,7 @@ A subject restored from a preset keeps the maps saved in it. With empty maps and
 | The avatar stays in a T-pose, or only its root moves. | The bones aren't mapped: click **Map Bones From Humanoid Metadata** (section 6). |
 | Limbs twist or bend the wrong way. | The mesh's bones are rotated at rest: retarget instead (section 9). |
 | The avatar faces the wrong way. | Set the source's **Yaw Offset Deg** to 180. |
+| The avatar stutters or lurches although the status shows a good frame rate. | The computer is probably too busy (check Task Manager's CPU): the sender then sends its frames in bursts. Cap the editor's frame rate (`t.MaxFPS 60`, or 30), turn off XR Animator's rendering or lower its camera resolution, and close other busy apps. `VMC.Stats` shows how evenly the frames arrive ([README](../Plugins/VMCLiveLink/README.md#jitter-or-stutter)). |
 | The avatar moves in steps. | In the Live Link panel, set the subject's **Interpolation** to **Animation Interpolation** (a subject in a preset saved by an earlier version may have **None**), then save the preset. If the viewport stops while the sender is focused, untick **Editor Preferences → General → Performance → Use Less CPU when in Background**. |
 | The face doesn't move. | Check the AnimBP's **VRM Expressions** node has the avatar's `<Mesh>_Avatar` (section 7), and leave expression names unmapped. |
 | Hair doesn't swing when the character moves or turns. | Untick **Use Spring Centers** (section 8). |

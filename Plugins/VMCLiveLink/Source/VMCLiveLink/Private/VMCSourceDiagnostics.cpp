@@ -194,6 +194,7 @@ void FVMCTimingStats::Reset()
 {
 	FScopeLock ScopeLock(&Lock);
 	Intervals.Reset();
+	FrameTimeLags.Reset();
 	Distances.Reset();
 	SmoothOffsets.Reset();
 	SmoothChanges.Reset();
@@ -215,6 +216,12 @@ void FVMCTimingStats::AddInterval(double Seconds)
 {
 	FScopeLock ScopeLock(&Lock);
 	Add(Intervals, Seconds);
+}
+
+void FVMCTimingStats::AddFrameTimeLag(double Seconds)
+{
+	FScopeLock ScopeLock(&Lock);
+	Add(FrameTimeLags, Seconds);
 }
 
 void FVMCTimingStats::AddEvaluation(const FVMCEvaluationSample& Sample)
@@ -259,6 +266,10 @@ FString FVMCTimingStats::Report()
 	{
 		Out.Append(TEXT("  frame interval: no frames\n"));
 	}
+	if (FrameTimeLags.Num() > 0)
+	{
+		Line(TEXT("arrival minus frame time:"), VMCDiagnostics::Summarize(FrameTimeLags));
+	}
 
 	if (bNotEngineTime)
 	{
@@ -283,6 +294,7 @@ FString FVMCTimingStats::Report()
 	}
 
 	Intervals.Reset();
+	FrameTimeLags.Reset();
 	Distances.Reset();
 	SmoothOffsets.Reset();
 	SmoothChanges.Reset();
