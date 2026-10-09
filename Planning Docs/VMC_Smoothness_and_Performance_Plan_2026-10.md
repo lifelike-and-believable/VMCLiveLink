@@ -16,6 +16,23 @@ October 2026. With XR Animator streaming to a VRM avatar, the motion looks chopp
 
 The plugins' own CPU cost is far below a frame's budget. The choppiness is a timing problem: what Live Link gives the avatar between poses that arrive irregularly.
 
+### Baseline (O1), 2026-10-08
+
+XR Animator on the same machine as the editor (loopback, receive thread), interpolation on (O2):
+
+| Condition | Frames/s | Interval p50 / p95 / max | Held newest frame | Read time back | Smooth offset |
+|---|---|---|---|---|---|
+| Editor closed (a 30 s recording, by `vmc_sender.py record`) | 60.0 | 15 / 23 / 111 ms | (no editor) | | |
+| Editor focused, CPU at 100% | 44 to 50 | 0.4 to 14 / 85 to 90 / 271 to 303 ms | 27 to 37% | 6 to 8 per 12 s | 0.2 to 88 ms, up to 54 ms in one tick |
+| XR Animator focused, editor beside it | about 25 | 0.5 / 201 / 472 ms | 36% | 10 per 13 s | 0.2 to 212 ms |
+| Steady 60 fps synthetic sender, same load | 60 | 13 to 15 / 48 to 49 / 89 to 133 ms | 11% | 0 | 1.4 to 46 ms |
+| XR Animator, editor capped at 30 fps, XR Animator not rendering | 53 | 12 / 65 / 145 ms | 18% | 0 | 0.1 to 62 ms |
+
+- **The cause is CPU load, not the network or the receive path.** All 8 logical cores were busy (the editor about 2.5 to 2.9 cores, XR Animator's tracking 1.7 to 2.6). The synthetic sender's own send times were already p95 46 ms late; the editor received them p95 49 ms apart, so the receive path adds almost nothing. A starved XR Animator sends in bursts (half the intervals under a millisecond) with gaps of hundreds of milliseconds.
+- **Background throttling of the sender was ruled out:** focusing XR Animator made it worse, not better.
+- **Live Link's smooth offset follows the bursts** (finding 2, now measured), so its read time lurches and steps back.
+- What helps on the user's side: capping the editor's frame rate (`t.MaxFPS`) and lightening XR Animator (no rendering, lower camera resolution). Recorded for the User Guide (O6/O7).
+
 ### How Live Link times a VMC subject (engine source)
 
 - Frames are stamped with their arrival time on the receive thread (`VMCUdpReceiver.cpp`), or when the game thread handles them with **Receive Thread** off.
@@ -35,15 +52,14 @@ The plugins' own CPU cost is far below a frame's budget. The choppiness is a tim
 
 ### Not known yet
 
-- How large the jitter is on the real stream, how much of it XR Animator causes (camera rate, inference time) and how much the receive path adds (one computer, loopback: probably little).
-- How the smooth offset behaves on the real stream (finding 2 is a model).
+- ~~How large the jitter is on the real stream~~ and ~~how the smooth offset behaves on it~~: measured, see the baseline above.
 - Whether, in UE 5.6, the animation role's default interpolation processor resolves: 5.6's `BaseGame.ini` names the role as `/Script/LiveLink.LiveLinkAnimationRole`, though the class is in `LiveLinkInterface` (5.7 and 5.8 name it there). If it doesn't resolve, the project-wide default `LiveLinkBasicFrameInterpolationProcessor` would apply, which blends curves but not bone transforms.
 
 ## 2. Decisions for the owner
 
 | ID | Decision | Recommendation |
 |---|---|---|
-| S-1 | How to keep the read time behind the newest frame: Live Link's smooth offset (automatic, but it jitters with this stream: finding 2), or a fixed delay | **Reopened** (the 66 ms agreed on 2026-10-08 assumed Live Link added no delay of its own; it adds about 55 ms). Decide after O1 measures the smooth offset on the real stream. If it jitters as modelled, prefer O3a (steady stamps in the source, keeping Live Link's offset) over O3b (a fixed delay with the smooth offset off, which needs a project-wide console variable). |
+| S-1 | How to keep the read time behind the newest frame: Live Link's smooth offset (automatic, but it jitters with this stream: finding 2), or a fixed delay | **Decided 2026-10-08: O3a.** The baseline confirmed finding 2. The source gives frames steady times and its **Engine Time Offset** defaults to 30 ms; Live Link's own smooth offset stays (about 1.5 frames). Total latency about 50 to 70 ms at 60 fps, within the 66 ms the owner accepted. O3b isn't done: its console variable is project-wide. |
 | S-2 | Change the user's editor settings (background throttling) | No. Document it; consider a hint in the source's status line (O6). |
 
 ## 3. Work
@@ -68,6 +84,8 @@ Acceptance: for the recorded stream, the baseline is written down: interval perc
 Acceptance: measured with O1 on the recording; expected to remove most of the stepping, since Live Link's smooth offset already keeps the read time behind the newest frame.
 
 ### O3. A steady read time (as S-1 decides)
+
+**Status:** O3a is implemented (`FVMCFrameClock`, the source setting **Steady Frame Times**, on by default; the VMC source settings default **Engine Time Offset** to 30 ms and **Buffer Size (Frames)** to 30; `VMC.Stats` prints arrival minus frame time). The clock was tuned on a model of Live Link's timing (`VMC.FrameClock.LiveLinkReadTime`: its smooth offset and clock offset estimator, copied from the engine), over traces shaped like the baseline: no read-time step back over 20 ms (raw arrival times: 17 of 120 traces, up to 91 ms), held reads about a fifth fewer, and on a healthy stream a smooth offset that no longer moves. Two bounds came out of it: a frame's time is never more than 0.2 s behind its arrival (else the clock restarts) or 0.15 s ahead of it (the rest of a burst after a restart gets times 0.1 ms apart), because Live Link's clock offset estimate snaps when it is 0.25 s off for 6 frames, and the snap steps the read time back. Gaps of hundreds of milliseconds still hold the avatar: no delay the owner would accept hides them.
 
 - **O3a, steady stamps in the source (recommended if O1 confirms finding 2):** the source stamps each frame on a smoothed clock rather than its raw arrival time: for example a running estimate of the sender's interval, with each stamp `max(previous stamp + a minimum step, smoothed arrival)`, or the sender's own time (`/VMC/Ext/T`) when it sends one, mapped by Live Link's clock-offset estimator. The intervals Live Link sees are then steady, so its smooth offset stops jittering, and the latency stays Live Link's ~1.5 frames.
 - **O3b, a fixed delay:** the VMC source defaults its **Engine Time Offset** to a fixed value, with the smooth offset turned off by `LiveLink.TimedDataInput.NumFramesForSmoothOffset 0`, a project-wide console variable that affects every Live Link source. The total latency is then the fixed delay plus the clock offset.

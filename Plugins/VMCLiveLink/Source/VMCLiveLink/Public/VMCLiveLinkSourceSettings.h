@@ -17,6 +17,11 @@ class VMCLIVELINK_API UVMCLiveLinkSourceSettings : public ULiveLinkSourceSetting
 	GENERATED_BODY()
 
 public:
+	/** A VMC source reads its frames 30 ms further behind than Live Link would (Engine Time Offset), to
+	 *  absorb uneven arrivals, and buffers 30 frames (half a second at 60 fps, 0.25 s at 120). */
+	UVMCLiveLinkSourceSettings();
+
+public:
 	/** UDP port the sender sends to (VMC's default is 39539). */
 	UPROPERTY(EditAnywhere, Category = "VMC|Connection", meta = (ClampMin = "1", ClampMax = "65535", UIMin = "1", UIMax = "65535"))
 	int32 Port = FVMCConnectionSettings::DefaultPort;
@@ -54,6 +59,12 @@ public:
 	/** Use each bone's streamed translation. Otherwise only Hips does, and the other bones use the reference skeleton's. */
 	UPROPERTY(EditAnywhere, Category = "VMC|Frame")
 	bool bPreferIncomingTranslations = false;
+
+	/** Give frames evenly spaced times that follow the sender's rate, instead of the times they
+	 *  arrived, so Live Link plays them smoothly when they arrive unevenly (a busy machine, Wi-Fi).
+	 *  Works with Buffer Settings > Engine Time Offset, which keeps Live Link that far behind. */
+	UPROPERTY(EditAnywhere, Category = "VMC|Frame")
+	bool bSteadyFrameTimes = true;
 
 	/** Receive on a thread of the plugin's own, with each frame timestamped on arrival (lower latency,
 	 *  steadier timing). Off: messages arrive through the OSC plugin on the game thread, one batch per
