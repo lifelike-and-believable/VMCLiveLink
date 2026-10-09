@@ -105,7 +105,7 @@ Two of Live Link's own settings, under **Buffer Settings** in the same details, 
 | Setting | VMC default | Live Link's | Why |
 |---|---|---|---|
 | **Engine Time Offset** | 0.03 s | 0 | Live Link reads the subject this much further behind its newest frame, so frames that arrive late are still in time. With Live Link's own smoothing (about 1.5 frames) and the time to process a frame, the avatar is about 50 to 70 ms behind the sender at 60 fps. On a machine with time to spare, 0 shortens that by 30 ms. |
-| **Max Number of Frames to Buffered** | 30 | 10 | Enough frames for that delay at up to 120 fps. |
+| **Buffer Size (Frames)** | 30 | 10 | Enough frames for that delay at up to 120 fps. |
 
 ### Status
 

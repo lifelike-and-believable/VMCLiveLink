@@ -93,11 +93,11 @@ double FVMCFrameClock::Stamp(double ArrivalSeconds)
 		Restart(ArrivalSeconds, ArrivalSeconds, /*bForgetRate*/ false);
 		return LastStamp;
 	}
-	// Far ahead of it: a burst right after a restart. Held to MaxLead ahead, so the frames of the
-	// burst come closer together; any longer lead and Live Link's clock offset would snap.
+	// Far ahead of it: a burst right after a restart. Held to MaxLead ahead, so the rest of the
+	// burst comes closer together; a longer lead and Live Link's clock offset would snap.
 	if (NewStamp - ArrivalSeconds > MaxLead)
 	{
-		NewStamp = FMath::Max(LastStamp + MinInterval, ArrivalSeconds + MaxLead);
+		NewStamp = FMath::Max(LastStamp + MinSqueezeStep, ArrivalSeconds + MaxLead);
 	}
 
 	Correction += NewStamp - Uncorrected;
@@ -113,10 +113,6 @@ double FVMCFrameClock::Map(double ArrivalSeconds) const
 	{
 		return ArrivalSeconds;
 	}
-	if (ArrivalSeconds == LastArrival)
-	{
-		return LastStamp;
-	}
-	const double HalfInterval = 0.5 * FMath::Max(Interval, MinInterval);
-	return LastStamp + FMath::Clamp(ArrivalSeconds - LastArrival, 0.0, HalfInterval);
+	// Body frames have stopped: the device's own arrival time.
+	return ArrivalSeconds - LastArrival > ResetGap ? ArrivalSeconds : LastStamp;
 }

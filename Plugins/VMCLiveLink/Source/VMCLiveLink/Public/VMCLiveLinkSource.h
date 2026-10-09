@@ -192,6 +192,7 @@ private:
     TUniquePtr<FVMCSenderFilter> SenderFilter; // configured by the game thread while nothing is received
     TMap<FName, FName> DeviceSubjects; // device serial -> its published subject; cleared while nothing is received
     TMap<FName, FName> CameraSubjects; // camera name -> its published subject (kept apart: a name can match a serial)
+    TMap<FName, double> DeviceFrameTimes; // published device/camera subject -> its last frame time, kept increasing
     void InitSkeleton();
     bool bStaticDirty = false;           // a new bone or curve arrived
     /** Applies the snapshot's remapper to frames, for the static data last pushed (made with it). */

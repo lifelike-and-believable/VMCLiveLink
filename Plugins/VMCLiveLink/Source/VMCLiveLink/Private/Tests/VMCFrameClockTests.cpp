@@ -240,19 +240,48 @@ bool FVMCFrameClockStampsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Times always increase"), NotIncreasing, 0);
 	TestEqual(TEXT("Times evenly spaced (within 5 ms) except at restarts"), Uneven, 0);
 	TestTrue(TEXT("Times less than MaxLag behind their arrivals"), MaxLag < FVMCFrameClock::MaxLag);
-	TestTrue(TEXT("Times well short of Live Link's 0.25 s snap ahead of them"), MaxLead < FVMCFrameClock::MaxLead + 0.05);
+	TestTrue(TEXT("Times at most MaxLead ahead of them"), MaxLead <= FVMCFrameClock::MaxLead + 0.001);
 	TestTrue(TEXT("The interval found despite the bursts (60 fps less the lost frames)"), Clock.GetInterval() > 1.0 / 60.0 && Clock.GetInterval() < 1.0 / 40.0);
 	TestTrue(TEXT("The 0.7 s pause restarted it"), RestartsSeen >= 1);
 
 	// Map: devices from the same packet get the frame's time; later ones stay within half an interval.
 	TestEqual(TEXT("Map, same packet"), Clock.Map(Arrivals.Last()), Previous);
-	TestTrue(TEXT("Map, later packet"), Clock.Map(Arrivals.Last() + 1.0) <= Previous + 0.5 * Clock.GetInterval() + 1e-9);
+	TestEqual(TEXT("Map, a later packet: the last frame's time"), Clock.Map(Arrivals.Last() + 0.01), Previous);
+	TestEqual(TEXT("Map, body frames stopped: the arrival"), Clock.Map(Arrivals.Last() + 1.0), Arrivals.Last() + 1.0);
 	FVMCFrameClock Fresh;
 	TestEqual(TEXT("Map before any frame: the arrival"), Fresh.Map(5.0), 5.0);
 
 	Clock.Reset();
 	TestEqual(TEXT("Reset: starts from the next arrival"), Clock.Stamp(100.0), 100.0);
 	TestEqual(TEXT("Reset: no restarts"), Clock.GetRestarts(), 0);
+	// A 120 fps sender held up for 0.45 s, its frames then delivered together: the first restarts the
+	// clock, the rest would run ahead; they're held to MaxLead.
+	{
+		TArray<double> Hitch;
+		for (int32 Frame = 0; Frame < 600; ++Frame)
+		{
+			const double Capture = 1.0 + Frame / 120.0;
+			const bool bHeld = Capture >= 2.0 && Capture < 2.45;
+			Hitch.Add(bHeld ? 2.45 + (Frame - 120) * 0.0003 : Capture + 0.001);
+		}
+		for (int32 i = 1; i < Hitch.Num(); ++i)
+		{
+			Hitch[i] = FMath::Max(Hitch[i], Hitch[i - 1] + 0.0002);
+		}
+		FVMCFrameClock HitchClock;
+		double Lead = 0.0;
+		TArray<double> Steady;
+		for (double Arrival : Hitch)
+		{
+			Steady.Add(HitchClock.Stamp(Arrival));
+			Lead = FMath::Max(Lead, Steady.Last() - Arrival);
+		}
+		AddInfo(FString::Printf(TEXT("120 fps, 0.45 s hitch: lead max %.1f ms"), Lead * 1000.0));
+		TestTrue(TEXT("120 fps hitch: times at most MaxLead ahead"), Lead <= FVMCFrameClock::MaxLead + 0.001);
+		const FResult Result = Evaluate(Hitch, Steady, 0.03, 60.0);
+		AddInfo(Describe(TEXT("120 fps hitch, frame clock"), Result));
+		TestTrue(TEXT("120 fps hitch: read time never steps back more than 20 ms"), Result.MaxBackStep < 0.02);
+	}
 	return true;
 }
 

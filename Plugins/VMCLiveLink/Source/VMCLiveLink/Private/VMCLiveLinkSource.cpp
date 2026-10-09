@@ -480,7 +480,9 @@ void FVMCLiveLinkSource::OnSettingsChanged(ULiveLinkSourceSettings* InSettings, 
     const bool bRestart = bNewSubject || New.Port != Settings.Port || New.BindAddress != Settings.BindAddress
         || New.bReceiveThread != Settings.bReceiveThread || New.AllowedSenders != Settings.AllowedSenders
         || New.bLockToFirstSender != Settings.bLockToFirstSender
-        || New.bDeviceSubjects != Settings.bDeviceSubjects || New.bCameraSubject != Settings.bCameraSubject;
+        || New.bDeviceSubjects != Settings.bDeviceSubjects || New.bCameraSubject != Settings.bCameraSubject
+        // and switching frame times, so the clock starts afresh and no frame is timed on the other clock
+        || New.bSteadyFrameTimes != Settings.bSteadyFrameTimes;
     if (bRestart)
     {
         StopReceiving();
@@ -853,10 +855,16 @@ void FVMCLiveLinkSource::PushDevice(const FVMCDevicePose& Device, double Arrival
         Frame.Cast<FLiveLinkCameraFrameData>()->FieldOfView = Device.FieldOfView;
     }
     Data->Transform = Device.Transform;
-    // Timed like the main subject's frames (PushFrame), so the subjects stay in step.
-    // On the body frames' clock: the same time as the frame from the same packet, so Live Link's
-    // per-source smoothing doesn't count it as a frame of its own.
-    Data->WorldTime = FLiveLinkWorldTime(Snap.Settings.bSteadyFrameTimes ? FrameClock->Map(ArrivalSeconds) : ArrivalSeconds);
+    // Timed like the main subject's frames (PushFrame), so the subjects stay in step. With steady
+    // frame times, the last body frame's time (FVMCFrameClock::Map), which Live Link's per-source
+    // smoothing doesn't count again; a device sent before the body frame of its packet takes the
+    // previous one's. Each subject's times increase, or Live Link would insert the frame out of order
+    // (or warn of a repeated time).
+    double FrameSeconds = Snap.Settings.bSteadyFrameTimes ? FrameClock->Map(ArrivalSeconds) : ArrivalSeconds;
+    double& LastDeviceSeconds = DeviceFrameTimes.FindOrAdd(Subject, -1.0);
+    FrameSeconds = FMath::Max(FrameSeconds, LastDeviceSeconds + FVMCFrameClock::MinSqueezeStep);
+    LastDeviceSeconds = FrameSeconds;
+    Data->WorldTime = FLiveLinkWorldTime(FrameSeconds);
     if (const TOptional<float> SenderTime = Assembler->GetSenderTime())
     {
         Data->MetaData.SceneTime = FQualifiedFrameTime(FFrameTime::FromDecimal(double(*SenderTime) * SenderTimeRate.AsDecimal()), SenderTimeRate);
@@ -878,6 +886,7 @@ void FVMCLiveLinkSource::RemoveDeviceSubjects()
     }
     DeviceSubjects.Reset();
     CameraSubjects.Reset();
+    DeviceFrameTimes.Reset();
     FScopeLock Lock(&StatsLock);
     NumDeviceSubjects = 0;
 }
