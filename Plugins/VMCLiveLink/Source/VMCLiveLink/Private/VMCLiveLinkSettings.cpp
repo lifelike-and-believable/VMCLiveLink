@@ -9,8 +9,8 @@ namespace VMCLiveLinkSettings
 {
     /** Live Link's (LiveLinkTimedDataInput.cpp): the frames of delay its smooth offset adds. */
     const TCHAR* SmoothOffsetVariable = TEXT("LiveLink.TimedDataInput.NumFramesForSmoothOffset");
-    /** The variable's value before the setting turned it off, to put back; unset while it isn't. */
-    TOptional<float> SavedSmoothFrames;
+    /** The setting has set the variable (at project-setting priority) and not yet unset it. */
+    bool bApplied = false;
 }
 
 UVMCLiveLinkSettings::UVMCLiveLinkSettings()
@@ -36,18 +36,26 @@ void UVMCLiveLinkSettings::ApplyLiveLinkSmoothing() const
         }
         return;
     }
-    // Project-setting priority: a value from an ini file or the console still wins.
-    if (bFixedLiveLinkDelay && !SavedSmoothFrames.IsSet())
+    // Project-setting priority: a value from an ini file or the console still wins. Don't try to set
+    // it then (the engine would warn that the set was ignored).
+    if (bFixedLiveLinkDelay && !bApplied)
     {
-        SavedSmoothFrames = Variable->GetFloat();
+        if ((Variable->GetFlags() & ECVF_SetByMask) > ECVF_SetByProjectSetting)
+        {
+            UE_LOG(LogVMCLiveLink, Log, TEXT("Fixed Live Link Delay: %s is set elsewhere (an ini file or the console) to %g; that value stays."),
+                SmoothOffsetVariable, Variable->GetFloat());
+            return;
+        }
         Variable->Set(0.f, ECVF_SetByProjectSetting);
-        UE_LOG(LogVMCLiveLink, Log, TEXT("Fixed Live Link Delay: %s is now %g (was %g)."), SmoothOffsetVariable, Variable->GetFloat(), *SavedSmoothFrames);
+        bApplied = true;
+        UE_LOG(LogVMCLiveLink, Log, TEXT("Fixed Live Link Delay: %s is now %g."), SmoothOffsetVariable, Variable->GetFloat());
     }
-    else if (!bFixedLiveLinkDelay && SavedSmoothFrames.IsSet())
+    else if (!bFixedLiveLinkDelay && bApplied)
     {
-        Variable->Set(*SavedSmoothFrames, ECVF_SetByProjectSetting);
+        // Removes this setting's value: the variable goes back to whatever set it before.
+        Variable->Unset(ECVF_SetByProjectSetting);
+        bApplied = false;
         UE_LOG(LogVMCLiveLink, Log, TEXT("Fixed Live Link Delay off: %s is now %g."), SmoothOffsetVariable, Variable->GetFloat());
-        SavedSmoothFrames.Reset();
     }
 }
 

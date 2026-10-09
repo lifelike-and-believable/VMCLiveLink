@@ -35,8 +35,9 @@ public:
     UPROPERTY(EditAnywhere, Config, Category = "Timing", meta = (DisplayName = "Fixed Live Link Delay (All Sources)"))
     bool bFixedLiveLinkDelay = false;
 
-    /** Sets Live Link's smoothing console variable as bFixedLiveLinkDelay says: 0 when on, back to
-     *  the value it had when off. Called when the module starts and when the setting changes. */
+    /** Sets Live Link's smoothing console variable as bFixedLiveLinkDelay says: 0 when on (unless a
+     *  higher-priority value holds it); when off, removes that value, so the variable goes back to
+     *  what set it before. Called when the module starts and when the setting changes. */
     void ApplyLiveLinkSmoothing() const;
 
 #if WITH_EDITOR

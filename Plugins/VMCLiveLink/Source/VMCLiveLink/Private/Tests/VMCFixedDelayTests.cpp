@@ -41,6 +41,14 @@ bool FVMCFixedDelayTest::RunTest(const FString& Parameters)
 	Settings->bFixedLiveLinkDelay = false;
 	Settings->ApplyLiveLinkSmoothing();
 	TestEqual(TEXT("Off: the value from before"), Variable->GetFloat(), Before);
+
+	// Again: on and off work any number of times.
+	Settings->bFixedLiveLinkDelay = true;
+	Settings->ApplyLiveLinkSmoothing();
+	TestEqual(TEXT("On again: smoothing off"), Variable->GetFloat(), 0.f);
+	Settings->bFixedLiveLinkDelay = false;
+	Settings->ApplyLiveLinkSmoothing();
+	TestEqual(TEXT("Off again: the value from before"), Variable->GetFloat(), Before);
 	return true;
 }
 
