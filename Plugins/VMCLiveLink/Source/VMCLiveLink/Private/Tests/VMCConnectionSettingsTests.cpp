@@ -58,9 +58,9 @@ bool FVMCConnectionSettingsParseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("devices and camera parse"), FVMCConnectionSettings::FromString(TEXT("devices=1;camera=on"), S));
 	TestTrue(TEXT("devices"), S.bDeviceSubjects);
 	TestTrue(TEXT("camera"), S.bCameraSubject);
-	TestTrue(TEXT("steady frame times on by default"), FVMCConnectionSettings().bSteadyFrameTimes);
-	TestTrue(TEXT("steady parses"), FVMCConnectionSettings::FromString(TEXT("steady=off"), S));
-	TestFalse(TEXT("steady"), S.bSteadyFrameTimes);
+	TestFalse(TEXT("steady frame times off by default"), FVMCConnectionSettings().bSteadyFrameTimes);
+	TestTrue(TEXT("steady parses"), FVMCConnectionSettings::FromString(TEXT("steady=on"), S));
+	TestTrue(TEXT("steady"), S.bSteadyFrameTimes);
 	TestTrue(TEXT("empty senders parse"), FVMCConnectionSettings::FromString(TEXT("senders="), S));
 	TestEqual(TEXT("... to any sender"), S.AllowedSenders.Num(), 0);
 	TestFalse(TEXT("a bad sender"), FVMCConnectionSettings::FromString(TEXT("senders=10.0.0.2,phone"), S, &Errors));

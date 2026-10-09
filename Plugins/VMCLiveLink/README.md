@@ -93,7 +93,7 @@ Every setting is in the source's details in the Live Link panel, and in the crea
 | **Convert Metres to Centimetres** | On | VMC sends metres; UE uses centimetres. Leave on for VMC senders. |
 | **Yaw Offset Deg** | 0 | Extra turn of the root about UE's up axis. 180 turns the character round. |
 | **Zero Missing Curves** | Off | Curves the sender didn't send since the last frame read 0. Off: they hold their last value, which suits senders that only send blend shapes that changed. |
-| **Steady Frame Times** | On | Gives frames evenly spaced times that follow the sender's rate, instead of the times they arrived. Live Link then reads them smoothly when they arrive unevenly (a busy machine, Wi-Fi). Off: arrival times, as before. |
+| **Steady Frame Times** | Off | Gives frames evenly spaced times that follow the sender's rate, instead of the times they arrived. With a sender that sends steadily, Live Link's smoothing then stays still. Leave it off for a sender that sends late frames in bursts (a busy machine): their times fall behind Live Link's read time and they're skipped, so the avatar holds more often. For a busy machine, use **Fixed Live Link Delay** instead (below). |
 | **Prefer Incoming Translations** | Off | Uses every bone's streamed translation. Off: only Hips does; the other bones get the reference skeleton's rest translations from the remapper (**Use Reference Translations**, with a Reference Skeleton set), or none (see [The Remapper](#the-remapper)). |
 | **Allowed Senders** | Empty | Only packets from these IPv4 addresses are used. Empty: any sender. |
 | **Lock to First Sender** | Off | Uses only the first sender heard from until the listener restarts (after an edit to the port, bind address or sender settings, say), so a second sender on the network can't take over the subject. |
@@ -106,6 +106,8 @@ Two of Live Link's own settings, under **Buffer Settings** in the same details, 
 |---|---|---|---|
 | **Engine Time Offset** | 0.03 s | 0 | Live Link reads the subject this much further behind its newest frame, so frames that arrive late are still in time. With Live Link's own smoothing (about 1.5 frames) and the time to process a frame, the avatar is about 50 to 70 ms behind the sender at 60 fps. On a machine with time to spare, 0 shortens that by 30 ms. |
 | **Buffer Size (Frames)** | 30 | 10 | Enough frames for that delay at up to 120 fps. |
+
+**Project Settings → Plugins → VMC Live Link → Fixed Live Link Delay (All Sources)** (off by default) turns Live Link's own smoothing delay off for every Live Link source in the project (`LiveLink.TimedDataInput.NumFramesForSmoothOffset 0`). Live Link otherwise reads each subject about 1.5 average frame intervals behind its newest frame; with a sender that sends unevenly that delay keeps changing, so the avatar lurches and sometimes steps back. With the setting on, the delay is the source's **Engine Time Offset** (plus Live Link's clock offset) and doesn't move: set the VMC source's Engine Time Offset to 0.05 to 0.075 s (about 65 to 90 ms from the sender to the avatar; more holds less often), and give any other Live Link source that relied on the smoothing an Engine Time Offset of its own. A value of that console variable in an ini file or typed in the console takes precedence over the setting.
 
 ### Status
 
@@ -296,7 +298,7 @@ Use **Yaw Offset Deg** to turn it (180 turns it round). A character sunk into th
 
 Keep **Receive Thread** on. Its status shows the jitter; a few milliseconds is normal over Wi-Fi. Prefer a wired network for the sender.
 
-Most stutter comes from the computer being too busy: when every core is in use, the sender (XR Animator's tracking, say) runs late and sends its frames in bursts, with gaps of a tenth of a second or more. `VMC.Stats` shows it: a frame interval p95 far above the sender's interval, and many **newest frame held**. Cap the editor's frame rate (`t.MaxFPS 60`, or 30), lighten the sender (XR Animator: turn off its rendering, lower the camera resolution), and close what else is busy. Keep **Steady Frame Times** on and **Engine Time Offset** at 0.03 s or more: they even out what's left, but no delay hides a gap of several frames.
+Most stutter comes from the computer being too busy: when every core is in use, the sender (XR Animator's tracking, say) runs late and sends its frames in bursts, with gaps of a tenth of a second or more. `VMC.Stats` shows it: a frame interval p95 far above the sender's interval, and many **newest frame held**. Cap the editor's frame rate (`t.MaxFPS 60`, or 30), lighten the sender (XR Animator: turn off its rendering, lower the camera resolution), and close what else is busy. Keep **Engine Time Offset** at 0.03 s or more. If the avatar still lurches or steps back, turn on **Fixed Live Link Delay** and set the Engine Time Offset to 0.05 to 0.075 s (see [Source Settings](#source-settings)). No delay hides a gap of several frames.
 
 If the avatar moves in steps, check the subject's **Interpolation** in the Live Link panel: it should be **Animation Interpolation** (a subject saved in a preset by an earlier version may have **None**; set it and save the preset again). If the viewport stops while the sender's window is focused, untick **Editor Preferences → General → Performance → Use Less CPU when in Background**.
 
