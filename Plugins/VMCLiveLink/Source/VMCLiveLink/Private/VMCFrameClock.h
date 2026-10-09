@@ -41,7 +41,8 @@ public:
 	/** A gap this long restarts the clock: the sender paused (Live Link restarts its average too). */
 	static constexpr double ResetGap = 0.5;
 	/** The step between the times of a burst held to MaxLead ahead: above Live Link's "same time"
-	 *  tolerance, and small enough that no burst takes the times past MaxLead. */
+	 *  tolerance, and small enough to keep the lead at about MaxLead (a burst whose arrivals are
+	 *  closer together than this, as with Receive Thread off, adds a few milliseconds). */
 	static constexpr double MinSqueezeStep = 1e-4;
 	/** Interval limits: 240 fps to 4 fps. */
 	static constexpr double MinInterval = 1.0 / 240.0;
