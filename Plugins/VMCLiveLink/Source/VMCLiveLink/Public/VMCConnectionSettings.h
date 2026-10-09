@@ -8,7 +8,7 @@
  * reads and writes it (P3.1, VMC-17).
  *
  * Format: "key=value" pairs separated by ';', keys case-insensitive, unknown keys ignored, e.g.
- *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;incomingtranslations=0;thread=1;senders=;lockfirst=0;devices=0;camera=0;steady=1;subject=VMC_Subject
+ *   port=39539;bind=0.0.0.0;unity2ue=1;meters2cm=1;yaw=0;zeromissing=0;incomingtranslations=0;thread=1;senders=;lockfirst=0;devices=0;camera=0;steady=0;subject=VMC_Subject
  * Booleans accept 1/0, true/false, yes/no, on/off. Strings saved by earlier versions (port,
  * unity2ue, meters2cm, subject) read the same.
  */
@@ -48,9 +48,10 @@ struct VMCLIVELINK_API FVMCConnectionSettings
 	/** Publish the sender's camera (/VMC/Ext/Cam) as a Live Link subject with the Camera role, named
 	 *  "<SubjectName>_<camera name>". */
 	bool bCameraSubject = false;
-	/** Give frames steady times (FVMCFrameClock) instead of their arrival times, so Live Link reads
-	 *  them evenly when they arrive unevenly. Written as "steady=1". */
-	bool bSteadyFrameTimes = true;
+	/** Give frames steady times (FVMCFrameClock) instead of their arrival times. Helps a sender that
+	 *  sends steadily; hurts one that sends late frames in bursts (their times are then in the past,
+	 *  and Live Link skips them). Written as "steady=1". */
+	bool bSteadyFrameTimes = false;
 
 	/**
 	 * Reads a connection string. Keys that are missing keep their defaults. Returns false if any

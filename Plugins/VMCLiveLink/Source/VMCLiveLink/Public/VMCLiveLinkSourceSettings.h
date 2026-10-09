@@ -61,10 +61,12 @@ public:
 	bool bPreferIncomingTranslations = false;
 
 	/** Give frames evenly spaced times that follow the sender's rate, instead of the times they
-	 *  arrived, so Live Link plays them smoothly when they arrive unevenly (a busy machine, Wi-Fi).
-	 *  Works with Buffer Settings > Engine Time Offset, which keeps Live Link that far behind. */
+	 *  arrived. Steadies Live Link's smoothing for a sender that sends steadily with a little jitter;
+	 *  makes it worse for one that sends late frames in bursts (a busy machine), whose times then fall
+	 *  behind Live Link's read time. Off by default; for a busy machine, see Project Settings >
+	 *  Plugins > VMC Live Link > Fixed Live Link Delay. */
 	UPROPERTY(EditAnywhere, Category = "VMC|Frame")
-	bool bSteadyFrameTimes = true;
+	bool bSteadyFrameTimes = false;
 
 	/** Receive on a thread of the plugin's own, with each frame timestamped on arrival (lower latency,
 	 *  steadier timing). Off: messages arrive through the OSC plugin on the game thread, one batch per

@@ -59,7 +59,7 @@ XR Animator on the same machine as the editor (loopback, receive thread), interp
 
 | ID | Decision | Recommendation |
 |---|---|---|
-| S-1 | How to keep the read time behind the newest frame: Live Link's smooth offset (automatic, but it jitters with this stream: finding 2), or a fixed delay | **Decided 2026-10-08: O3a.** The baseline confirmed finding 2. The source gives frames steady times and its **Engine Time Offset** defaults to 30 ms; Live Link's own smooth offset stays (about 1.5 frames). Total latency about 50 to 70 ms at 60 fps, within the 66 ms the owner accepted. O3b isn't done: its console variable is project-wide. |
+| S-1 | How to keep the read time behind the newest frame: Live Link's smooth offset (automatic, but it jitters with this stream: finding 2), or a fixed delay | **Decided 2026-10-08, revised the same day on real data: O3b, opt-in.** O3a (steady frame times, #203) was tried first: on a 30 s recording of XR Animator under load it tripled held reads (14% to 35%), because late frames delivered in bursts get times in the past and Live Link skips them. The project setting **Fixed Live Link Delay (All Sources)** (off by default) sets `LiveLink.TimedDataInput.NumFramesForSmoothOffset` to 0, with the VMC source's Engine Time Offset at 0.05 to 0.066 s: no lurch or step back on any trace, held 17% / 11%, latency about 66 / 82 ms. Steady frame times stay, off by default, for steady senders. |
 | S-2 | Change the user's editor settings (background throttling) | No. Document it; consider a hint in the source's status line (O6). |
 
 ## 3. Work
@@ -85,7 +85,21 @@ Acceptance: measured with O1 on the recording; expected to remove most of the st
 
 ### O3. A steady read time (as S-1 decides)
 
-**Status:** O3a is implemented (`FVMCFrameClock`, the source setting **Steady Frame Times**, on by default; the VMC source settings default **Engine Time Offset** to 30 ms and **Buffer Size (Frames)** to 30; `VMC.Stats` prints arrival minus frame time). The clock was tuned on a model of Live Link's timing (`VMC.FrameClock.LiveLinkReadTime`: its smooth offset and clock offset estimator, copied from the engine), over traces shaped like the baseline: no read-time step back over 20 ms (raw arrival times: 17 of 120 traces, up to 91 ms), held reads about a fifth fewer, and on a healthy stream a smooth offset that no longer moves. Two bounds came out of it: a frame's time is never more than 0.2 s behind its arrival (else the clock restarts) or 0.15 s ahead of it (the rest of a burst after a restart gets times 0.1 ms apart), because Live Link's clock offset estimate snaps when it is 0.25 s off for 6 frames, and the snap steps the read time back. Gaps of hundreds of milliseconds still hold the avatar: no delay the owner would accept hides them.
+**Status, revised 2026-10-08 (S-1):** on the real loaded recording (`C:\uep\rec\xr_loaded.vmcrec`, kept out of the repository: 45.6 fps, half the intervals under 2 ms, 56 gaps over 100 ms), the model gave, with a 30 ms Engine Time Offset unless noted:
+
+| | Held | Read time back | Synthetic traces with a step back over 20 ms |
+|---|---|---|---|
+| Arrival times, no offset (before #203) | 33.7% | 3 | 9 of 60 |
+| Arrival times + 30 ms (#203's default offset) | 14.3% | 3 (max 39 ms) | 9 of 60 |
+| Steady frame times + 30 ms (#203) | 34.6% | 0 | 0 |
+| O3b: smoothing off + 50 ms | 16.7% | 0 | 0 |
+| O3b: smoothing off + 66 ms | 10.8% | 0 | 0 |
+
+Most of #203's gain is its 30 ms offset. Steady frame times are now off by default, and O3b is the opt-in project setting.
+
+Live check, 2026-10-08 (XR Animator, editor capped at 30 fps, `VMC.Stats` over 12 s): at about 88 ms total latency, smoothing on with a 50 ms offset held 4.9% of ticks with one step back and smooth-offset jumps up to 56 ms; smoothing off with a 75 ms offset held 8.1% with no step back and a constant delay. The owner saw it smoother, with no lurching. Recommended Engine Time Offset with the setting: 0.05 to 0.075 s.
+
+**Earlier status:** O3a is implemented (`FVMCFrameClock`, the source setting **Steady Frame Times**, on by default; the VMC source settings default **Engine Time Offset** to 30 ms and **Buffer Size (Frames)** to 30; `VMC.Stats` prints arrival minus frame time). The clock was tuned on a model of Live Link's timing (`VMC.FrameClock.LiveLinkReadTime`: its smooth offset and clock offset estimator, copied from the engine), over traces shaped like the baseline: no read-time step back over 20 ms (raw arrival times: 17 of 120 traces, up to 91 ms), held reads about a fifth fewer, and on a healthy stream a smooth offset that no longer moves. Two bounds came out of it: a frame's time is never more than 0.2 s behind its arrival (else the clock restarts) or 0.15 s ahead of it (the rest of a burst after a restart gets times 0.1 ms apart), because Live Link's clock offset estimate snaps when it is 0.25 s off for 6 frames, and the snap steps the read time back. Gaps of hundreds of milliseconds still hold the avatar: no delay the owner would accept hides them.
 
 - **O3a, steady stamps in the source (recommended if O1 confirms finding 2):** the source stamps each frame on a smoothed clock rather than its raw arrival time: for example a running estimate of the sender's interval, with each stamp `max(previous stamp + a minimum step, smoothed arrival)`, or the sender's own time (`/VMC/Ext/T`) when it sends one, mapped by Live Link's clock-offset estimator. The intervals Live Link sees are then steady, so its smooth offset stops jittering, and the latency stays Live Link's ~1.5 frames.
 - **O3b, a fixed delay:** the VMC source defaults its **Engine Time Offset** to a fixed value, with the smooth offset turned off by `LiveLink.TimedDataInput.NumFramesForSmoothOffset 0`, a project-wide console variable that affects every Live Link source. The total latency is then the fixed delay plus the clock offset.
