@@ -2,6 +2,8 @@
 
 This repository holds two Unreal Engine plugins, [VMC Live Link](Plugins/VMCLiveLink/README.md) and [VRM Interchange](Plugins/VRMInterchange/README.md), and a small project (`VMCLiveLinkProject.uproject`) to build and test them in. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how they are built.
 
+These plugins are one component of a larger live virtual performance toolkit, with [Open3DBroadcast](https://github.com/lifelike-and-believable/Open3DBroadcast) and [Open3DPuppet](https://github.com/lifelike-and-believable/Open3DPuppet). What spans the components (the Live Link contracts between them, such as subject, bone and curve names, the engine versions that work together, cross-repository decisions and show milestones) is in [`lifelike-and-believable/live-virtual-performance`](https://github.com/lifelike-and-believable/live-virtual-performance) (private). A change to a contract another component relies on is written there first. Issues use the shared labels `desk`, `needs-decision`, `interface` and `show:<name>` (its `docs/process.md`).
+
 ## Getting started
 
 ### Requirements
